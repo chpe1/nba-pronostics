@@ -65,6 +65,7 @@ def apply_injury_report(db: Session, entries: list[InjuryReportEntry]) -> ApplyR
             result.unmatched_entries.append(entry)
             continue
         player.injury_status = entry.status
+        player.injury_reason = entry.reason or None
         player.injury_updated_at = now
         result.matched_count += 1
     db.flush()

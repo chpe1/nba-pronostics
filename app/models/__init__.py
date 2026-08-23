@@ -3,6 +3,7 @@ from app.models.player import Player, InjuryStatus
 from app.models.game import Game, GameStatus
 from app.models.settings import Settings
 from app.models.import_history import ImportHistory, ImportType, ImportStatus
+from app.models.prediction import Prediction, ReliabilityLevel
 
 __all__ = [
     "Team",
@@ -14,4 +15,6 @@ __all__ = [
     "ImportHistory",
     "ImportType",
     "ImportStatus",
+    "Prediction",
+    "ReliabilityLevel",
 ]

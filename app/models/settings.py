@@ -33,6 +33,11 @@ class Settings(Base):
     # Bonus Draft par pick, ex: {"1": 5.0, "2": 4.0, ...}
     draft_bonus_config: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Seuils de l'Indice de Fiabilité, sur l'écart absolu entre les deux
+    # notes finales : < low -> Faible, [low, high) -> Moyenne, >= high -> Forte
+    reliability_threshold_low: Mapped[float] = mapped_column(Float, default=5.0)
+    reliability_threshold_high: Mapped[float] = mapped_column(Float, default=10.0)
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )

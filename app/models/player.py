@@ -44,6 +44,8 @@ class Player(Base):
         Enum(InjuryStatus), default=InjuryStatus.HEALTHY, nullable=False
     )
     injury_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Raison brute issue du rapport de blessures (ex: "Injury/Illness-RightAnkle;Sprain")
+    injury_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Numéro de pick à la draft (nullable si non-rookie), pour le bonus draft
     draft_pick: Mapped[int | None] = mapped_column(Integer, nullable=True)
