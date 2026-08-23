@@ -67,13 +67,13 @@ onMounted(loadSettings)
     </p>
 
     <div v-if="settings" class="space-y-5 rounded-xl border border-gray-200 bg-white p-4">
-      <SettingsSlider v-model="settings.base_note_multiplier" label="Multiplicateur note de base (Curseur A)" :min="0" :max="5" :step="0.1" />
-      <SettingsSlider v-model="settings.per_impact_multiplier" label="Multiplicateur impact PER (Curseur B)" :min="0" :max="5" :step="0.1" />
+      <SettingsSlider v-model="settings.base_note_multiplier" label="Multiplicateur note de base (Curseur A)" :min="0" :max="200" :step="5" />
+      <SettingsSlider v-model="settings.per_impact_multiplier" label="Multiplicateur impact PER (Curseur B)" :min="0" :max="5" :step="0.05" />
       <SettingsSlider v-model="settings.back_to_back_penalty" label="Malus Back-to-Back" :min="0" :max="20" :step="0.5" />
       <SettingsSlider v-model="settings.three_in_four_penalty" label="Malus 3 matchs en 4 nuits" :min="0" :max="20" :step="0.5" />
       <SettingsSlider v-model="settings.mpg_threshold" label="Seuil MPG minimum" :min="0" :max="40" :step="1" />
-      <SettingsSlider v-model="settings.reliability_threshold_low" label="Seuil de fiabilité — Moyenne" :min="0" :max="30" :step="0.5" />
-      <SettingsSlider v-model="settings.reliability_threshold_high" label="Seuil de fiabilité — Forte" :min="0" :max="30" :step="0.5" />
+      <SettingsSlider v-model="settings.reliability_threshold_low" label="Seuil de fiabilité — Moyenne" :min="0" :max="50" :step="0.5" />
+      <SettingsSlider v-model="settings.reliability_threshold_high" label="Seuil de fiabilité — Forte" :min="0" :max="50" :step="0.5" />
 
       <div>
         <label class="mb-1 block text-sm font-medium text-gray-700">

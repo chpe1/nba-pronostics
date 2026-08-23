@@ -13,10 +13,15 @@ def test_get_settings_creates_default_row_if_missing(client, db_session, auth_he
 
     assert response.status_code == 200
     body = response.json()
-    assert body["base_note_multiplier"] == 1.0
+    # Valeurs calibrées (V1, docs/calibrage-v1.md) : win_pct ramené sur une
+    # échelle 0-100, PER pondéré à 0.4, seuils de fiabilité 7.0/30.0.
+    assert body["base_note_multiplier"] == 100.0
+    assert body["per_impact_multiplier"] == 0.4
+    assert body["back_to_back_penalty"] == 2.0
+    assert body["three_in_four_penalty"] == 3.5
     assert body["mpg_threshold"] == 15.0
-    assert body["reliability_threshold_low"] == 5.0
-    assert body["reliability_threshold_high"] == 10.0
+    assert body["reliability_threshold_low"] == 7.0
+    assert body["reliability_threshold_high"] == 30.0
     assert db_session.query(Settings).count() == 1
 
 
@@ -39,8 +44,8 @@ def test_update_settings_partial_update(client, db_session, auth_headers):
     body = response.json()
     assert body["base_note_multiplier"] == 2.5
     assert body["draft_bonus_config"] == {"1": 6.0}
-    # Les champs non fournis restent inchangés.
-    assert body["per_impact_multiplier"] == 1.0
+    # Les champs non fournis restent inchangés (valeur par défaut calibrée).
+    assert body["per_impact_multiplier"] == 0.4
 
     db_session.expire_all()
     settings = db_session.query(Settings).one()

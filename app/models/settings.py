@@ -19,24 +19,29 @@ class Settings(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    # Curseur A : multiplicateur de la note de base (% de victoires)
-    base_note_multiplier: Mapped[float] = mapped_column(Float, default=1.0)
-    # Curseur B : multiplicateur d'impact du PER des absents
-    per_impact_multiplier: Mapped[float] = mapped_column(Float, default=1.0)
+    # Curseur A : multiplicateur de la note de base (% de victoires).
+    # Ramène win_pct (0-1) sur une échelle de "points" 0-100, pour être
+    # comparable au PER une fois pondéré par le Curseur B. Voir
+    # docs/calibrage-v1.md pour le raisonnement complet.
+    base_note_multiplier: Mapped[float] = mapped_column(Float, default=100.0)
+    # Curseur B : multiplicateur d'impact du PER des absents.
+    per_impact_multiplier: Mapped[float] = mapped_column(Float, default=0.4)
 
-    back_to_back_penalty: Mapped[float] = mapped_column(Float, default=0.0)
-    three_in_four_penalty: Mapped[float] = mapped_column(Float, default=0.0)
+    back_to_back_penalty: Mapped[float] = mapped_column(Float, default=2.0)
+    three_in_four_penalty: Mapped[float] = mapped_column(Float, default=3.5)
 
     # Seuil de temps de jeu (MPG) minimum pour la prise en compte du PER
     mpg_threshold: Mapped[float] = mapped_column(Float, default=15.0)
 
-    # Bonus Draft par pick, ex: {"1": 5.0, "2": 4.0, ...}
+    # Bonus Draft par pick, ex: {"1": 8.0, "2": 6.0, ...} (échelle 0-100 points)
     draft_bonus_config: Mapped[dict] = mapped_column(JSON, default=dict)
 
     # Seuils de l'Indice de Fiabilité, sur l'écart absolu entre les deux
-    # notes finales : < low -> Faible, [low, high) -> Moyenne, >= high -> Forte
-    reliability_threshold_low: Mapped[float] = mapped_column(Float, default=5.0)
-    reliability_threshold_high: Mapped[float] = mapped_column(Float, default=10.0)
+    # notes finales : < low -> Faible, [low, high) -> Moyenne, >= high -> Forte.
+    # Calibrés (V1) sur la distribution réelle des |spread| obtenue sur un
+    # calendrier simulé -- voir docs/calibrage-v1.md.
+    reliability_threshold_low: Mapped[float] = mapped_column(Float, default=7.0)
+    reliability_threshold_high: Mapped[float] = mapped_column(Float, default=30.0)
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
