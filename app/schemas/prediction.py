@@ -20,6 +20,12 @@ class PredictionRead(BaseModel):
     computed_at: datetime
 
 
+class RecentRecordRead(BaseModel):
+    wins: int
+    losses: int
+    games_considered: int
+
+
 class GameWithPredictionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,6 +33,12 @@ class GameWithPredictionRead(BaseModel):
     season: str
     game_date: datetime
     home_team_id: int
+    home_team_name: str
+    home_team_abbreviation: str
     away_team_id: int
+    away_team_name: str
+    away_team_abbreviation: str
     status: GameStatus
+    home_team_recent_record: RecentRecordRead
+    away_team_recent_record: RecentRecordRead
     prediction: PredictionRead | None = None

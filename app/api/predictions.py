@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_admin
 from app.database import get_db
 from app.models import Game, Prediction, Settings
-from app.schemas.prediction import GameWithPredictionRead, PredictionRead
-from app.services.pronostic_calculator import save_prediction
+from app.schemas.prediction import GameWithPredictionRead, PredictionRead, RecentRecordRead
+from app.services.pronostic_calculator import compute_recent_record, save_prediction
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
 
@@ -51,22 +51,41 @@ def get_today_predictions(
         else {}
     )
 
-    return [
-        GameWithPredictionRead(
-            id=game.id,
-            season=game.season,
-            game_date=game.game_date,
-            home_team_id=game.home_team_id,
-            away_team_id=game.away_team_id,
-            status=game.status,
-            prediction=(
-                PredictionRead.model_validate(predictions_by_game_id[game.id])
-                if game.id in predictions_by_game_id
-                else None
-            ),
+    results = []
+    for game in games:
+        game_date = game.game_date.date() if hasattr(game.game_date, "date") else game.game_date
+        home_record = compute_recent_record(db, game.home_team, before_date=game_date)
+        away_record = compute_recent_record(db, game.away_team, before_date=game_date)
+        results.append(
+            GameWithPredictionRead(
+                id=game.id,
+                season=game.season,
+                game_date=game.game_date,
+                home_team_id=game.home_team_id,
+                home_team_name=game.home_team.name,
+                home_team_abbreviation=game.home_team.abbreviation,
+                away_team_id=game.away_team_id,
+                away_team_name=game.away_team.name,
+                away_team_abbreviation=game.away_team.abbreviation,
+                status=game.status,
+                home_team_recent_record=RecentRecordRead(
+                    wins=home_record.wins,
+                    losses=home_record.losses,
+                    games_considered=home_record.games_considered,
+                ),
+                away_team_recent_record=RecentRecordRead(
+                    wins=away_record.wins,
+                    losses=away_record.losses,
+                    games_considered=away_record.games_considered,
+                ),
+                prediction=(
+                    PredictionRead.model_validate(predictions_by_game_id[game.id])
+                    if game.id in predictions_by_game_id
+                    else None
+                ),
+            )
         )
-        for game in games
-    ]
+    return results
 
 
 @router.post(

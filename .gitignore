@@ -22,6 +22,12 @@ node_modules/
 dist/
 .vite/
 
+# Fichiers de travail Claude Code (conservés localement, non publiés sur le repo)
+CLAUDE.md
+plan-etape*.md
+cahier-des-charges-moteur-pronostics-nba.md
+etapes-roles-projet-nba.md
+
 # Éditeurs / OS
 .vscode/
 .idea/

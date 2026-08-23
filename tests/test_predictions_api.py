@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from app.models import Game, GameStatus, Prediction, ReliabilityLevel, Team
 
@@ -50,6 +50,26 @@ def test_today_predictions_is_public(client, db_session):
     body = response.json()
     assert len(body) == 1
     assert body[0]["prediction"] is None  # aucun recalcul déclenché par le GET
+    assert body[0]["home_team_name"] == "Boston Celtics"
+    assert body[0]["away_team_abbreviation"] == "LAL"
+
+
+def test_today_predictions_includes_recent_record(client, db_session):
+    home, away = _teams(db_session)
+    game_date = date.today()
+    # Un match précédent gagné par home (donc perdu par away).
+    prior = _game(db_session, home, away, game_date - timedelta(days=3))
+    prior.status = GameStatus.FINISHED
+    prior.home_score = 100
+    prior.away_score = 90
+    db_session.flush()
+
+    _game(db_session, home, away, game_date)
+
+    response = client.get("/api/predictions/today")
+    body = [g for g in response.json() if g["status"] == "scheduled"][0]
+    assert body["home_team_recent_record"] == {"wins": 1, "losses": 0, "games_considered": 1}
+    assert body["away_team_recent_record"] == {"wins": 0, "losses": 1, "games_considered": 1}
 
 
 def test_today_predictions_includes_existing_prediction(client, db_session):

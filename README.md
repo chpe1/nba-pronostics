@@ -1,28 +1,29 @@
 # Moteur de Pronostics NBA
 
-Application de pronostics NBA basée sur un algorithme mathématique sur-mesure : confrontation de la "Note Finale" de deux équipes (% de victoires, PER des absents, malus calendrier, etc.). Usage personnel, MVP en local pour l'instant — voir [`cahier-des-charges-moteur-pronostics-nba.md`](cahier-des-charges-moteur-pronostics-nba.md) pour les spécifications complètes.
+> Ce projet a été codé à 100 % avec [Claude Code](https://claude.com/claude-code).
+
+Application de pronostics NBA basée sur un algorithme mathématique sur-mesure : confrontation de la "Note Finale" de deux équipes (% de victoires, PER des absents, malus calendrier, etc.). Usage personnel, MVP en local pour l'instant.
 
 ## Stack technique
 
 - **Backend** : Python, [FastAPI](https://fastapi.tiangolo.com/), SQLAlchemy (ORM), Alembic (migrations), SQLite.
-- **Frontend** : Vue.js (Vite), Vue Router, Pinia. *(à venir — Étape 5)*
+- **Frontend** : Vue.js (Vite), Vue Router, Pinia, Tailwind CSS.
 - **Automatisation** : APScheduler pour les tâches planifiées.
 - **Parsing** : `pandas` (CSV Basketball-Reference), `pdfplumber` (rapports de blessures PDF).
-- **Tests** : `pytest`.
+- **Authentification** : admin unique (bcrypt + JWT).
+- **Tests** : `pytest` (backend), `vitest` (frontend).
 
 ## État d'avancement
 
-Roadmap complète en 7 étapes détaillée dans [`etapes-roles-projet-nba.md`](etapes-roles-projet-nba.md).
+- ✅ Architecture et modélisation de la base de données (Team, Player, Game, Settings + migrations Alembic).
+- ✅ Import CSV manuel (stats Basketball-Reference) via back-office, parsing automatique des rapports de blessures NBA (PDF).
+- ✅ Moteur de pronostics (calcul de la Note Finale, du vainqueur, de l'écart et de l'indice de fiabilité).
+- ✅ Back-office et API : authentification admin, réglages de l'algorithme, déclenchement des pronostics.
+- ✅ Frontend mobile-first (Dashboard, back-office Imports/Réglages).
+- ⬜ Test, calibrage et validation
+- ⬜ Déploiement en production
 
-- ✅ **Étape 1 — Architecture et modélisation de la base de données** : modèles Team, Player, Game, Settings + migrations Alembic.
-- ✅ **Étape 2 — Routines d'extraction de données** : import CSV manuel (stats Basketball-Reference) via back-office, parsing automatique des rapports de blessures NBA (PDF) via `pdfplumber` + APScheduler.
-- ⬜ Étape 3 — Le moteur de pronostics (l'algorithme)
-- ⬜ Étape 4 — Back-office et API backend
-- ⬜ Étape 5 — Frontend mobile-first (Vue.js)
-- ⬜ Étape 6 — Test, calibrage et validation
-- ⬜ Étape 7 — Déploiement en production
-
-## Installation
+## Installation — Backend
 
 Prérequis : Python 3.11+.
 
@@ -37,15 +38,15 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Base de données
+Copier `.env.example` en `.env` et renseigner les valeurs (voir les commentaires du fichier, notamment pour générer `ADMIN_PASSWORD_HASH` via `python scripts/generate_admin_hash.py` et `JWT_SECRET_KEY`).
 
-Les migrations Alembic créent la base SQLite locale (`nba_pronostics.db`, non versionnée) :
+### Base de données
 
 ```bash
 alembic upgrade head
 ```
 
-## Lancer l'API
+### Lancer l'API
 
 ```bash
 uvicorn app.main:app --reload
@@ -53,13 +54,28 @@ uvicorn app.main:app --reload
 
 Documentation interactive (Swagger) : http://127.0.0.1:8000/docs
 
-## Tests
+### Tests
 
 ```bash
 pytest
 ```
 
+## Installation — Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Copier `frontend/.env.example` en `frontend/.env.local` si l'API ne tourne pas sur `http://localhost:8000`.
+
+```bash
+npm run test    # vitest
+```
+
 ## Notes
 
 - Basketball-Reference ne permet pas le scraping automatique : les statistiques (CSV) doivent être téléchargées manuellement puis importées via l'interface d'upload du back-office (`POST /api/imports/stats`).
-- Les rapports de blessures NBA (PDF) sont récupérés et parsés automatiquement (routine planifiée, désactivée par défaut — voir `ENABLE_INJURY_SCHEDULER` dans `app/main.py`).
+- Les rapports de blessures NBA (PDF) sont récupérés et parsés automatiquement (routine planifiée, désactivée par défaut — voir `ENABLE_INJURY_SCHEDULER` dans `.env`).
+- Le token d'authentification admin est conservé en mémoire côté frontend (pas de persistance) : la session est perdue au rechargement de page.

@@ -41,6 +41,50 @@ EARLY_SEASON_GAME_THRESHOLD = 10
 THREE_IN_FOUR_WINDOW_DAYS = 3
 THREE_IN_FOUR_GAME_COUNT = 2  # nb de matchs précédents requis dans la fenêtre
 
+# Nombre de matchs récents pris en compte pour le bilan V-D affiché sur le
+# Dashboard (ex: "5V-2D sur les 7 derniers").
+RECENT_RECORD_WINDOW = 7
+
+
+@dataclass
+class RecentRecord:
+    wins: int
+    losses: int
+    games_considered: int
+
+
+def compute_recent_record(
+    db: Session, team: Team, before_date: date, window: int = RECENT_RECORD_WINDOW
+) -> RecentRecord:
+    """Bilan victoires/défaites de l'équipe sur ses `window` derniers matchs
+    terminés avant `before_date`."""
+    games = (
+        db.query(Game)
+        .filter(
+            Game.status == GameStatus.FINISHED,
+            Game.game_date < before_date,
+            or_(Game.home_team_id == team.id, Game.away_team_id == team.id),
+        )
+        .order_by(Game.game_date.desc())
+        .limit(window)
+        .all()
+    )
+
+    wins = 0
+    losses = 0
+    for game in games:
+        if game.home_score is None or game.away_score is None:
+            continue
+        team_is_home = game.home_team_id == team.id
+        team_score = game.home_score if team_is_home else game.away_score
+        opponent_score = game.away_score if team_is_home else game.home_score
+        if team_score > opponent_score:
+            wins += 1
+        elif team_score < opponent_score:
+            losses += 1
+
+    return RecentRecord(wins=wins, losses=losses, games_considered=len(games))
+
 
 @dataclass
 class QuestionablePlayerInfo:
