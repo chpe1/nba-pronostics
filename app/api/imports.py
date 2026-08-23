@@ -3,12 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_admin
 from app.database import get_db
 from app.models import ImportHistory, ImportStatus, ImportType
 from app.schemas import ImportHistoryRead, ImportPreviewResponse, ImportResultResponse
 from app.services import csv_import
 
-router = APIRouter(prefix="/api/imports", tags=["imports"])
+router = APIRouter(prefix="/api/imports", tags=["imports"], dependencies=[Depends(get_current_admin)])
 
 
 @router.post("/stats", response_model=ImportPreviewResponse | ImportResultResponse)

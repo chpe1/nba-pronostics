@@ -10,6 +10,8 @@ class SettingsUpdate(BaseModel):
     three_in_four_penalty: float | None = None
     mpg_threshold: float | None = None
     draft_bonus_config: dict | None = None
+    reliability_threshold_low: float | None = None
+    reliability_threshold_high: float | None = None
 
 
 class SettingsRead(BaseModel):
@@ -22,4 +24,6 @@ class SettingsRead(BaseModel):
     three_in_four_penalty: float
     mpg_threshold: float
     draft_bonus_config: dict
+    reliability_threshold_low: float
+    reliability_threshold_high: float
     updated_at: datetime
