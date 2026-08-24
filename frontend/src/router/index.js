@@ -5,6 +5,7 @@ import DashboardView from '@/views/DashboardView.vue'
 import LoginView from '@/views/LoginView.vue'
 import AdminImportsView from '@/views/AdminImportsView.vue'
 import AdminSettingsView from '@/views/AdminSettingsView.vue'
+import AdminGamesView from '@/views/AdminGamesView.vue'
 
 const routes = [
   { path: '/', name: 'dashboard', component: DashboardView },
@@ -19,6 +20,12 @@ const routes = [
     path: '/admin/settings',
     name: 'admin-settings',
     component: AdminSettingsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/games',
+    name: 'admin-games',
+    component: AdminGamesView,
     meta: { requiresAuth: true },
   },
 ]

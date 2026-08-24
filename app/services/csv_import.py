@@ -1,10 +1,11 @@
 """Import des exports CSV Basketball-Reference (téléchargés manuellement).
 
-Quatre types de fichiers reconnus :
+Cinq types de fichiers reconnus :
 - teams_home_away  : table "Expanded Standings" (colonnes Team/Home/Road) -> Team.win_pct_home/away
 - players_advanced : table "Advanced" (colonne PER)                       -> Player.per
 - players_per_game : table "Per Game" (colonne MP = minutes/match)        -> Player.mpg
 - draft             : table de la page Draft (colonnes Pk/Tm/Player)       -> Player (création rookie) + draft_pick
+- schedule          : export "Games" (colonnes Date/Start (ET)/Visitor/Home) -> Game (upsert)
 
 Chacun des trois premiers types peut en plus être importé pour la saison
 PRÉCÉDENTE (season_type="previous", voir app/api/imports.py) : les données
@@ -14,11 +15,13 @@ dans Player/Team courants), pour la détection des transferts (Étape 6bis).
 from __future__ import annotations
 
 import io
+import re
+from datetime import datetime, time, timedelta
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models import ImportType, Player, PreviousSeasonPlayerStat, Team
+from app.models import Game, GameStatus, ImportType, Player, PreviousSeasonPlayerStat, Team
 from app.services.nba_teams import ABBREVIATION_TO_NAME, NBA_TEAMS, resolve_team_name
 
 REQUIRED_COLUMNS: dict[ImportType, set[str]] = {
@@ -26,12 +29,15 @@ REQUIRED_COLUMNS: dict[ImportType, set[str]] = {
     ImportType.PLAYERS_ADVANCED: {"Player", "Team", "PER"},
     ImportType.PLAYERS_PER_GAME: {"Player", "Team", "MP"},
     ImportType.DRAFT: {"Pk", "Tm", "Player"},
+    ImportType.SCHEDULE: {"Date", "Start (ET)", "Visitor/Neutral", "Home/Neutral"},
 }
 
 # Basketball-Reference ajoute une ligne agrégée "TOT" (toutes équipes
 # confondues) pour un joueur échangé en cours de saison, en plus d'une ligne
 # par équipe jouée. Sans objet pour nous : jamais une "vraie" équipe.
 _AGGREGATE_TEAM_MARKER = "TOT"
+
+_SCHEDULE_TIME_PATTERN = re.compile(r"^(\d{1,2}):(\d{2})([ap])$", re.IGNORECASE)
 
 
 class CsvImportError(Exception):
@@ -53,6 +59,8 @@ def read_csv(file_bytes: bytes) -> pd.DataFrame:
 
 def detect_import_type(df: pd.DataFrame) -> ImportType | None:
     columns = set(df.columns)
+    if {"Date", "Visitor/Neutral", "Home/Neutral"}.issubset(columns):
+        return ImportType.SCHEDULE
     if {"Pk", "Tm", "Player"}.issubset(columns):
         return ImportType.DRAFT
     if {"Player", "PER"}.issubset(columns):
@@ -221,6 +229,110 @@ def parse_draft(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
     return parsed, errors
 
 
+def _parse_schedule_time(raw: str) -> time | None:
+    """"3:00p" -> 15:00, "10:30a" -> 10:30, "12:00p" -> 12:00 (midi),
+    "12:00a" -> 00:00 (minuit)."""
+    match = _SCHEDULE_TIME_PATTERN.match(raw.strip())
+    if match is None:
+        return None
+    hour, minute, meridiem = int(match.group(1)), int(match.group(2)), match.group(3).lower()
+    if not (1 <= hour <= 12 and 0 <= minute <= 59):
+        return None
+    if hour == 12:
+        hour = 0
+    if meridiem == "p":
+        hour += 12
+    return time(hour=hour, minute=minute)
+
+
+def parse_schedule(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    """Le fichier attendu est un export Basketball-Reference "Games" tel
+    quel. Deux anomalies structurelles sont volontairement traitées comme
+    des ERREURS DE LIGNE explicites plutôt qu'ignorées silencieusement :
+
+    - une ligne d'en-tête répétée (`Date == "Date"`) ne peut survenir que si
+      plusieurs exports mensuels ont été collés sans retirer les en-têtes
+      intermédiaires -- signe d'un fichier mal assemblé, à corriger avant
+      import plutôt qu'à masquer ;
+    - une ligne entièrement vide, même raison.
+
+    (Contrairement aux lignes Tm="TOT" de l'Étape 6bis, qui sont un artefact
+    garanti et légitime du format Basketball-Reference dès qu'un joueur est
+    échangé -- pas le signe d'une erreur de préparation du fichier.)
+    """
+    parsed: list[dict] = []
+    errors: list[dict] = []
+    for idx, row in df.iterrows():
+        row_num = int(idx) + 2
+
+        if row.isna().all():
+            errors.append({"row": row_num, "message": "Ligne vide"})
+            continue
+
+        raw_date = str(row.get("Date", "")).strip()
+        if raw_date == "Date":
+            errors.append(
+                {"row": row_num, "message": "En-tête de colonnes répétée — fichier probablement mal assemblé"}
+            )
+            continue
+
+        raw_visitor = str(row.get("Visitor/Neutral", "")).strip()
+        raw_home = str(row.get("Home/Neutral", "")).strip()
+        raw_time = str(row.get("Start (ET)", "")).strip()
+        if not raw_date or not raw_visitor or not raw_home or not raw_time:
+            errors.append({"row": row_num, "message": "Colonne Date, Start (ET), Visitor/Neutral ou Home/Neutral manquante"})
+            continue
+
+        try:
+            game_date = datetime.strptime(raw_date, "%a %b %d %Y").date()
+        except ValueError:
+            errors.append({"row": row_num, "message": f"Date invalide : {raw_date!r}"})
+            continue
+
+        game_time = _parse_schedule_time(raw_time)
+        if game_time is None:
+            errors.append({"row": row_num, "message": f"Heure invalide : {raw_time!r}"})
+            continue
+
+        away_full_name = resolve_team_name(raw_visitor)
+        if away_full_name is None:
+            errors.append({"row": row_num, "message": f"Équipe inconnue : {raw_visitor!r}"})
+            continue
+        home_full_name = resolve_team_name(raw_home)
+        if home_full_name is None:
+            errors.append({"row": row_num, "message": f"Équipe inconnue : {raw_home!r}"})
+            continue
+
+        away_pts_raw = row.get("PTS")
+        home_pts_raw = row.get("PTS.1")
+        away_has_score = pd.notna(away_pts_raw) and str(away_pts_raw).strip() != ""
+        home_has_score = pd.notna(home_pts_raw) and str(home_pts_raw).strip() != ""
+        if away_has_score != home_has_score:
+            errors.append({"row": row_num, "message": "Score partiel (une seule des deux équipes a un score renseigné)"})
+            continue
+
+        away_score = home_score = None
+        if away_has_score and home_has_score:
+            try:
+                away_score = int(float(away_pts_raw))
+                home_score = int(float(home_pts_raw))
+            except (ValueError, TypeError):
+                errors.append({"row": row_num, "message": "Score invalide"})
+                continue
+
+        parsed.append(
+            {
+                "game_date": game_date,
+                "game_time": game_time,
+                "away_team_abbreviation": NBA_TEAMS[away_full_name],
+                "home_team_abbreviation": NBA_TEAMS[home_full_name],
+                "away_score": away_score,
+                "home_score": home_score,
+            }
+        )
+    return parsed, errors
+
+
 def apply_teams_home_away(parsed: list[dict], db: Session) -> int:
     count = 0
     for item in parsed:
@@ -368,13 +480,81 @@ def apply_players_per_game_prev_season(parsed: list[dict], db: Session, season: 
     return count
 
 
+def apply_schedule(parsed: list[dict], db: Session, season: str) -> int:
+    """Upsert par (date, équipe domicile, équipe extérieure) -- l'heure
+    n'entre pas dans la clé, pour qu'un ré-import avec un horaire corrigé
+    (changement de diffuseur TV, "flex scheduling") mette à jour la ligne
+    existante plutôt que d'en créer une deuxième.
+
+    Protection anti-régression : un Game déjà FINISHED n'est jamais
+    rétrogradé vers SCHEDULED si la ligne réimportée n'a plus de score (ex:
+    réimport accidentel d'un fichier plus ancien) -- le score/statut
+    existant est alors préservé, seule la date/heure est mise à jour.
+
+    Protection manually_overridden : un Game corrigé manuellement par
+    l'admin (formulaire de report/score, voir app/api/games.py) n'est
+    jamais modifié par le réimport -- ni date, ni score, ni statut."""
+    count = 0
+    cache: dict[tuple, Game] = {}
+    for item in parsed:
+        home_team = _get_or_create_team(db, item["home_team_abbreviation"])
+        away_team = _get_or_create_team(db, item["away_team_abbreviation"])
+        key = (item["game_date"], home_team.id, away_team.id)
+
+        game = cache.get(key)
+        if game is None:
+            day_start = datetime.combine(item["game_date"], time.min)
+            day_end = day_start + timedelta(days=1)
+            game = (
+                db.query(Game)
+                .filter(
+                    Game.home_team_id == home_team.id,
+                    Game.away_team_id == away_team.id,
+                    Game.game_date >= day_start,
+                    Game.game_date < day_end,
+                )
+                .one_or_none()
+            )
+        if game is None:
+            game = Game(home_team_id=home_team.id, away_team_id=away_team.id, status=GameStatus.SCHEDULED)
+            db.add(game)
+
+        cache[key] = game
+        count += 1
+
+        if game.manually_overridden:
+            continue
+
+        game.season = season
+        game.game_date = datetime.combine(item["game_date"], item["game_time"])
+
+        if item["home_score"] is not None and item["away_score"] is not None:
+            game.status = GameStatus.FINISHED
+            game.home_score = item["home_score"]
+            game.away_score = item["away_score"]
+        elif game.status != GameStatus.FINISHED:
+            game.status = GameStatus.SCHEDULED
+            game.home_score = None
+            game.away_score = None
+        # sinon : déjà FINISHED et la ligne réimportée n'a pas de score ->
+        # on ne touche pas au statut/score existant.
+    db.flush()
+    return count
+
+
 PARSERS = {
     ImportType.TEAMS_HOME_AWAY: parse_teams_home_away,
     ImportType.PLAYERS_ADVANCED: parse_players_advanced,
     ImportType.PLAYERS_PER_GAME: parse_players_per_game,
     ImportType.DRAFT: parse_draft,
+    ImportType.SCHEDULE: parse_schedule,
 }
 
+# NB: apply_schedule n'apparaît pas ici -- signature (parsed, db, season),
+# comme les appliers "saison précédente" (season toujours requis pour ce
+# type, indépendamment de season_type). Appelé directement par
+# app/api/imports.py, comme DRAFT y est déjà spécialisé pour la raison
+# inverse (season_type ignoré).
 APPLIERS = {
     ImportType.TEAMS_HOME_AWAY: apply_teams_home_away,
     ImportType.PLAYERS_ADVANCED: apply_players_advanced,

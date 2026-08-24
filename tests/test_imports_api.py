@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models import ImportHistory, Player, Team
+from app.models import Game, GameStatus, ImportHistory, Player, Team
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -119,3 +119,40 @@ def test_import_history_defaults_to_current_season(client, db_session, auth_head
     history = db_session.query(ImportHistory).one()
     assert history.season_type.value == "current"
     assert history.season is None
+
+
+# --- Étape 6ter : calendrier de saison --------------------------------------
+
+
+def test_schedule_import_without_season_returns_400(client, auth_headers):
+    response = _upload(client, "calendrier_saison_26_27.csv", dry_run=True, headers=auth_headers)
+    assert response.status_code == 400
+    assert "season" in response.json()["detail"]
+
+
+def test_schedule_dry_run_reports_malformed_rows_as_errors(client, auth_headers):
+    response = _upload(
+        client, "calendrier_saison_26_27.csv", dry_run=True, headers=auth_headers, season="2026-2027"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["import_type"] == "schedule"
+    assert body["row_count"] == 1200
+    assert body["error_count"] == 7
+    assert body["season"] == "2026-2027"
+
+
+def test_schedule_confirmed_import_creates_games(client, db_session, auth_headers):
+    response = _upload(
+        client, "calendrier_saison_26_27.csv", dry_run=False, headers=auth_headers, season="2026-2027"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["import_history"]["import_type"] == "schedule"
+    assert body["import_history"]["row_count"] == 1200
+    assert body["import_history"]["error_count"] == 7
+    assert body["import_history"]["status"] == "partial"  # des lignes valides ET des erreurs
+
+    assert db_session.query(Game).count() == 1200
+    assert db_session.query(Game).filter(Game.status == GameStatus.SCHEDULED).count() == 1200
+    assert db_session.query(Game).filter(Game.season == "2026-2027").count() == 1200

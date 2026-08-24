@@ -1,0 +1,137 @@
+from datetime import date, datetime, timedelta
+
+from app.models import Game, GameStatus, Team
+
+SEASON = "2025-2026"
+
+
+def _teams(db_session) -> tuple[Team, Team]:
+    home = Team(
+        name="Boston Celtics",
+        abbreviation="BOS",
+        win_pct_home=0.8,
+        win_pct_away=0.5,
+        win_pct_home_prev_season=0.7,
+        win_pct_away_prev_season=0.4,
+    )
+    away = Team(
+        name="Los Angeles Lakers",
+        abbreviation="LAL",
+        win_pct_home=0.6,
+        win_pct_away=0.3,
+        win_pct_home_prev_season=0.5,
+        win_pct_away_prev_season=0.2,
+    )
+    db_session.add_all([home, away])
+    db_session.flush()
+    return home, away
+
+
+def _game(db_session, home: Team, away: Team, game_date: date) -> Game:
+    game = Game(
+        season=SEASON,
+        game_date=datetime.combine(game_date, datetime.min.time()).replace(hour=19),
+        home_team_id=home.id,
+        away_team_id=away.id,
+        status=GameStatus.SCHEDULED,
+    )
+    db_session.add(game)
+    db_session.flush()
+    return game
+
+
+def test_list_games_is_public(client, db_session):
+    home, away = _teams(db_session)
+    game_date = date.today()
+    _game(db_session, home, away, game_date)
+
+    response = client.get("/api/games", params={"date": game_date.isoformat()})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["home_team_name"] == "Boston Celtics"
+    assert body[0]["manually_overridden"] is False
+
+
+def test_update_game_requires_authentication(client, db_session):
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+
+    response = client.patch(f"/api/games/{game.id}", json={"home_score": 100})
+    assert response.status_code == 401
+
+
+def test_update_game_unknown_id_returns_404(client, auth_headers):
+    response = client.patch("/api/games/999999", json={"home_score": 100}, headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_update_game_reschedule_only_does_not_lock_out_sync(client, db_session, auth_headers):
+    """Scénario demandé explicitement : correction de la date d'un match
+    reporté (pas encore joué, aucun score) doit pouvoir laisser
+    manually_overridden=False si le frontend l'envoie explicitement --
+    le match reste éligible à un futur sync automatique de son score."""
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+    new_date = datetime.combine(date.today() + timedelta(days=2), datetime.min.time()).replace(hour=20)
+
+    response = client.patch(
+        f"/api/games/{game.id}",
+        json={"game_date": new_date.isoformat(), "manually_overridden": False},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["manually_overridden"] is False
+    db_session.refresh(game)
+    assert game.manually_overridden is False
+    assert game.game_date == new_date
+
+
+def test_update_game_manual_score_locks_out_sync_when_flagged(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+
+    response = client.patch(
+        f"/api/games/{game.id}",
+        json={"home_score": 101, "away_score": 98, "manually_overridden": True},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["manually_overridden"] is True
+    assert body["status"] == "finished"
+    assert body["home_score"] == 101
+    assert body["away_score"] == 98
+
+
+def test_update_game_scores_without_status_auto_finishes(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+
+    response = client.patch(
+        f"/api/games/{game.id}",
+        json={"home_score": 110, "away_score": 105},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "finished"
+
+
+def test_update_game_without_manually_overridden_field_leaves_existing_value(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+    game.manually_overridden = True
+    db_session.flush()
+
+    response = client.patch(
+        f"/api/games/{game.id}",
+        json={"home_score": 100, "away_score": 90},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["manually_overridden"] is True

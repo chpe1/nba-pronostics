@@ -12,13 +12,13 @@ Usage :
 """
 import argparse
 import sys
-from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.database import SessionLocal  # noqa: E402
 from app.models import Game, InjuryStatus, Player, Prediction, Team  # noqa: E402
+from app.services.nba_calendar import current_nba_date  # noqa: E402
 from tests.simulation_data import build_league, create_full_slate  # noqa: E402
 
 
@@ -69,7 +69,7 @@ def main() -> None:
         if args.reset:
             reset_existing_data(db)
 
-        league = build_league(db, target_date=date.today())
+        league = build_league(db, target_date=current_nba_date())
         apply_sample_injuries(league)
         games = create_full_slate(db, league)
         db.commit()

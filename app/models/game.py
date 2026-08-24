@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -37,6 +37,12 @@ class Game(Base):
     status: Mapped[GameStatus] = mapped_column(
         Enum(GameStatus), default=GameStatus.SCHEDULED, nullable=False
     )
+
+    # Verrouille ce match hors des mises à jour automatiques (réimport CSV du
+    # calendrier, synchro balldontlie.io) : posé explicitement par l'admin
+    # depuis le formulaire de correction manuelle (date reportée, score saisi
+    # à la main). Ne doit jamais être mis à True implicitement par le backend.
+    manually_overridden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

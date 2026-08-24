@@ -30,7 +30,10 @@ async function upload(dryRun) {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
     const params = new URLSearchParams({ dry_run: dryRun, season_type: seasonType.value })
-    if (seasonType.value === 'previous') {
+    // Toujours envoyé si renseigné : requis pour un calendrier de matchs
+    // (indépendamment du sélecteur courant/précédent, sans objet pour ce
+    // type de fichier), optionnel sinon.
+    if (season.value.trim()) {
       params.set('season', season.value.trim())
     }
     const result = await apiFetch(`/api/imports/stats?${params.toString()}`, {
@@ -66,7 +69,7 @@ async function upload(dryRun) {
     />
 
     <fieldset class="mb-3 text-sm text-gray-700">
-      <legend class="mb-1 font-medium text-gray-900">Saison (équipes / joueurs uniquement — sans objet pour la draft)</legend>
+      <legend class="mb-1 font-medium text-gray-900">Saison (équipes / joueurs — sans objet pour la draft)</legend>
       <label class="mr-4 inline-flex items-center gap-1">
         <input v-model="seasonType" type="radio" value="current" />
         Saison courante
@@ -76,12 +79,14 @@ async function upload(dryRun) {
         Saison précédente
       </label>
       <input
-        v-if="seasonType === 'previous'"
         v-model="season"
         type="text"
-        placeholder="ex: 2024-2025"
+        placeholder="ex: 2026-2027"
         class="mt-2 block w-40 rounded-lg border border-gray-300 px-2 py-1 text-sm"
       />
+      <p class="mt-1 text-xs text-gray-500">
+        Requis pour un calendrier de matchs (le sélecteur ci-dessus est alors sans effet) ou pour "Saison précédente" ; laissez vide sinon.
+      </p>
     </fieldset>
 
     <div class="flex gap-2">
@@ -111,7 +116,7 @@ async function upload(dryRun) {
     <div v-if="preview" class="mt-4 text-sm">
       <p class="mb-2 text-gray-700">
         Type détecté : <strong>{{ preview.import_type }}</strong>
-        <span v-if="preview.season_type === 'previous'"> (saison {{ preview.season }})</span> —
+        <span v-if="preview.season"> (saison {{ preview.season }})</span> —
         {{ preview.row_count }} ligne(s) valide(s), {{ preview.error_count }} erreur(s).
       </p>
 

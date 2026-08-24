@@ -9,6 +9,7 @@ from app.core.security import get_current_admin
 from app.database import get_db
 from app.models import Game, Prediction, Settings
 from app.schemas.prediction import GameWithPredictionRead, PredictionRead, RecentRecordRead
+from app.services.nba_calendar import current_nba_date
 from app.services.pronostic_calculator import compute_recent_record, save_prediction
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
@@ -37,7 +38,7 @@ def _get_or_create_settings(db: Session) -> Settings:
 
 @router.get("/today", response_model=list[GameWithPredictionRead])
 def get_today_predictions(
-    date_param: date = Query(default_factory=date.today, alias="date"),
+    date_param: date = Query(default_factory=current_nba_date, alias="date"),
     db: Session = Depends(get_db),
 ):
     """Route publique (dashboard) : liste les matchs de la date donnée
@@ -94,7 +95,7 @@ def get_today_predictions(
     dependencies=[Depends(get_current_admin)],
 )
 def recalculate_predictions(
-    date_param: date = Query(default_factory=date.today, alias="date"),
+    date_param: date = Query(default_factory=current_nba_date, alias="date"),
     db: Session = Depends(get_db),
 ):
     """Route back-office (protégée) : recalcule et sauvegarde le pronostic de

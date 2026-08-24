@@ -48,15 +48,31 @@ async def import_stats(
             detail=f"Colonnes manquantes pour {detected_type.value} : {', '.join(missing)}",
         )
 
-    # La draft n'a pas de notion de saison précédente (toujours l'effectif actuel).
-    effective_season_type = SeasonType.CURRENT if detected_type == ImportType.DRAFT else season_type
-
-    if effective_season_type == SeasonType.PREVIOUS:
+    # La draft n'a pas de notion de saison précédente (toujours l'effectif
+    # actuel). Le calendrier n'a pas cette notion non plus, mais pour la
+    # raison inverse : `season` y est TOUJOURS requis (pas de "courant" par
+    # défaut déductible des dates, cf. plan-etape6ter.md).
+    if detected_type == ImportType.SCHEDULE:
+        effective_season_type = SeasonType.CURRENT
         if not season:
+            raise HTTPException(
+                status_code=400,
+                detail="Le paramètre 'season' (ex: '2026-2027') est requis pour importer un calendrier.",
+            )
+    elif detected_type == ImportType.DRAFT:
+        effective_season_type = SeasonType.CURRENT
+    else:
+        effective_season_type = season_type
+        if effective_season_type == SeasonType.PREVIOUS and not season:
             raise HTTPException(
                 status_code=400,
                 detail="Le paramètre 'season' (ex: '2024-2025') est requis pour un import de saison précédente.",
             )
+
+    if detected_type == ImportType.SCHEDULE:
+        parser = csv_import.PARSERS[detected_type]
+        applier = None  # apply_schedule appelé directement plus bas (signature dédiée)
+    elif effective_season_type == SeasonType.PREVIOUS:
         parser = csv_import.PREV_SEASON_PARSERS[detected_type]
         applier = csv_import.PREV_SEASON_APPLIERS[detected_type]
     else:
@@ -75,10 +91,12 @@ async def import_stats(
             sample_rows=parsed[:10],
             errors=errors,
             season_type=effective_season_type,
-            season=season if effective_season_type == SeasonType.PREVIOUS else None,
+            season=season if detected_type == ImportType.SCHEDULE or effective_season_type == SeasonType.PREVIOUS else None,
         )
 
-    if effective_season_type == SeasonType.PREVIOUS:
+    if detected_type == ImportType.SCHEDULE:
+        row_count = csv_import.apply_schedule(parsed, db, season)
+    elif effective_season_type == SeasonType.PREVIOUS:
         row_count = applier(parsed, db, season)
     else:
         row_count = applier(parsed, db)
@@ -98,7 +116,7 @@ async def import_stats(
         status=status,
         errors=errors,
         season_type=effective_season_type,
-        season=season if effective_season_type == SeasonType.PREVIOUS else None,
+        season=season if detected_type == ImportType.SCHEDULE or effective_season_type == SeasonType.PREVIOUS else None,
     )
     db.add(history)
     db.commit()

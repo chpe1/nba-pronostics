@@ -1,9 +1,10 @@
+from datetime import date, time
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from app.models import ImportType, Player, PreviousSeasonPlayerStat, Team
+from app.models import Game, GameStatus, ImportType, Player, PreviousSeasonPlayerStat, Team
 from app.services import csv_import
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -258,3 +259,208 @@ def test_prev_season_stat_does_not_pollute_current_player_queries(db_session):
     assert current_player.team_id == team.id
     assert current_player.per == pytest.approx(99.0)
     assert db_session.query(Player).filter(Player.name == "Stable Player").count() == 1
+
+
+# --- Calendrier de saison (Étape 6ter) ---------------------------------------
+
+
+def _schedule_df(rows: list[dict]) -> pd.DataFrame:
+    columns = ["Date", "Start (ET)", "Visitor/Neutral", "PTS", "Home/Neutral", "PTS.1"]
+    return pd.DataFrame(rows, columns=columns)
+
+
+def test_detect_schedule():
+    df = _read("calendrier_saison_26_27.csv")
+    assert csv_import.detect_import_type(df) == ImportType.SCHEDULE
+    assert csv_import.validate_columns(df, ImportType.SCHEDULE) == []
+
+
+def test_schedule_real_fixture_reports_malformed_rows_as_explicit_errors_by_line_number():
+    """Le fichier réel contient 6 en-têtes répétées + 1 ligne vide, dues à un
+    assemblage manuel fautif (plusieurs exports mensuels collés sans retirer
+    les en-têtes intermédiaires) -- PAS un artefact légitime et garanti comme
+    les lignes Tm="TOT" de l'Étape 6bis. Elles doivent remonter comme erreurs
+    explicites, identifiées par leur numéro de ligne exact, pas être
+    ignorées silencieusement ni comptées dans l'import réussi."""
+    df = _read("calendrier_saison_26_27.csv")
+    parsed, errors = csv_import.parse_schedule(df)
+
+    assert len(parsed) == 1200
+    assert len(errors) == 7
+
+    error_rows = {e["row"]: e["message"] for e in errors}
+    for expected_row in [90, 306, 479, 717, 887, 1120]:
+        assert expected_row in error_rows
+        assert "en-tête" in error_rows[expected_row].lower() or "en-t" in error_rows[expected_row].lower()
+    assert 480 in error_rows
+    assert "vide" in error_rows[480].lower()
+
+
+def test_schedule_real_fixture_parsed_rows_have_no_score_yet():
+    df = _read("calendrier_saison_26_27.csv")
+    parsed, _ = csv_import.parse_schedule(df)
+    assert all(item["home_score"] is None and item["away_score"] is None for item in parsed)
+    first = parsed[0]
+    assert first["game_date"] == date(2026, 10, 20)
+    assert first["game_time"] == time(15, 0)
+    assert first["away_team_abbreviation"] == "BOS"
+    assert first["home_team_abbreviation"] == "DET"
+
+
+@pytest.mark.parametrize(
+    "raw_time, expected",
+    [
+        ("3:00p", time(15, 0)),
+        ("10:30a", time(10, 30)),
+        ("12:00p", time(12, 0)),  # midi
+        ("12:00a", time(0, 0)),  # minuit
+        ("9:00a", time(9, 0)),
+    ],
+)
+def test_parse_schedule_time_edge_cases(raw_time, expected):
+    df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": raw_time, "Visitor/Neutral": "Boston Celtics",
+          "PTS": None, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed, errors = csv_import.parse_schedule(df)
+    assert errors == []
+    assert parsed[0]["game_time"] == expected
+
+
+def test_parse_schedule_unknown_team_reports_error():
+    df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Not A Real Team",
+          "PTS": None, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed, errors = csv_import.parse_schedule(df)
+    assert parsed == []
+    assert "inconnue" in errors[0]["message"]
+
+
+def test_parse_schedule_invalid_date_reports_error():
+    df = _schedule_df(
+        [{"Date": "Not A Date", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": None, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed, errors = csv_import.parse_schedule(df)
+    assert parsed == []
+    assert "invalide" in errors[0]["message"].lower()
+
+
+def test_parse_schedule_partial_score_reports_error():
+    df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": 100, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed, errors = csv_import.parse_schedule(df)
+    assert parsed == []
+    assert "partiel" in errors[0]["message"].lower()
+
+
+def test_parse_schedule_full_score_marks_finished():
+    df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": 100, "Home/Neutral": "Detroit Pistons", "PTS.1": 98}]
+    )
+    parsed, errors = csv_import.parse_schedule(df)
+    assert errors == []
+    assert parsed[0]["away_score"] == 100
+    assert parsed[0]["home_score"] == 98
+
+
+def test_apply_schedule_creates_scheduled_game_without_score(db_session):
+    df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": None, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed, _ = csv_import.parse_schedule(df)
+    count = csv_import.apply_schedule(parsed, db_session, season="2026-2027")
+
+    assert count == 1
+    game = db_session.query(Game).one()
+    assert game.status == GameStatus.SCHEDULED
+    assert game.season == "2026-2027"
+    assert game.home_score is None and game.away_score is None
+    assert game.game_date.hour == 19
+
+
+def test_apply_schedule_creates_finished_game_with_score(db_session):
+    df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": 100, "Home/Neutral": "Detroit Pistons", "PTS.1": 98}]
+    )
+    parsed, _ = csv_import.parse_schedule(df)
+    csv_import.apply_schedule(parsed, db_session, season="2026-2027")
+
+    game = db_session.query(Game).one()
+    assert game.status == GameStatus.FINISHED
+    assert game.home_score == 98
+    assert game.away_score == 100
+
+
+def test_apply_schedule_upsert_by_date_and_teams_updates_time_without_duplicating(db_session):
+    df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": None, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed, _ = csv_import.parse_schedule(df)
+    csv_import.apply_schedule(parsed, db_session, season="2026-2027")
+
+    df2 = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "9:30p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": None, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed2, _ = csv_import.parse_schedule(df2)
+    csv_import.apply_schedule(parsed2, db_session, season="2026-2027")
+
+    assert db_session.query(Game).count() == 1
+    game = db_session.query(Game).one()
+    assert game.game_date.hour == 21 and game.game_date.minute == 30
+
+
+def test_apply_schedule_never_downgrades_finished_game_on_stale_reimport(db_session):
+    scored_df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": 100, "Home/Neutral": "Detroit Pistons", "PTS.1": 98}]
+    )
+    parsed, _ = csv_import.parse_schedule(scored_df)
+    csv_import.apply_schedule(parsed, db_session, season="2026-2027")
+
+    stale_df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": None, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed_stale, _ = csv_import.parse_schedule(stale_df)
+    csv_import.apply_schedule(parsed_stale, db_session, season="2026-2027")
+
+    assert db_session.query(Game).count() == 1
+    game = db_session.query(Game).one()
+    assert game.status == GameStatus.FINISHED
+    assert game.home_score == 98
+    assert game.away_score == 100
+
+
+def test_apply_schedule_never_touches_manually_overridden_game(db_session):
+    df = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "7:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": None, "Home/Neutral": "Detroit Pistons", "PTS.1": None}]
+    )
+    parsed, _ = csv_import.parse_schedule(df)
+    csv_import.apply_schedule(parsed, db_session, season="2026-2027")
+
+    game = db_session.query(Game).one()
+    game.manually_overridden = True
+    game.game_date = game.game_date.replace(hour=22, minute=15)
+    db_session.flush()
+
+    df2 = _schedule_df(
+        [{"Date": "Tue Oct 20 2026", "Start (ET)": "8:00p", "Visitor/Neutral": "Boston Celtics",
+          "PTS": 100, "Home/Neutral": "Detroit Pistons", "PTS.1": 98}]
+    )
+    parsed2, _ = csv_import.parse_schedule(df2)
+    csv_import.apply_schedule(parsed2, db_session, season="2026-2027")
+
+    db_session.refresh(game)
+    assert game.status == GameStatus.SCHEDULED
+    assert game.home_score is None and game.away_score is None
+    assert game.game_date.hour == 22 and game.game_date.minute == 15
