@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.import_history import ImportStatus, ImportType
+from app.models.import_history import ImportStatus, ImportType, SeasonType
 
 
 class ImportErrorDetail(BaseModel):
@@ -20,6 +20,8 @@ class ImportHistoryRead(BaseModel):
     error_count: int
     status: ImportStatus
     errors: list[ImportErrorDetail]
+    season_type: SeasonType
+    season: str | None
     created_at: datetime
 
 
@@ -30,6 +32,8 @@ class ImportPreviewResponse(BaseModel):
     error_count: int
     sample_rows: list[dict]
     errors: list[ImportErrorDetail]
+    season_type: SeasonType
+    season: str | None = None
 
 
 class ImportResultResponse(BaseModel):

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
 from app.database import get_db
-from app.models import ImportHistory, ImportStatus, ImportType
+from app.models import ImportHistory, ImportStatus, ImportType, SeasonType
 from app.schemas import ImportHistoryRead, ImportPreviewResponse, ImportResultResponse
 from app.services import csv_import
 
@@ -18,6 +18,13 @@ async def import_stats(
     dry_run: bool = Query(True, description="Aperçu sans écriture en base si true"),
     import_type: ImportType | None = Query(
         None, description="Force le type de fichier au lieu de la détection auto"
+    ),
+    season_type: SeasonType = Query(
+        SeasonType.CURRENT,
+        description="Saison courante ou précédente (sans objet pour le type draft)",
+    ),
+    season: str | None = Query(
+        None, description="Libellé de la saison N-1, ex: '2024-2025' (requis si season_type=previous)"
     ),
     db: Session = Depends(get_db),
 ):
@@ -41,7 +48,22 @@ async def import_stats(
             detail=f"Colonnes manquantes pour {detected_type.value} : {', '.join(missing)}",
         )
 
-    parsed, errors = csv_import.PARSERS[detected_type](df)
+    # La draft n'a pas de notion de saison précédente (toujours l'effectif actuel).
+    effective_season_type = SeasonType.CURRENT if detected_type == ImportType.DRAFT else season_type
+
+    if effective_season_type == SeasonType.PREVIOUS:
+        if not season:
+            raise HTTPException(
+                status_code=400,
+                detail="Le paramètre 'season' (ex: '2024-2025') est requis pour un import de saison précédente.",
+            )
+        parser = csv_import.PREV_SEASON_PARSERS[detected_type]
+        applier = csv_import.PREV_SEASON_APPLIERS[detected_type]
+    else:
+        parser = csv_import.PARSERS[detected_type]
+        applier = csv_import.APPLIERS[detected_type]
+
+    parsed, errors = parser(df)
     filename = file.filename or "fichier.csv"
 
     if dry_run:
@@ -52,9 +74,14 @@ async def import_stats(
             error_count=len(errors),
             sample_rows=parsed[:10],
             errors=errors,
+            season_type=effective_season_type,
+            season=season if effective_season_type == SeasonType.PREVIOUS else None,
         )
 
-    row_count = csv_import.APPLIERS[detected_type](parsed, db)
+    if effective_season_type == SeasonType.PREVIOUS:
+        row_count = applier(parsed, db, season)
+    else:
+        row_count = applier(parsed, db)
 
     if errors and parsed:
         status = ImportStatus.PARTIAL
@@ -70,6 +97,8 @@ async def import_stats(
         error_count=len(errors),
         status=status,
         errors=errors,
+        season_type=effective_season_type,
+        season=season if effective_season_type == SeasonType.PREVIOUS else None,
     )
     db.add(history)
     db.commit()

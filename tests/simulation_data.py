@@ -225,15 +225,15 @@ def pad_games_played(db: Session, teams: dict[str, Team], target_date: date, gam
         i += 1
 
 
-def build_league(db: Session) -> League:
+def build_league(db: Session, target_date: date = TARGET_DATE) -> League:
     teams = create_teams(db)
     rosters = create_rosters(db, teams)
-    setup_calendar_history(db, teams, TARGET_DATE)
-    pad_games_played(db, teams, TARGET_DATE)
+    setup_calendar_history(db, teams, target_date)
+    pad_games_played(db, teams, target_date)
     return League(
         teams=teams,
         rosters=rosters,
-        target_date=TARGET_DATE,
+        target_date=target_date,
         back_to_back_team="MIA",
         three_in_four_team="CHI",
         rested_team="DET",
@@ -243,9 +243,14 @@ def build_league(db: Session) -> League:
 
 def create_full_slate(db: Session, league: League) -> list[Game]:
     """Une petite journée complète de matchs, toutes équipes confondues,
-    pour le garde-fou "aucun spread aberrant" (scénario 9)."""
+    pour le garde-fou "aucun spread aberrant" (scénario 9). Datée sur
+    `league.target_date`, pas systématiquement TARGET_DATE -- cohérent avec
+    la date utilisée pour construire cette League (voir build_league)."""
     pairings = [
         ("BOS", "DET"), ("DEN", "CHA"), ("MIA", "CHI"),
         ("BOS", "CHI"), ("DEN", "DET"), ("MIA", "CHA"),
     ]
-    return [create_scheduled_game(db, league.teams[h], league.teams[a]) for h, a in pairings]
+    return [
+        create_scheduled_game(db, league.teams[h], league.teams[a], game_date=league.target_date)
+        for h, a in pairings
+    ]

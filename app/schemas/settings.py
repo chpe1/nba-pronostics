@@ -12,6 +12,7 @@ class SettingsUpdate(BaseModel):
     draft_bonus_config: dict | None = None
     reliability_threshold_low: float | None = None
     reliability_threshold_high: float | None = None
+    transfer_impact_multiplier: float | None = None
 
 
 class SettingsRead(BaseModel):
@@ -26,4 +27,5 @@ class SettingsRead(BaseModel):
     draft_bonus_config: dict
     reliability_threshold_low: float
     reliability_threshold_high: float
+    transfer_impact_multiplier: float
     updated_at: datetime

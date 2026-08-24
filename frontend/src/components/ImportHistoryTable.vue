@@ -29,6 +29,7 @@ function formatDate(value) {
           <th class="border-b p-2 font-medium">Date</th>
           <th class="border-b p-2 font-medium">Fichier</th>
           <th class="border-b p-2 font-medium">Type</th>
+          <th class="border-b p-2 font-medium">Saison</th>
           <th class="border-b p-2 font-medium">Lignes</th>
           <th class="border-b p-2 font-medium">Statut</th>
         </tr>
@@ -38,6 +39,7 @@ function formatDate(value) {
           <td class="border-b p-2">{{ formatDate(entry.created_at) }}</td>
           <td class="border-b p-2">{{ entry.filename }}</td>
           <td class="border-b p-2">{{ entry.import_type }}</td>
+          <td class="border-b p-2">{{ entry.season_type === 'previous' ? entry.season : 'courante' }}</td>
           <td class="border-b p-2">{{ entry.row_count }} ({{ entry.error_count }} erreur(s))</td>
           <td class="border-b p-2">
             <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="STATUS_STYLES[entry.status]">

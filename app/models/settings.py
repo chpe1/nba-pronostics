@@ -36,6 +36,11 @@ class Settings(Base):
     # Bonus Draft par pick, ex: {"1": 8.0, "2": 6.0, ...} (échelle 0-100 points)
     draft_bonus_config: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    # Curseur Bonus/Malus Transferts : pondère le PER (N-1) des joueurs
+    # transférés (Étape 6bis). Aligné par défaut sur per_impact_multiplier ;
+    # non validé par simulation (voir docs/calibrage-v1.md).
+    transfer_impact_multiplier: Mapped[float] = mapped_column(Float, default=0.4)
+
     # Seuils de l'Indice de Fiabilité, sur l'écart absolu entre les deux
     # notes finales : < low -> Faible, [low, high) -> Moyenne, >= high -> Forte.
     # Calibrés (V1) sur la distribution réelle des |spread| obtenue sur un

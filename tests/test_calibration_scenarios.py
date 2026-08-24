@@ -12,7 +12,7 @@ from datetime import timedelta
 
 import pytest
 
-from app.models import InjuryStatus, Player, ReliabilityLevel, Settings, Team
+from app.models import InjuryStatus, Player, PreviousSeasonPlayerStat, ReliabilityLevel, Settings, Team
 from app.services.pronostic_calculator import compute_matchup
 from tests.simulation_data import (
     TARGET_DATE,
@@ -34,6 +34,7 @@ def _calibrated_settings(**overrides) -> Settings:
         draft_bonus_config={"1": 8.0},
         reliability_threshold_low=7.0,
         reliability_threshold_high=30.0,
+        transfer_impact_multiplier=0.4,
     )
     defaults.update(overrides)
     return Settings(**defaults)
@@ -220,3 +221,37 @@ def test_full_slate_spreads_stay_within_sane_bounds(db_session, league, settings
 
     reliabilities = {r.reliability for r in results}
     assert len(reliabilities) >= 2  # le calendrier simulé produit une vraie variété
+
+
+# --- 10. Bonus/Malus Transferts, bout en bout (Étape 6bis) -------------------
+
+
+def test_transfer_bonus_affects_early_season_matchup_end_to_end(db_session, league, settings):
+    """CHA (déjà l'équipe "début de saison" du calendrier simulé) récupère
+    un joueur transféré depuis DET : vérifie l'effet sur compute_matchup,
+    pas seulement sur compute_team_note isolément."""
+    transferred_player = league.rosters["CHA"].others[0]
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season="2024-2025",
+            player_name=transferred_player.name,
+            team_abbreviation="DET",
+            per=18.0,
+            mpg=26.0,
+        )
+    )
+    db_session.flush()
+
+    game_without_transfer = create_scheduled_game(db_session, league.teams["CHA"], league.teams["MIA"])
+    baseline = compute_matchup(db_session, game_without_transfer, settings)
+
+    # On ne peut pas juste "annuler" le transfert : on compare avec une note
+    # calculée manuellement (bonus attendu = 18.0 * per_impact... non, *
+    # transfer_impact_multiplier).
+    expected_bonus = 18.0 * settings.transfer_impact_multiplier
+    assert baseline.home.transfer_adjustment == pytest.approx(expected_bonus)
+    assert baseline.home.final_note == pytest.approx(
+        baseline.home.note_de_base * settings.base_note_multiplier
+        + baseline.home.draft_bonus
+        + expected_bonus
+    )

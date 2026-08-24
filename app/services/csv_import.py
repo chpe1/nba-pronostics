@@ -1,9 +1,15 @@
 """Import des exports CSV Basketball-Reference (téléchargés manuellement).
 
-Trois types de fichiers reconnus :
+Quatre types de fichiers reconnus :
 - teams_home_away  : table "Expanded Standings" (colonnes Team/Home/Road) -> Team.win_pct_home/away
 - players_advanced : table "Advanced" (colonne PER)                       -> Player.per
 - players_per_game : table "Per Game" (colonne MP = minutes/match)        -> Player.mpg
+- draft             : table de la page Draft (colonnes Pk/Tm/Player)       -> Player (création rookie) + draft_pick
+
+Chacun des trois premiers types peut en plus être importé pour la saison
+PRÉCÉDENTE (season_type="previous", voir app/api/imports.py) : les données
+vont alors dans Team.*_prev_season ou dans PreviousSeasonPlayerStat (jamais
+dans Player/Team courants), pour la détection des transferts (Étape 6bis).
 """
 from __future__ import annotations
 
@@ -12,14 +18,20 @@ import io
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models import ImportType, Player, Team
+from app.models import ImportType, Player, PreviousSeasonPlayerStat, Team
 from app.services.nba_teams import ABBREVIATION_TO_NAME, NBA_TEAMS, resolve_team_name
 
 REQUIRED_COLUMNS: dict[ImportType, set[str]] = {
     ImportType.TEAMS_HOME_AWAY: {"Team", "Home", "Road"},
     ImportType.PLAYERS_ADVANCED: {"Player", "Team", "PER"},
     ImportType.PLAYERS_PER_GAME: {"Player", "Team", "MP"},
+    ImportType.DRAFT: {"Pk", "Tm", "Player"},
 }
+
+# Basketball-Reference ajoute une ligne agrégée "TOT" (toutes équipes
+# confondues) pour un joueur échangé en cours de saison, en plus d'une ligne
+# par équipe jouée. Sans objet pour nous : jamais une "vraie" équipe.
+_AGGREGATE_TEAM_MARKER = "TOT"
 
 
 class CsvImportError(Exception):
@@ -41,6 +53,8 @@ def read_csv(file_bytes: bytes) -> pd.DataFrame:
 
 def detect_import_type(df: pd.DataFrame) -> ImportType | None:
     columns = set(df.columns)
+    if {"Pk", "Tm", "Player"}.issubset(columns):
+        return ImportType.DRAFT
     if {"Player", "PER"}.issubset(columns):
         return ImportType.PLAYERS_ADVANCED
     if {"Player", "MP"}.issubset(columns) and "PER" not in columns:
@@ -132,6 +146,81 @@ def parse_players_per_game(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
     return _parse_players_common(df, value_column="MP", output_key="mpg")
 
 
+def _parse_players_common_prev_season(
+    df: pd.DataFrame, value_column: str, output_key: str
+) -> tuple[list[dict], list[dict]]:
+    """Variante de `_parse_players_common` pour un import saison N-1.
+
+    Les exports Advanced/Per Game de Basketball-Reference contiennent, pour
+    un joueur échangé en cours de saison N-1, une ligne par équipe jouée
+    *plus* une ligne agrégée `Tm="TOT"`. Cette ligne TOT est ignorée
+    silencieusement ici (ce n'est pas une erreur, juste une ligne à ne pas
+    importer) -- contrairement à `_parse_players_common`, qui la rejetterait
+    comme "équipe inconnue" puisqu'elle n'est utilisée que pour la saison
+    courante, où ce cas ne se présente pas dans notre usage.
+
+    Quand plusieurs lignes d'équipe réelles existent pour un même joueur
+    (trade en cours de saison N-1), elles sont toutes conservées dans
+    l'ordre du fichier : c'est l'upsert de `apply_*_prev_season` (par
+    `(season, player_name)`, sans l'équipe dans la clé) qui ne garde en
+    base que la DERNIÈRE rencontrée -- toujours l'équipe de fin de saison
+    chez Basketball-Reference.
+    """
+    parsed: list[dict] = []
+    errors: list[dict] = []
+    for idx, row in df.iterrows():
+        row_num = int(idx) + 2
+        name = str(row.get("Player", "")).strip()
+        team_abbr = str(row.get("Team", "")).strip()
+        if not name or not team_abbr:
+            errors.append({"row": row_num, "message": "Colonne Player ou Team manquante"})
+            continue
+        if team_abbr == _AGGREGATE_TEAM_MARKER:
+            continue
+        if team_abbr not in ABBREVIATION_TO_NAME:
+            errors.append({"row": row_num, "message": f"Équipe inconnue : {team_abbr!r}"})
+            continue
+        try:
+            value = float(row[value_column])
+        except (ValueError, TypeError, KeyError):
+            errors.append(
+                {"row": row_num, "message": f"{value_column} invalide pour {name!r}"}
+            )
+            continue
+        parsed.append({"name": name, "team_abbreviation": team_abbr, output_key: value})
+    return parsed, errors
+
+
+def parse_players_advanced_prev_season(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    return _parse_players_common_prev_season(df, value_column="PER", output_key="per")
+
+
+def parse_players_per_game_prev_season(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    return _parse_players_common_prev_season(df, value_column="MP", output_key="mpg")
+
+
+def parse_draft(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    parsed: list[dict] = []
+    errors: list[dict] = []
+    for idx, row in df.iterrows():
+        row_num = int(idx) + 2
+        name = str(row.get("Player", "")).strip()
+        team_abbr = str(row.get("Tm", "")).strip()
+        if not name or not team_abbr:
+            errors.append({"row": row_num, "message": "Colonne Player ou Tm manquante"})
+            continue
+        if team_abbr not in ABBREVIATION_TO_NAME:
+            errors.append({"row": row_num, "message": f"Équipe inconnue : {team_abbr!r}"})
+            continue
+        try:
+            pick = int(row["Pk"])
+        except (ValueError, TypeError, KeyError):
+            errors.append({"row": row_num, "message": f"Pk invalide pour {name!r}"})
+            continue
+        parsed.append({"name": name, "team_abbreviation": team_abbr, "draft_pick": pick})
+    return parsed, errors
+
+
 def apply_teams_home_away(parsed: list[dict], db: Session) -> int:
     count = 0
     for item in parsed:
@@ -191,14 +280,119 @@ def apply_players_per_game(parsed: list[dict], db: Session) -> int:
     return count
 
 
+def apply_draft(parsed: list[dict], db: Session) -> int:
+    """Crée le Player s'il n'existe pas encore (cas normal pour un rookie
+    sans stats), ou met juste à jour draft_pick sinon. Upsert par
+    (name, team_id) -- la même clé que apply_players_advanced/per_game -- de
+    sorte que l'arrivée ultérieure des vraies stats de ce joueur retrouve
+    cette même ligne au lieu d'en créer une deuxième."""
+    count = 0
+    for item in parsed:
+        team = _get_or_create_team(db, item["team_abbreviation"])
+        player = (
+            db.query(Player)
+            .filter(Player.name == item["name"], Player.team_id == team.id)
+            .one_or_none()
+        )
+        if player is None:
+            player = Player(name=item["name"], team_id=team.id)
+            db.add(player)
+        player.draft_pick = item["draft_pick"]
+        count += 1
+    db.flush()
+    return count
+
+
+def apply_teams_home_away_prev_season(parsed: list[dict], db: Session, season: str | None = None) -> int:
+    """Comme apply_teams_home_away, mais écrit dans les colonnes _prev_season
+    (Team n'a pas de notion de "saison" en tant que telle : une seule paire
+    de colonnes N-1, toujours écrasée par le dernier import précédent en
+    date -- `season` n'est pas utilisé ici, accepté seulement pour uniformiser
+    la signature avec les appliers joueurs N-1)."""
+    count = 0
+    for item in parsed:
+        team = db.query(Team).filter(Team.abbreviation == item["abbreviation"]).one_or_none()
+        if team is None:
+            team = Team(name=item["name"], abbreviation=item["abbreviation"])
+            db.add(team)
+        team.win_pct_home_prev_season = item["win_pct_home"]
+        team.win_pct_away_prev_season = item["win_pct_away"]
+        count += 1
+    db.flush()
+    return count
+
+
+def _upsert_prev_season_stat(
+    db: Session, cache: dict[str, PreviousSeasonPlayerStat], season: str, name: str, team_abbreviation: str
+) -> PreviousSeasonPlayerStat:
+    """La session applicative tourne avec autoflush=False : sans cache,
+    deux lignes pour le même joueur dans un seul appel (ex: équipes
+    successives d'un joueur échangé en cours de saison N-1) ne se
+    verraient pas l'une l'autre via une requête DB tant que flush() n'a pas
+    été appelé, et créeraient deux lignes en conflit avec la contrainte
+    UNIQUE(season, player_name) au lieu de fusionner en une seule."""
+    stat = cache.get(name)
+    if stat is None:
+        stat = (
+            db.query(PreviousSeasonPlayerStat)
+            .filter(PreviousSeasonPlayerStat.season == season, PreviousSeasonPlayerStat.player_name == name)
+            .one_or_none()
+        )
+    if stat is None:
+        stat = PreviousSeasonPlayerStat(season=season, player_name=name, team_abbreviation=team_abbreviation)
+        db.add(stat)
+    stat.team_abbreviation = team_abbreviation
+    cache[name] = stat
+    return stat
+
+
+def apply_players_advanced_prev_season(parsed: list[dict], db: Session, season: str) -> int:
+    count = 0
+    cache: dict[str, PreviousSeasonPlayerStat] = {}
+    for item in parsed:
+        stat = _upsert_prev_season_stat(db, cache, season, item["name"], item["team_abbreviation"])
+        stat.per = item["per"]
+        count += 1
+    db.flush()
+    return count
+
+
+def apply_players_per_game_prev_season(parsed: list[dict], db: Session, season: str) -> int:
+    count = 0
+    cache: dict[str, PreviousSeasonPlayerStat] = {}
+    for item in parsed:
+        stat = _upsert_prev_season_stat(db, cache, season, item["name"], item["team_abbreviation"])
+        stat.mpg = item["mpg"]
+        count += 1
+    db.flush()
+    return count
+
+
 PARSERS = {
     ImportType.TEAMS_HOME_AWAY: parse_teams_home_away,
     ImportType.PLAYERS_ADVANCED: parse_players_advanced,
     ImportType.PLAYERS_PER_GAME: parse_players_per_game,
+    ImportType.DRAFT: parse_draft,
 }
 
 APPLIERS = {
     ImportType.TEAMS_HOME_AWAY: apply_teams_home_away,
     ImportType.PLAYERS_ADVANCED: apply_players_advanced,
     ImportType.PLAYERS_PER_GAME: apply_players_per_game,
+    ImportType.DRAFT: apply_draft,
+}
+
+# Sans objet pour DRAFT (pas de notion de saison précédente).
+PREV_SEASON_PARSERS = {
+    ImportType.TEAMS_HOME_AWAY: parse_teams_home_away,
+    ImportType.PLAYERS_ADVANCED: parse_players_advanced_prev_season,
+    ImportType.PLAYERS_PER_GAME: parse_players_per_game_prev_season,
+}
+
+# Signature uniforme (parsed, db, season) pour simplifier le dispatch côté
+# API, même si apply_teams_home_away_prev_season ignore `season`.
+PREV_SEASON_APPLIERS = {
+    ImportType.TEAMS_HOME_AWAY: apply_teams_home_away_prev_season,
+    ImportType.PLAYERS_ADVANCED: apply_players_advanced_prev_season,
+    ImportType.PLAYERS_PER_GAME: apply_players_per_game_prev_season,
 }

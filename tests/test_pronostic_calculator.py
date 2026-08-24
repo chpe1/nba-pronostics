@@ -2,7 +2,16 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from app.models import Game, GameStatus, InjuryStatus, Player, ReliabilityLevel, Settings, Team
+from app.models import (
+    Game,
+    GameStatus,
+    InjuryStatus,
+    Player,
+    PreviousSeasonPlayerStat,
+    ReliabilityLevel,
+    Settings,
+    Team,
+)
 from app.services import pronostic_calculator as calc
 
 SEASON = "2025-2026"
@@ -31,6 +40,7 @@ def _settings(**overrides) -> Settings:
         draft_bonus_config={},
         reliability_threshold_low=5.0,
         reliability_threshold_high=10.0,
+        transfer_impact_multiplier=1.0,
     )
     defaults.update(overrides)
     return Settings(**defaults)
@@ -291,3 +301,188 @@ def test_save_prediction_upserts_single_row_per_game(db_session):
 
     assert second.id == first_id  # même ligne, pas de doublon
     assert second.breakdown["away"]["note_de_base"] == pytest.approx(0.9)
+
+
+# --- Bonus/Malus Transferts (Étape 6bis) ------------------------------------
+
+PREV_SEASON = "2024-2025"
+
+
+def test_previous_season_label():
+    assert calc.previous_season_label("2025-2026") == "2024-2025"
+    assert calc.previous_season_label("2024-2025") == "2023-2024"
+
+
+def test_transfer_bonus_detects_incoming_player(db_session):
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(Player(name="New Arrival", team_id=team.id, per=15.0, mpg=20.0))
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON, player_name="New Arrival", team_abbreviation="LAL", per=22.0, mpg=30.0
+        )
+    )
+    db_session.flush()
+
+    bonus = calc.compute_transfer_bonus(db_session, team, _settings(), PREV_SEASON)
+    assert bonus == pytest.approx(22.0)  # PER N-1, pas le PER courant (15.0)
+
+
+def test_transfer_bonus_ignores_player_already_on_team_last_season(db_session):
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(Player(name="Stayed Player", team_id=team.id, per=15.0, mpg=20.0))
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON,
+            player_name="Stayed Player",
+            team_abbreviation=team.abbreviation,
+            per=22.0,
+            mpg=30.0,
+        )
+    )
+    db_session.flush()
+
+    assert calc.compute_transfer_bonus(db_session, team, _settings(), PREV_SEASON) == 0.0
+
+
+def test_transfer_bonus_filters_by_previous_season_mpg_not_current(db_session):
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    # MPG courant élevé mais MPG N-1 sous le seuil -> pas pris en compte
+    # (signal jugé plus fiable en tout début de saison, cf. docstring).
+    db_session.add(Player(name="Bench Arrival", team_id=team.id, per=15.0, mpg=25.0))
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON, player_name="Bench Arrival", team_abbreviation="LAL", per=22.0, mpg=8.0
+        )
+    )
+    db_session.flush()
+
+    bonus = calc.compute_transfer_bonus(db_session, team, _settings(mpg_threshold=15.0), PREV_SEASON)
+    assert bonus == 0.0
+
+
+def test_transfer_bonus_ignores_rookie_without_previous_season_data(db_session):
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(Player(name="Fresh Rookie", team_id=team.id, per=10.0, mpg=20.0, draft_pick=5))
+    db_session.flush()
+
+    assert calc.compute_transfer_bonus(db_session, team, _settings(), PREV_SEASON) == 0.0
+
+
+def test_transfer_malus_detects_outgoing_player(db_session):
+    old_team = _team(name="Boston Celtics", abbreviation="BOS")
+    new_team = _team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([old_team, new_team])
+    db_session.flush()
+    db_session.add(Player(name="Departed Player", team_id=new_team.id, per=18.0, mpg=25.0))
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON, player_name="Departed Player", team_abbreviation="BOS", per=21.0, mpg=28.0
+        )
+    )
+    db_session.flush()
+
+    malus = calc.compute_transfer_malus(db_session, old_team, _settings(), PREV_SEASON)
+    assert malus == pytest.approx(21.0)
+
+
+def test_transfer_malus_ignores_player_who_stayed(db_session):
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(Player(name="Stayed Player", team_id=team.id, per=18.0, mpg=25.0))
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON,
+            player_name="Stayed Player",
+            team_abbreviation=team.abbreviation,
+            per=21.0,
+            mpg=28.0,
+        )
+    )
+    db_session.flush()
+
+    assert calc.compute_transfer_malus(db_session, team, _settings(), PREV_SEASON) == 0.0
+
+
+def test_transfer_malus_ignores_player_not_found_in_current_league(db_session):
+    """Joueur introuvable en base actuelle (retraite, non reconduit...) :
+    pas de malus, ce n'est pas un transfert vérifiable."""
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON,
+            player_name="Retired Player",
+            team_abbreviation=team.abbreviation,
+            per=21.0,
+            mpg=28.0,
+        )
+    )
+    db_session.flush()
+
+    assert calc.compute_transfer_malus(db_session, team, _settings(), PREV_SEASON) == 0.0
+
+
+def test_transfer_adjustment_only_applies_during_early_season(db_session):
+    team = _team()
+    opponent = _team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([team, opponent])
+    db_session.flush()
+    db_session.add(Player(name="New Arrival", team_id=team.id, per=15.0, mpg=20.0))
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON, player_name="New Arrival", team_abbreviation="LAL", per=22.0, mpg=30.0
+        )
+    )
+    db_session.flush()
+    settings = _settings(transfer_impact_multiplier=1.0)
+
+    early_breakdown = calc.compute_team_note(
+        db_session, team, date(2025, 10, 25), SEASON, is_home=True, settings=settings
+    )
+    assert early_breakdown.transfer_adjustment == pytest.approx(22.0)
+    assert early_breakdown.final_note == pytest.approx(
+        early_breakdown.note_de_base * settings.base_note_multiplier + 22.0
+    )
+
+    base_date = date(2025, 10, 22)
+    for i in range(10):
+        _finished_game(db_session, team, opponent, base_date + timedelta(days=i * 2))
+
+    later_breakdown = calc.compute_team_note(
+        db_session, team, base_date + timedelta(days=30), SEASON, is_home=True, settings=settings
+    )
+    assert later_breakdown.in_early_season is False
+    assert later_breakdown.transfer_adjustment == 0.0
+
+
+def test_transfer_adjustment_combines_with_draft_bonus(db_session):
+    """Un transfert entrant ET un rookie drafté sur la même équipe doivent
+    s'additionner (deux effets distincts de la règle des 10 premiers matchs)."""
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(Player(name="New Arrival", team_id=team.id, per=15.0, mpg=20.0))
+    db_session.add(Player(name="Rookie", team_id=team.id, draft_pick=1, per=0.0, mpg=0.0))
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON, player_name="New Arrival", team_abbreviation="LAL", per=22.0, mpg=30.0
+        )
+    )
+    db_session.flush()
+    settings = _settings(transfer_impact_multiplier=1.0, draft_bonus_config={"1": 8.0})
+
+    breakdown = calc.compute_team_note(
+        db_session, team, date(2025, 10, 25), SEASON, is_home=True, settings=settings
+    )
+    assert breakdown.transfer_adjustment == pytest.approx(22.0)
+    assert breakdown.draft_bonus == pytest.approx(8.0)

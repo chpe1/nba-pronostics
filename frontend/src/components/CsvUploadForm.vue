@@ -8,6 +8,8 @@ const selectedFile = ref(null)
 const preview = ref(null)
 const errorMessage = ref('')
 const isLoading = ref(false)
+const seasonType = ref('current')
+const season = ref('')
 
 function onFileChange(event) {
   selectedFile.value = event.target.files[0] ?? null
@@ -17,12 +19,21 @@ function onFileChange(event) {
 
 async function upload(dryRun) {
   if (!selectedFile.value) return
+  if (seasonType.value === 'previous' && !season.value.trim()) {
+    errorMessage.value = "Précisez la saison précédente (ex: \"2024-2025\")."
+    return
+  }
+
   isLoading.value = true
   errorMessage.value = ''
   try {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
-    const result = await apiFetch(`/api/imports/stats?dry_run=${dryRun}`, {
+    const params = new URLSearchParams({ dry_run: dryRun, season_type: seasonType.value })
+    if (seasonType.value === 'previous') {
+      params.set('season', season.value.trim())
+    }
+    const result = await apiFetch(`/api/imports/stats?${params.toString()}`, {
       method: 'POST',
       body: formData,
       isFormData: true,
@@ -54,6 +65,25 @@ async function upload(dryRun) {
       @change="onFileChange"
     />
 
+    <fieldset class="mb-3 text-sm text-gray-700">
+      <legend class="mb-1 font-medium text-gray-900">Saison (équipes / joueurs uniquement — sans objet pour la draft)</legend>
+      <label class="mr-4 inline-flex items-center gap-1">
+        <input v-model="seasonType" type="radio" value="current" />
+        Saison courante
+      </label>
+      <label class="inline-flex items-center gap-1">
+        <input v-model="seasonType" type="radio" value="previous" />
+        Saison précédente
+      </label>
+      <input
+        v-if="seasonType === 'previous'"
+        v-model="season"
+        type="text"
+        placeholder="ex: 2024-2025"
+        class="mt-2 block w-40 rounded-lg border border-gray-300 px-2 py-1 text-sm"
+      />
+    </fieldset>
+
     <div class="flex gap-2">
       <button
         type="button"
@@ -80,7 +110,8 @@ async function upload(dryRun) {
 
     <div v-if="preview" class="mt-4 text-sm">
       <p class="mb-2 text-gray-700">
-        Type détecté : <strong>{{ preview.import_type }}</strong> —
+        Type détecté : <strong>{{ preview.import_type }}</strong>
+        <span v-if="preview.season_type === 'previous'"> (saison {{ preview.season }})</span> —
         {{ preview.row_count }} ligne(s) valide(s), {{ preview.error_count }} erreur(s).
       </p>
 

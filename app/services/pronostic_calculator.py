@@ -5,11 +5,7 @@ Formule (cahier des charges) :
                 - (PER des absents majeurs × Curseur B)
                 - Malus Calendrier
                 + Bonus Draft (règle des 10 premiers matchs)
-
-Limitation connue (documentée dans CLAUDE.md) : le terme "Bonus/Malus
-Transferts" du cahier des charges (report du PER d'un joueur transféré l'été
-entre son ancienne et sa nouvelle équipe) n'est pas implémenté — il n'existe
-pas encore de modèle de transactions pour tracer ces mouvements.
+                + Bonus/Malus Transferts (règle des 10 premiers matchs, Étape 6bis)
 """
 from __future__ import annotations
 
@@ -25,6 +21,7 @@ from app.models import (
     InjuryStatus,
     Player,
     Prediction,
+    PreviousSeasonPlayerStat,
     ReliabilityLevel,
     Settings,
     Team,
@@ -108,6 +105,7 @@ class TeamNoteBreakdown:
     is_three_in_four: bool
     calendar_penalty: float
     draft_bonus: float
+    transfer_adjustment: float
     final_note: float
     questionable_players: list[QuestionablePlayerInfo] = field(default_factory=list)
 
@@ -223,6 +221,86 @@ def compute_draft_bonus(db: Session, team: Team, settings: Settings) -> float:
     return total
 
 
+def previous_season_label(season: str) -> str:
+    """"2025-2026" -> "2024-2025" """
+    start, end = season.split("-")
+    return f"{int(start) - 1}-{int(end) - 1}"
+
+
+def compute_transfer_bonus(db: Session, team: Team, settings: Settings, prev_season: str) -> float:
+    """Transferts ENTRANTS : somme des PER (saison N-1) des joueurs
+    ACTUELLEMENT dans l'effectif de `team` qui évoluaient dans une autre
+    équipe lors de `prev_season`.
+
+    Filtré par le MPG N-1 (pas le MPG courant) au-dessus de
+    settings.mpg_threshold -- ici, une APPROXIMATION : on ne connaît pas
+    encore le rôle réel du joueur dans sa nouvelle équipe (échantillon trop
+    petit en tout début de saison), donc son temps de jeu de la saison
+    passée sert de meilleur signal disponible. Voir compute_transfer_malus
+    pour le raisonnement symétrique côté équipe quittée, où ce même champ a
+    un statut différent (mesure directe, pas une approximation)."""
+    total = 0.0
+    current_players = db.query(Player).filter(Player.team_id == team.id, Player.is_active.is_(True)).all()
+    for player in current_players:
+        stat = (
+            db.query(PreviousSeasonPlayerStat)
+            .filter(
+                PreviousSeasonPlayerStat.season == prev_season,
+                PreviousSeasonPlayerStat.player_name == player.name,
+            )
+            .one_or_none()
+        )
+        if stat is None or stat.per is None or stat.mpg is None:
+            continue  # pas de donnée N-1 (rookie, etc.) -> pas un transfert
+        if stat.team_abbreviation == team.abbreviation:
+            continue  # déjà dans cette équipe la saison dernière
+        if stat.mpg <= settings.mpg_threshold:
+            continue
+        total += stat.per
+    return total
+
+
+def compute_transfer_malus(db: Session, team: Team, settings: Settings, prev_season: str) -> float:
+    """Transferts SORTANTS : somme des PER (N-1) des joueurs qui évoluaient
+    dans `team` lors de `prev_season` et qui jouent désormais ailleurs. Un
+    joueur introuvable dans l'effectif actuel (retraite, non reconduit...)
+    est ignoré : on ne pénalise que les départs vérifiables vers une autre
+    équipe actuelle, pas l'attrition générale (hors périmètre).
+
+    Le filtre MPG (N-1) n'a pas le même statut ici que dans
+    compute_transfer_bonus : il mesure directement l'importance du joueur
+    DANS L'ANCIENNE équipe (`team`) la saison passée -- une donnée fiable et
+    pertinente en soi pour juger l'ampleur de la perte -- et non une
+    approximation faute de connaître son rôle ailleurs (ce qui est le cas
+    côté bonus, où le MPG N-1 ne fait que pallier l'absence de MPG courant
+    fiable dans la nouvelle équipe en tout début de saison)."""
+    total = 0.0
+    prev_roster = (
+        db.query(PreviousSeasonPlayerStat)
+        .filter(
+            PreviousSeasonPlayerStat.season == prev_season,
+            PreviousSeasonPlayerStat.team_abbreviation == team.abbreviation,
+        )
+        .all()
+    )
+    for stat in prev_roster:
+        if stat.per is None or stat.mpg is None or stat.mpg <= settings.mpg_threshold:
+            continue
+        # .first() plutôt que .one_or_none() : en cas d'homonyme (risque
+        # accepté, pas de désambiguïsation pour ce MVP) on ne veut pas
+        # planter le calcul, juste accepter une association possiblement
+        # imprécise.
+        current_player = (
+            db.query(Player)
+            .filter(Player.name == stat.player_name, Player.is_active.is_(True))
+            .first()
+        )
+        if current_player is None or current_player.team_id == team.id:
+            continue
+        total += stat.per
+    return total
+
+
 def compute_team_note(
     db: Session, team: Team, game_date: date, season: str, is_home: bool, settings: Settings
 ) -> TeamNoteBreakdown:
@@ -233,6 +311,14 @@ def compute_team_note(
     injury_penalty = compute_injury_penalty(db, team, settings)
     calendar = compute_calendar_penalty(db, team, game_date, settings)
     draft_bonus = compute_draft_bonus(db, team, settings) if in_early_season else 0.0
+    if in_early_season:
+        prev_season = previous_season_label(season)
+        transfer_adjustment = (
+            compute_transfer_bonus(db, team, settings, prev_season)
+            - compute_transfer_malus(db, team, settings, prev_season)
+        ) * settings.transfer_impact_multiplier
+    else:
+        transfer_adjustment = 0.0
     questionable_players = get_questionable_players(db, team, settings)
 
     final_note = (
@@ -240,6 +326,7 @@ def compute_team_note(
         - (injury_penalty * settings.per_impact_multiplier)
         - calendar["penalty"]
         + draft_bonus
+        + transfer_adjustment
     )
 
     return TeamNoteBreakdown(
@@ -254,6 +341,7 @@ def compute_team_note(
         is_three_in_four=calendar["is_three_in_four"],
         calendar_penalty=calendar["penalty"],
         draft_bonus=draft_bonus,
+        transfer_adjustment=transfer_adjustment,
         final_note=final_note,
         questionable_players=questionable_players,
     )
@@ -300,6 +388,7 @@ def _breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
         "is_three_in_four": breakdown.is_three_in_four,
         "calendar_penalty": breakdown.calendar_penalty,
         "draft_bonus": breakdown.draft_bonus,
+        "transfer_adjustment": breakdown.transfer_adjustment,
         "final_note": breakdown.final_note,
         "questionable_players": [
             {"name": p.name, "per": p.per, "reason": p.reason} for p in breakdown.questionable_players
