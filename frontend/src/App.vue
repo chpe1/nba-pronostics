@@ -20,6 +20,7 @@ function handleLogout() {
           <template v-if="authStore.isAuthenticated">
             <RouterLink to="/admin/imports" class="text-gray-600">Imports</RouterLink>
             <RouterLink to="/admin/games" class="text-gray-600">Matchs</RouterLink>
+            <RouterLink to="/admin/players" class="text-gray-600">Joueurs</RouterLink>
             <RouterLink to="/admin/settings" class="text-gray-600">Réglages</RouterLink>
             <button type="button" class="text-gray-600" @click="handleLogout">Déconnexion</button>
           </template>

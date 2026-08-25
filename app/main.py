@@ -11,8 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.games import router as games_router
 from app.api.imports import router as imports_router
+from app.api.players import router as players_router
 from app.api.predictions import router as predictions_router
 from app.api.settings import router as settings_router
+from app.api.teams import router as teams_router
 from app.services.scheduler import start_scheduler
 
 # Désactivés par défaut (dev/tests) : pas d'appel réseau planifié sans action
@@ -54,6 +56,8 @@ app.include_router(imports_router)
 app.include_router(settings_router)
 app.include_router(predictions_router)
 app.include_router(games_router)
+app.include_router(players_router)
+app.include_router(teams_router)
 
 
 @app.get("/health")
