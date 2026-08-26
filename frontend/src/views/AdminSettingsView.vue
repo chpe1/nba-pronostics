@@ -45,6 +45,7 @@ async function save() {
         reliability_threshold_high: settings.value.reliability_threshold_high,
         transfer_impact_multiplier: settings.value.transfer_impact_multiplier,
         draft_bonus_config: draftBonusConfig,
+        current_season: settings.value.current_season,
       },
     })
     successMessage.value = 'Réglages enregistrés.'
@@ -68,6 +69,20 @@ onMounted(loadSettings)
     </p>
 
     <div v-if="settings" class="space-y-5 rounded-xl border border-gray-200 bg-white p-4">
+      <div>
+        <label class="mb-1 block text-sm font-medium text-gray-700">Saison courante</label>
+        <input
+          v-model="settings.current_season"
+          type="text"
+          placeholder="ex: 2026-2027"
+          class="w-40 rounded-lg border border-gray-300 px-2 py-1 text-sm"
+        />
+        <p class="mt-1 text-xs text-gray-500">
+          À changer une fois par an, au début de la nouvelle saison (jamais déduit automatiquement
+          d'une date). Pré-remplit le champ saison du formulaire d'import CSV.
+        </p>
+      </div>
+
       <SettingsSlider v-model="settings.base_note_multiplier" label="Multiplicateur note de base (Curseur A)" :min="0" :max="200" :step="5" />
       <SettingsSlider v-model="settings.per_impact_multiplier" label="Multiplicateur impact PER (Curseur B)" :min="0" :max="5" :step="0.05" />
       <SettingsSlider v-model="settings.transfer_impact_multiplier" label="Multiplicateur Bonus/Malus Transferts" :min="0" :max="5" :step="0.05" />

@@ -1,3 +1,4 @@
+import io
 from datetime import date, time
 from pathlib import Path
 
@@ -18,6 +19,125 @@ def test_detect_teams_home_away():
     df = _read("teams_home_away.csv")
     assert csv_import.detect_import_type(df) == ImportType.TEAMS_HOME_AWAY
     assert csv_import.validate_columns(df, ImportType.TEAMS_HOME_AWAY) == []
+
+
+# --- Résilience au séparateur (Excel FR réenregistre en point-virgule) ------
+
+
+@pytest.mark.parametrize(
+    "content,expected_columns,expected_type",
+    [
+        (
+            b"Team;Home;Road\nBoston Celtics;24-6;18-16\n",
+            ["Team", "Home", "Road"],
+            ImportType.TEAMS_HOME_AWAY,
+        ),
+        (
+            b"Player;Team;PER;G;MP\nJayson Tatum;BOS;24.3;72;2450\n",
+            ["Player", "Team", "PER", "G", "MP"],
+            ImportType.PLAYERS_ADVANCED,
+        ),
+        (
+            b"Pk;Tm;Player\n1;BOS;Rookie One\n",
+            ["Pk", "Tm", "Player"],
+            ImportType.DRAFT,
+        ),
+        (
+            b"Date;Start (ET);Visitor/Neutral;PTS;Home/Neutral;PTS\n"
+            b"Tue Oct 20 2026;7:00p;Boston Celtics;;Detroit Pistons;\n",
+            ["Date", "Start (ET)", "Visitor/Neutral", "PTS", "Home/Neutral", "PTS.1"],
+            ImportType.SCHEDULE,
+        ),
+    ],
+    ids=["teams_home_away", "players_advanced", "draft", "schedule"],
+)
+def test_read_csv_detects_semicolon_separator_for_every_type(content, expected_columns, expected_type):
+    """Détection automatique du séparateur (pas une liste codée en dur) --
+    Excel en localisation française réenregistre systématiquement les CSV
+    en point-virgule. Vérifié sur les 4 types de fichiers gérés."""
+    df = csv_import.read_csv(content)
+    assert list(df.columns) == expected_columns
+    assert csv_import.detect_import_type(df) == expected_type
+
+
+def test_read_csv_still_rejects_genuinely_unreadable_content():
+    with pytest.raises(csv_import.CsvImportError):
+        csv_import.read_csv(b"")
+
+
+def test_semicolon_separator_and_decimal_comma_combined_players_advanced():
+    """Cas réel demandé explicitement : Excel en localisation française
+    réenregistre le séparateur de colonnes ET le séparateur décimal
+    ensemble à la sauvegarde (jamais l'un sans l'autre) -- PER "24,3" avec
+    un point-virgule comme séparateur de colonnes doit être lu comme le
+    flottant 24.3, pas rejeté comme "PER invalide"."""
+    content = "Player;Team;PER;G;MP\nJayson Tatum;BOS;24,3;72;2450\n".encode("utf-8-sig")
+    df = csv_import.read_csv(content)
+
+    parsed, errors = csv_import.parse_players_advanced(df)
+
+    assert errors == []
+    assert parsed == [{"name": "Jayson Tatum", "team_abbreviation": "BOS", "per": 24.3, "g": 72.0, "mp": 2450.0}]
+
+
+def test_comma_separator_keeps_dot_as_decimal_separator():
+    """Contrepartie : un vrai fichier séparé par virgule (cas normal) ne
+    doit jamais interpréter un point comme séparateur de milliers ou une
+    virgule perdue comme décimale -- le point reste le séparateur décimal."""
+    content = b"Player,Team,PER,G,MP\nJayson Tatum,BOS,24.3,72,2450\n"
+    df = csv_import.read_csv(content)
+
+    parsed, errors = csv_import.parse_players_advanced(df)
+
+    assert errors == []
+    assert parsed[0]["per"] == pytest.approx(24.3)
+
+
+def test_real_classement_file_with_grouped_header_row_is_detected_and_parsed():
+    """Vrai fichier Basketball-Reference "Expanded Standings" : même
+    problème structurel que le vrai draft.csv (ligne de regroupement
+    "Place"/"Conference"/"Division"/"All-Star"/"Margin"/"Month" au-dessus de
+    la vraie ligne d'en-tête "Rk,Team,Overall,Home,Road,...") -- jamais
+    vérifié sur un vrai export avant ce cas réel. Verrouille le comportement
+    corrigé bout en bout (read_csv + detect + parse), même mécanisme
+    générique que draft.csv (_promote_grouped_header_if_needed)."""
+    df = _read("classement_saison_25_26.csv")
+    assert csv_import.detect_import_type(df) == ImportType.TEAMS_HOME_AWAY
+    assert csv_import.validate_columns(df, ImportType.TEAMS_HOME_AWAY) == []
+
+    parsed, errors = csv_import.parse_teams_home_away(df)
+    assert errors == []
+    assert len(parsed) == 30
+
+    thunder = next(item for item in parsed if item["abbreviation"] == "OKC")
+    assert thunder["name"] == "Oklahoma City Thunder"
+    assert thunder["win_pct_home"] == pytest.approx(34 / 42)
+    assert thunder["win_pct_away"] == pytest.approx(30 / 40)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "teams_home_away.csv",
+        "players_advanced.csv",
+        "roster_exemple_equipe_advanced.csv",
+        "calendrier_saison_26_27.csv",
+    ],
+)
+def test_promote_grouped_header_does_not_trigger_on_normally_formed_real_files(filename):
+    """Contrepartie du test précédent : un vrai fichier correctement formé
+    (une seule ligne d'en-tête, comme la norme -- schedule, players_advanced
+    ligue entière, players_advanced par équipe, teams_home_away) ne doit
+    jamais être réinterprété par erreur par le mécanisme générique de
+    promotion. _promote_grouped_header_if_needed doit laisser le DataFrame
+    parfaitement inchangé (mêmes colonnes, même nombre de lignes)."""
+    file_bytes = (FIXTURES_DIR / filename).read_bytes()
+    raw = pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8-sig")
+
+    result = csv_import._promote_grouped_header_if_needed(raw, file_bytes)
+
+    assert list(result.columns) == list(raw.columns)
+    assert len(result) == len(raw)
 
 
 def test_detect_players_advanced():

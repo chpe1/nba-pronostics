@@ -49,6 +49,24 @@ def test_confirmed_import_writes_teams_and_history(client, db_session, auth_head
     assert len(history_response.json()) == 1
 
 
+def test_confirmed_import_accepts_semicolon_separated_file(client, db_session, auth_headers):
+    """Excel en localisation française réenregistre systématiquement les CSV
+    en point-virgule -- vérifié bout en bout via l'API (pas seulement
+    csv_import.read_csv), sur le même type de fichier que le point 1."""
+    content = b"Team;Home;Road\nBoston Celtics;24-6;18-16\n"
+    response = client.post(
+        "/api/imports/stats",
+        params={"dry_run": False},
+        files={"file": ("classement.csv", io.BytesIO(content), "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["import_history"]["import_type"] == "teams_home_away"
+    assert body["import_history"]["row_count"] == 1
+    assert db_session.query(Team).filter(Team.abbreviation == "BOS").count() == 1
+
+
 def test_player_import_creates_team_on_the_fly(client, db_session, auth_headers):
     response = _upload(client, "players_advanced.csv", dry_run=False, headers=auth_headers)
     assert response.status_code == 200

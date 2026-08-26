@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, Integer, func
+from sqlalchemy import JSON, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+from app.services.season import previous_season_label
 
 
 class Settings(Base):
@@ -48,9 +49,21 @@ class Settings(Base):
     reliability_threshold_low: Mapped[float] = mapped_column(Float, default=7.0)
     reliability_threshold_high: Mapped[float] = mapped_column(Float, default=30.0)
 
+    # Saison courante ("2026-2027"), modifiable par l'admin une fois par an
+    # (back-office Réglages) -- jamais déduite automatiquement d'une date
+    # (décision déjà prise à l'Étape 6ter pour les mêmes raisons). Sert à
+    # pré-remplir le champ saison du formulaire d'import CSV.
+    current_season: Mapped[str] = mapped_column(String(9), default="2026-2027")
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+    @property
+    def previous_season(self) -> str:
+        """Dérivée de current_season, jamais stockée séparément -- évite
+        que les deux valeurs se désynchronisent."""
+        return previous_season_label(self.current_season)
 
     def __repr__(self) -> str:
         return f"<Settings id={self.id}>"

@@ -23,6 +23,8 @@ def test_get_settings_creates_default_row_if_missing(client, db_session, auth_he
     assert body["reliability_threshold_low"] == 7.0
     assert body["reliability_threshold_high"] == 30.0
     assert body["transfer_impact_multiplier"] == 0.4
+    assert body["current_season"] == "2026-2027"
+    assert body["previous_season"] == "2025-2026"
     assert db_session.query(Settings).count() == 1
 
 
@@ -51,3 +53,18 @@ def test_update_settings_partial_update(client, db_session, auth_headers):
     db_session.expire_all()
     settings = db_session.query(Settings).one()
     assert settings.base_note_multiplier == 2.5
+
+
+def test_update_current_season_derives_previous_season(client, auth_headers):
+    client.get("/api/settings", headers=auth_headers)  # crée la ligne par défaut
+
+    response = client.put(
+        "/api/settings", json={"current_season": "2027-2028"}, headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current_season"] == "2027-2028"
+    # previous_season n'est jamais stocké séparément -- dérivé à la volée
+    # (Settings.previous_season), ne peut donc jamais se désynchroniser.
+    assert body["previous_season"] == "2026-2027"

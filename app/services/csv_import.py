@@ -66,30 +66,61 @@ class CsvImportError(Exception):
 
 def _promote_grouped_header_if_needed(df: pd.DataFrame, file_bytes: bytes) -> pd.DataFrame:
     """Basketball-Reference exporte parfois une ligne de REGROUPEMENT de
-    colonnes au-dessus de la vraie ligne d'en-tête (ex: la page Draft :
-    "Round 1"/"Totals"/"Shooting"/"Per Game"/"Advanced" en ligne 1, "Rk"/
-    "Pk"/"Tm"/"Player"/... en ligne 2). Lue normalement, cette ligne de
-    regroupement est prise pour l'en-tête par pandas : les vraies colonnes
-    (Rk/Pk/Tm, cellules vides sur la ligne de regroupement) deviennent des
-    colonnes "Unnamed" et se retrouvent supprimées par le filtre juste en
-    dessous, avant même que detect_import_type() ait une chance de s'exécuter.
+    colonnes au-dessus de la vraie ligne d'en-tête -- rencontré concrètement
+    sur deux vrais fichiers de nature différente :
+    - la page Draft : "Round 1"/"Totals"/"Shooting"/"Per Game"/"Advanced" en
+      ligne 1, "Rk"/"Pk"/"Tm"/"Player"/... en ligne 2 ;
+    - la page "Expanded Standings" (classement) : "Place"/"Conference"/
+      "Division"/"All-Star"/"Margin"/"Month" en ligne 1, "Rk"/"Team"/
+      "Overall"/"Home"/"Road"/... en ligne 2.
+    Lue normalement, cette ligne de regroupement est prise pour l'en-tête
+    par pandas : les vraies colonnes (cellules vides sur la ligne de
+    regroupement, ex: Rk/Pk/Tm ou Rk/Team/Overall) deviennent des colonnes
+    "Unnamed" et se retrouvent supprimées par le filtre juste en dessous,
+    avant même que detect_import_type() ait une chance de s'exécuter.
 
-    Signal utilisé : si la première ligne de données ressemble à une vraie
-    ligne d'en-tête (contient "Player" et "Pk" ou "Tm" comme valeurs), on
-    relit le fichier une ligne plus bas. Suffisamment spécifique : aucun
-    autre type de fichier de ce projet n'a "Player"/"Pk"/"Tm" comme valeurs
-    de données sur sa première ligne."""
+    Signal utilisé, volontairement générique plutôt qu'un cas par type
+    (même principe que le modèle CSV téléchargeable : REQUIRED_COLUMNS reste
+    l'unique source de vérité) : si la première ligne de données contient,
+    comme valeurs, toutes les colonnes requises d'un des types connus, elle
+    est en réalité la vraie ligne d'en-tête -- on relit le fichier une ligne
+    plus bas. Couvre aussi bien draft que le classement sans code dédié à
+    chacun, et tout futur type qui aurait le même problème."""
     if len(df) == 0:
         return df
     first_row = {str(v).strip() for v in df.iloc[0].tolist()}
-    if "Player" in first_row and ("Pk" in first_row or "Tm" in first_row):
-        return pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8-sig", header=1)
+    if any(set(required).issubset(first_row) for required in REQUIRED_COLUMNS.values()):
+        return _read_csv_auto_sep(file_bytes, header=1)
     return df
+
+
+def _read_csv_auto_sep(file_bytes: bytes, header: int = 0) -> pd.DataFrame:
+    """Détection automatique du séparateur de colonnes (`csv.Sniffer`,
+    restreint à `,`/`;` -- les deux seuls rencontrés en pratique ici, pour
+    un sniffing plus fiable qu'une détection non contrainte) plutôt qu'une
+    liste codée en dur, sur n'importe lequel des types de fichiers gérés ici.
+
+    Le séparateur DÉCIMAL suit le séparateur de colonnes détecté (`,` pour
+    `;`, `.` pour `,`) plutôt que d'être fixé arbitrairement : Excel en
+    localisation française réenregistre systématiquement les deux ensemble
+    à la sauvegarde (jamais l'un sans l'autre en pratique) -- ex: PER
+    "24,3" accompagne toujours un point-virgule comme séparateur de
+    colonnes, jamais une virgule."""
+    sample = file_bytes.decode("utf-8-sig", errors="replace")[:8192]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;")
+    except csv.Error as exc:
+        raise CsvImportError(f"Séparateur de colonnes non reconnu : {exc}") from exc
+    separator = dialect.delimiter
+    decimal = "," if separator == ";" else "."
+    return pd.read_csv(
+        io.BytesIO(file_bytes), encoding="utf-8-sig", sep=separator, decimal=decimal, header=header
+    )
 
 
 def read_csv(file_bytes: bytes) -> pd.DataFrame:
     try:
-        df = pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8-sig")
+        df = _read_csv_auto_sep(file_bytes)
     except (UnicodeDecodeError, pd.errors.ParserError) as exc:
         raise CsvImportError(f"Fichier CSV illisible : {exc}") from exc
     df = _promote_grouped_header_if_needed(df, file_bytes)

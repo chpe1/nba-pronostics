@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 
 from app.models import Game, GameStatus, Prediction, ReliabilityLevel, Team
+from app.services.nba_calendar import current_nba_date
 
 SEASON = "2025-2026"
 
@@ -42,7 +43,7 @@ def _game(db_session, home: Team, away: Team, game_date: date) -> Game:
 
 def test_today_predictions_is_public(client, db_session):
     home, away = _teams(db_session)
-    game_date = date.today()
+    game_date = current_nba_date()
     _game(db_session, home, away, game_date)
 
     response = client.get("/api/predictions/today")
@@ -56,7 +57,7 @@ def test_today_predictions_is_public(client, db_session):
 
 def test_today_predictions_includes_recent_record(client, db_session):
     home, away = _teams(db_session)
-    game_date = date.today()
+    game_date = current_nba_date()
     # Un match précédent gagné par home (donc perdu par away).
     prior = _game(db_session, home, away, game_date - timedelta(days=3))
     prior.status = GameStatus.FINISHED
@@ -74,7 +75,7 @@ def test_today_predictions_includes_recent_record(client, db_session):
 
 def test_today_predictions_includes_existing_prediction(client, db_session):
     home, away = _teams(db_session)
-    game = _game(db_session, home, away, date.today())
+    game = _game(db_session, home, away, current_nba_date())
     db_session.add(
         Prediction(
             game_id=game.id,
@@ -100,7 +101,7 @@ def test_recalculate_requires_authentication(client):
 
 def test_recalculate_creates_predictions_for_the_date(client, db_session, auth_headers):
     home, away = _teams(db_session)
-    game_date = date.today()
+    game_date = current_nba_date()
     game = _game(db_session, home, away, game_date)
 
     response = client.post(
@@ -116,7 +117,7 @@ def test_recalculate_creates_predictions_for_the_date(client, db_session, auth_h
 
 def test_recalculate_upserts_without_duplicating(client, db_session, auth_headers):
     home, away = _teams(db_session)
-    game_date = date.today()
+    game_date = current_nba_date()
     game = _game(db_session, home, away, game_date)
 
     client.post("/api/predictions/recalculate", params={"date": game_date.isoformat()}, headers=auth_headers)
@@ -130,7 +131,7 @@ def test_recalculate_ignores_games_on_other_dates(client, db_session, auth_heade
     _game(db_session, home, away, date(2020, 1, 1))
 
     response = client.post(
-        "/api/predictions/recalculate", params={"date": date.today().isoformat()}, headers=auth_headers
+        "/api/predictions/recalculate", params={"date": current_nba_date().isoformat()}, headers=auth_headers
     )
 
     assert response.status_code == 200

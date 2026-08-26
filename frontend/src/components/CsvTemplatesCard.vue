@@ -8,7 +8,11 @@ const downloadingKey = ref(null)
 const TEMPLATES = [
   { key: 'teams_home_away', label: 'Classement (Expanded Standings)' },
   { key: 'players_advanced_league', label: 'Joueurs Advanced — ligue entière' },
-  { key: 'players_advanced_team', label: "Joueurs Advanced — roster d'une équipe" },
+  {
+    key: 'players_advanced_team',
+    label: "Joueurs Advanced — roster d'une équipe",
+    note: "Modèle simplifié : seules les colonnes obligatoires sont indiquées, votre vrai fichier en contiendra d'autres, aucun souci.",
+  },
   { key: 'draft', label: 'Draft' },
   { key: 'schedule', label: 'Calendrier' },
 ]
@@ -44,17 +48,18 @@ async function download(key) {
       {{ errorMessage }}
     </p>
 
-    <div class="flex flex-wrap gap-2">
-      <button
-        v-for="template in TEMPLATES"
-        :key="template.key"
-        type="button"
-        class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 disabled:opacity-50"
-        :disabled="downloadingKey === template.key"
-        @click="download(template.key)"
-      >
-        {{ downloadingKey === template.key ? 'Téléchargement…' : template.label }}
-      </button>
+    <div class="flex flex-wrap items-start gap-2">
+      <div v-for="template in TEMPLATES" :key="template.key" class="flex max-w-[220px] flex-col gap-1">
+        <button
+          type="button"
+          class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 disabled:opacity-50"
+          :disabled="downloadingKey === template.key"
+          @click="download(template.key)"
+        >
+          {{ downloadingKey === template.key ? 'Téléchargement…' : template.label }}
+        </button>
+        <p v-if="template.note" class="text-[11px] leading-snug text-gray-500">{{ template.note }}</p>
+      </div>
     </div>
   </div>
 </template>
