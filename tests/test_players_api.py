@@ -82,6 +82,36 @@ def test_create_player_new_returns_201(client, db_session, auth_headers):
     assert db_session.query(Player).count() == 1
 
 
+def test_create_player_rejects_unrealistic_mpg(client, db_session, auth_headers):
+    """Point 2 (retour d'usage réel) : > 48 min/match sur une saison est
+    rejeté explicitement plutôt qu'accepté silencieusement."""
+    bos, _ = _teams(db_session)
+    db_session.commit()
+
+    response = client.post(
+        "/api/players",
+        json={"name": "Iron Man", "team_id": bos.id, "mpg": 55.0},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+    assert "MPG invalide" in response.json()["detail"]
+    assert db_session.query(Player).count() == 0
+
+
+def test_create_player_accepts_mpg_at_the_boundary(client, db_session, auth_headers):
+    bos, _ = _teams(db_session)
+    db_session.commit()
+
+    response = client.post(
+        "/api/players",
+        json={"name": "Iron Man", "team_id": bos.id, "mpg": 48.0},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+
+
 def test_create_player_upserts_existing_by_name_and_team_without_duplicating(client, db_session, auth_headers):
     """Scénario clé (point 2bis) : POST avec un (name, team_id) déjà
     existant met à jour la ligne existante -- ne crée jamais de doublon."""
@@ -102,6 +132,28 @@ def test_create_player_upserts_existing_by_name_and_team_without_duplicating(cli
     assert body["per"] == 22.0
     assert body["mpg"] == 35.0  # non fourni -> inchangé
     assert body["draft_pick"] == 3  # non fourni -> inchangé
+    assert db_session.query(Player).count() == 1
+
+
+def test_create_player_upsert_by_name_is_case_insensitive(client, db_session, auth_headers):
+    """Point 1 (retour d'usage réel) : "LEBRON JAMES" et "LeBron James"
+    désignent le même joueur -- pas de doublon, casse d'origine conservée."""
+    bos, _ = _teams(db_session)
+    existing = Player(name="Jayson Tatum", team_id=bos.id, per=20.0)
+    db_session.add(existing)
+    db_session.commit()
+
+    response = client.post(
+        "/api/players",
+        json={"name": "JAYSON TATUM", "team_id": bos.id, "per": 22.0},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == existing.id
+    assert body["name"] == "Jayson Tatum"  # casse d'origine, pas réécrite
+    assert body["per"] == 22.0
     assert db_session.query(Player).count() == 1
 
 
@@ -158,6 +210,20 @@ def test_update_player_unknown_team_returns_404(client, db_session, auth_headers
     assert response.status_code == 404
 
 
+def test_update_player_rejects_unrealistic_mpg(client, db_session, auth_headers):
+    bos, _ = _teams(db_session)
+    player = Player(name="Jayson Tatum", team_id=bos.id, mpg=35.0)
+    db_session.add(player)
+    db_session.commit()
+
+    response = client.patch(f"/api/players/{player.id}", json={"mpg": 60.0}, headers=auth_headers)
+
+    assert response.status_code == 422
+    assert "MPG invalide" in response.json()["detail"]
+    db_session.refresh(player)
+    assert player.mpg == 35.0  # inchangé
+
+
 def test_update_player_partial_edit_leaves_other_fields_untouched(client, db_session, auth_headers):
     bos, _ = _teams(db_session)
     player = Player(name="Jayson Tatum", team_id=bos.id, per=20.0, mpg=35.0, draft_pick=3)
@@ -188,6 +254,24 @@ def test_update_player_conflicting_name_and_team_returns_409(client, db_session,
 
     response = client.patch(
         f"/api/players/{other.id}", json={"name": "Jayson Tatum"}, headers=auth_headers
+    )
+
+    assert response.status_code == 409
+    db_session.refresh(other)
+    assert other.name == "Jaylen Brown"  # inchangé
+
+
+def test_update_player_conflicting_name_case_insensitive_returns_409(client, db_session, auth_headers):
+    """Même garde-fou que test_update_player_conflicting_name_and_team_returns_409,
+    mais la collision ne diffère que par la casse -- doit être détectée."""
+    bos, _ = _teams(db_session)
+    existing = Player(name="Jayson Tatum", team_id=bos.id)
+    other = Player(name="Jaylen Brown", team_id=bos.id)
+    db_session.add_all([existing, other])
+    db_session.commit()
+
+    response = client.patch(
+        f"/api/players/{other.id}", json={"name": "JAYSON TATUM"}, headers=auth_headers
     )
 
     assert response.status_code == 409

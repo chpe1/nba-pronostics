@@ -26,6 +26,7 @@ from app.models import (
     Settings,
     Team,
 )
+from app.services.player_matching import find_active_player_by_name, find_prev_season_stat_by_name
 
 # Statuts comptant pour la soustraction du PER (joueurs "absents majeurs").
 ABSENT_STATUSES = {InjuryStatus.OUT, InjuryStatus.DOUBTFUL}
@@ -242,14 +243,7 @@ def compute_transfer_bonus(db: Session, team: Team, settings: Settings, prev_sea
     total = 0.0
     current_players = db.query(Player).filter(Player.team_id == team.id, Player.is_active.is_(True)).all()
     for player in current_players:
-        stat = (
-            db.query(PreviousSeasonPlayerStat)
-            .filter(
-                PreviousSeasonPlayerStat.season == prev_season,
-                PreviousSeasonPlayerStat.player_name == player.name,
-            )
-            .one_or_none()
-        )
+        stat = find_prev_season_stat_by_name(db, prev_season, player.name)
         if stat is None or stat.per is None or stat.mpg is None:
             continue  # pas de donnée N-1 (rookie, etc.) -> pas un transfert
         if stat.team_abbreviation == team.abbreviation:
@@ -286,15 +280,7 @@ def compute_transfer_malus(db: Session, team: Team, settings: Settings, prev_sea
     for stat in prev_roster:
         if stat.per is None or stat.mpg is None or stat.mpg <= settings.mpg_threshold:
             continue
-        # .first() plutôt que .one_or_none() : en cas d'homonyme (risque
-        # accepté, pas de désambiguïsation pour ce MVP) on ne veut pas
-        # planter le calcul, juste accepter une association possiblement
-        # imprécise.
-        current_player = (
-            db.query(Player)
-            .filter(Player.name == stat.player_name, Player.is_active.is_(True))
-            .first()
-        )
+        current_player = find_active_player_by_name(db, stat.player_name)
         if current_player is None or current_player.team_id == team.id:
             continue
         total += stat.per

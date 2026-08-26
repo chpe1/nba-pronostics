@@ -5,10 +5,26 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
 from app.database import get_db
-from app.models import Player, Team
+from app.models import MAX_REALISTIC_MPG, Player, Team
 from app.schemas import PlayerManualCreate, PlayerManualUpdate, PlayerWithTeamRead
+from app.services.player_matching import find_player_by_name
 
 router = APIRouter(prefix="/api/players", tags=["players"], dependencies=[Depends(get_current_admin)])
+
+
+def _validate_mpg(mpg: float | None) -> None:
+    """Rejette une valeur aberrante plutôt que de l'accepter silencieusement
+    (retour d'usage réel, point 2) -- HTTPException avec un `detail` texte
+    simple, pas une erreur de validation Pydantic (422 par défaut) : son
+    format `detail` en liste d'objets s'afficherait mal dans apiClient.js/
+    AdminPlayersView.vue, qui attend une chaîne."""
+    if mpg is None:
+        return
+    if not (0 <= mpg <= MAX_REALISTIC_MPG):
+        raise HTTPException(
+            status_code=422,
+            detail=f"MPG invalide ({mpg}) : doit être compris entre 0 et {MAX_REALISTIC_MPG} minutes/match.",
+        )
 
 
 def _to_read(player: Player) -> PlayerWithTeamRead:
@@ -40,7 +56,9 @@ def create_or_upsert_player(payload: PlayerManualCreate, response: Response, db:
     """Upsert par (name, team_id) -- même clé que les appliers CSV
     (apply_players_advanced/apply_draft), pour qu'un
     joueur ajouté à la main soit retrouvé (et complété, pas dupliqué) par un
-    futur import CSV du même joueur, et inversement.
+    futur import CSV du même joueur, et inversement. Rapprochement insensible
+    à la casse (voir find_player_by_name/player_matching.py) : "LEBRON JAMES"
+    et "LeBron James" désignent le même joueur.
 
     Décision volontaire (à l'inverse de Game.manually_overridden pour les
     matchs) : aucun verrou n'est posé ici. Un per/mpg saisi à la main reste
@@ -50,8 +68,9 @@ def create_or_upsert_player(payload: PlayerManualCreate, response: Response, db:
     team = db.get(Team, payload.team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Équipe introuvable")
+    _validate_mpg(payload.mpg)
 
-    player = db.query(Player).filter(Player.name == payload.name, Player.team_id == team.id).one_or_none()
+    player = find_player_by_name(db, payload.name, team.id)
     if player is None:
         player = Player(name=payload.name, team_id=team.id)
         db.add(player)
@@ -77,9 +96,10 @@ def update_player(player_id: int, payload: PlayerManualUpdate, db: Session = Dep
     déclencher de logique d'upsert.
 
     Garde-fou : refuse (409) toute modification qui ferait converger
-    name/team_id vers une combinaison déjà utilisée par un AUTRE joueur. Sans
-    ce contrôle, deux lignes pourraient finir par partager la même clé
-    (name, team_id) -- exactement celle utilisée par l'upsert CSV
+    name/team_id vers une combinaison déjà utilisée par un AUTRE joueur (casse
+    ignorée, même find_player_by_name que l'upsert CSV). Sans ce contrôle,
+    deux lignes pourraient finir par partager la même clé (name, team_id)
+    -- exactement celle utilisée par l'upsert CSV
     (apply_players_advanced/apply_draft) -- et un
     futur import ne retrouverait alors qu'une seule des deux lignes de façon
     imprévisible, cassant silencieusement le matching pour l'autre."""
@@ -88,6 +108,8 @@ def update_player(player_id: int, payload: PlayerManualUpdate, db: Session = Dep
         raise HTTPException(status_code=404, detail="Joueur introuvable")
 
     fields = payload.model_dump(exclude_unset=True)
+    if "mpg" in fields:
+        _validate_mpg(fields["mpg"])
 
     if "team_id" in fields:
         team = db.get(Team, fields["team_id"])
@@ -97,16 +119,8 @@ def update_player(player_id: int, payload: PlayerManualUpdate, db: Session = Dep
     if "name" in fields or "team_id" in fields:
         target_name = fields.get("name", player.name)
         target_team_id = fields.get("team_id", player.team_id)
-        conflict = (
-            db.query(Player)
-            .filter(
-                Player.name == target_name,
-                Player.team_id == target_team_id,
-                Player.id != player.id,
-            )
-            .one_or_none()
-        )
-        if conflict is not None:
+        conflict = find_player_by_name(db, target_name, target_team_id)
+        if conflict is not None and conflict.id != player.id:
             raise HTTPException(
                 status_code=409,
                 detail="Un autre joueur existe déjà avec ce nom dans cette équipe",

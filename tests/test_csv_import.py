@@ -204,6 +204,47 @@ def test_apply_players_advanced_g_zero_gives_mpg_zero(db_session):
     assert player.mpg == 0.0
 
 
+def test_parse_players_advanced_rejects_unrealistic_mpg():
+    """Point 2 (retour d'usage réel) : mpg dérivé (MP/G) au-delà du maximum
+    réaliste sur une saison (~48 min/match) est une erreur de ligne, pas une
+    valeur acceptée silencieusement."""
+    df = pd.DataFrame([{"Player": "Iron Man", "Team": "BOS", "PER": 20.0, "G": 10, "MP": 500}])  # 50.0 mpg
+    parsed, errors = csv_import.parse_players_advanced(df)
+    assert parsed == []
+    assert len(errors) == 1
+    assert "MPG invalide" in errors[0]["message"]
+
+
+def test_parse_players_advanced_accepts_mpg_at_the_boundary():
+    df = pd.DataFrame([{"Player": "Iron Man", "Team": "BOS", "PER": 20.0, "G": 10, "MP": 480}])  # 48.0 mpg
+    parsed, errors = csv_import.parse_players_advanced(df)
+    assert errors == []
+    assert len(parsed) == 1
+
+
+def test_apply_players_advanced_upsert_is_case_insensitive(db_session):
+    """Point 1 (retour d'usage réel) : "LEBRON JAMES" et "LeBron James"
+    doivent être reconnus comme le même joueur -- met à jour la ligne
+    existante, n'en crée pas une deuxième, et ne réécrit pas la casse déjà
+    stockée en base (voir player_matching.py)."""
+    team = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(Player(name="LeBron James", team_id=team.id, per=20.0, mpg=30.0))
+    db_session.flush()
+
+    df = pd.DataFrame([{"Player": "LEBRON JAMES", "Team": "LAL", "PER": 25.0, "G": 50, "MP": 1600}])
+    parsed, errors = csv_import.parse_players_advanced(df)
+    assert errors == []
+
+    csv_import.apply_players_advanced(parsed, db_session)
+
+    assert db_session.query(Player).filter(Player.team_id == team.id).count() == 1
+    player = db_session.query(Player).filter(Player.team_id == team.id).one()
+    assert player.name == "LeBron James"  # casse d'origine conservée
+    assert player.per == pytest.approx(25.0)
+
+
 def test_parse_players_unknown_team_reports_error():
     df = _read("players_advanced.csv")
     df.loc[0, "Team"] = "ZZZ"
@@ -340,6 +381,26 @@ def test_apply_draft_then_stats_import_updates_same_player_not_duplicate(db_sess
     assert player.per == pytest.approx(14.2)  # mis à jour
 
 
+def test_apply_draft_upsert_is_case_insensitive(db_session):
+    """Même garantie que apply_players_advanced, côté draft : un rookie
+    draftée puis complétée par un import Advanced avec une casse différente
+    doit retrouver la même ligne."""
+    draft_df = _draft_df([{"Pk": 1, "Tm": "BOS", "Player": "Rookie One"}])
+    parsed, _ = csv_import.parse_draft(draft_df)
+    csv_import.apply_draft(parsed, db_session)
+
+    stats_df = pd.DataFrame([{"Player": "ROOKIE ONE", "Team": "BOS", "PER": 14.2, "G": 20, "MP": 300}])
+    parsed_stats, errors = csv_import.parse_players_advanced(stats_df)
+    assert errors == []
+    csv_import.apply_players_advanced(parsed_stats, db_session)
+
+    assert db_session.query(Player).count() == 1
+    player = db_session.query(Player).one()
+    assert player.name == "Rookie One"  # casse d'origine (draft) conservée
+    assert player.draft_pick == 1
+    assert player.per == pytest.approx(14.2)
+
+
 # --- Import saison précédente (Étape 6bis) ----------------------------------
 
 
@@ -394,6 +455,38 @@ def test_prev_season_players_advanced_ignores_tot_and_keeps_last_team(db_session
     assert stable.team_abbreviation == "MIA"
     assert stable.per == pytest.approx(20.0)
     assert stable.mpg == pytest.approx(1000 / 40)
+
+
+def test_parse_players_advanced_prev_season_rejects_unrealistic_mpg():
+    df = pd.DataFrame([{"Player": "Iron Man", "Team": "BOS", "PER": 20.0, "G": 10, "MP": 500}])  # 50.0 mpg
+    parsed, errors = csv_import.parse_players_advanced_prev_season(df)
+    assert parsed == []
+    assert len(errors) == 1
+    assert "MPG invalide" in errors[0]["message"]
+
+
+def test_prev_season_advanced_upsert_is_case_insensitive(db_session):
+    """Point 1 (retour d'usage réel) : même garantie côté import N-1
+    (apply_players_advanced_prev_season / _upsert_prev_season_stat) -- une
+    casse différente de celle déjà en base met à jour la ligne existante."""
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season="2024-2025", player_name="LeBron James", team_abbreviation="LAL", per=20.0, mpg=30.0
+        )
+    )
+    db_session.flush()
+
+    df = pd.DataFrame([{"Player": "LEBRON JAMES", "Team": "LAL", "PER": 22.0, "G": 50, "MP": 1600}])
+    parsed, errors = csv_import.parse_players_advanced_prev_season(df)
+    assert errors == []
+    csv_import.apply_players_advanced_prev_season(parsed, db_session, season="2024-2025")
+
+    stats = db_session.query(PreviousSeasonPlayerStat).filter(
+        PreviousSeasonPlayerStat.season == "2024-2025"
+    ).all()
+    assert len(stats) == 1
+    assert stats[0].player_name == "LeBron James"  # casse d'origine conservée
+    assert stats[0].per == pytest.approx(22.0)
 
 
 def test_prev_season_advanced_alone_sets_both_per_and_mpg(db_session):

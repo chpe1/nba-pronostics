@@ -13,6 +13,13 @@ if TYPE_CHECKING:
     from app.models.team import Team
 
 
+# Minutes moyennes/match maximales réalistes sur une saison (48 min
+# réglementaires + marge prolongations) : au-delà, une valeur de mpg est une
+# erreur de saisie/donnée plutôt qu'un vrai record -- validée au formulaire
+# admin manuel ET à l'import CSV (voir app/api/players.py, app/services/csv_import.py).
+MAX_REALISTIC_MPG = 48.0
+
+
 class InjuryStatus(str, enum.Enum):
     HEALTHY = "healthy"
     OUT = "out"

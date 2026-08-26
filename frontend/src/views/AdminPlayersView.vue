@@ -130,7 +130,7 @@ onMounted(async () => {
       <h2 class="text-sm font-semibold text-gray-900">Ajouter un joueur</h2>
       <div class="grid grid-cols-2 gap-3">
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Nom</label>
+          <label class="mb-1 block text-xs font-medium text-gray-700">Nom complet (ex : LeBron James)</label>
           <input v-model="newPlayer.name" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
         </div>
         <div class="col-span-2">
@@ -187,7 +187,7 @@ onMounted(async () => {
 
       <div class="grid grid-cols-2 gap-3">
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Nom</label>
+          <label class="mb-1 block text-xs font-medium text-gray-700">Nom complet (ex : LeBron James)</label>
           <input v-model="forms[player.id].name" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
         </div>
         <div class="col-span-2">

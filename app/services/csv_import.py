@@ -32,8 +32,9 @@ from datetime import datetime, time, timedelta
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models import Game, GameStatus, ImportType, Player, PreviousSeasonPlayerStat, Team
+from app.models import MAX_REALISTIC_MPG, Game, GameStatus, ImportType, Player, PreviousSeasonPlayerStat, Team
 from app.services.nba_teams import ABBREVIATION_TO_NAME, NBA_TEAMS, normalize_abbreviation, resolve_team_name
+from app.services.player_matching import find_player_by_name, find_prev_season_stat_by_name, normalize_player_name
 
 # Ordre figé (pas juste un ensemble) : c'est aussi la source de vérité pour
 # l'ordre des colonnes des modèles CSV téléchargeables (generate_template_csv
@@ -315,6 +316,18 @@ def parse_players_advanced(
         except (ValueError, TypeError, KeyError):
             errors.append({"row": row_num, "message": f"G/MP invalide pour {name!r}"})
             continue
+        mpg_candidate = mp / g if g else 0.0
+        if mpg_candidate > MAX_REALISTIC_MPG:
+            errors.append(
+                {
+                    "row": row_num,
+                    "message": (
+                        f"MPG invalide pour {name!r} : {mpg_candidate:.1f} dépasse le maximum "
+                        f"réaliste ({MAX_REALISTIC_MPG} min/match)"
+                    ),
+                }
+            )
+            continue
 
         parsed.append({"name": name, "team_abbreviation": team_abbr, "per": per, "g": g, "mp": mp})
     return parsed, errors
@@ -374,6 +387,18 @@ def parse_players_advanced_prev_season(
             mp = float(row["MP"])
         except (ValueError, TypeError, KeyError):
             errors.append({"row": row_num, "message": f"G/MP invalide pour {name!r}"})
+            continue
+        mpg_candidate = mp / g if g else 0.0
+        if mpg_candidate > MAX_REALISTIC_MPG:
+            errors.append(
+                {
+                    "row": row_num,
+                    "message": (
+                        f"MPG invalide pour {name!r} : {mpg_candidate:.1f} dépasse le maximum "
+                        f"réaliste ({MAX_REALISTIC_MPG} min/match)"
+                    ),
+                }
+            )
             continue
 
         parsed.append({"name": name, "team_abbreviation": team_abbr, "per": per, "g": g, "mp": mp})
@@ -535,11 +560,7 @@ def apply_players_advanced(parsed: list[dict], db: Session) -> int:
     count = 0
     for item in parsed:
         team = _get_or_create_team(db, item["team_abbreviation"])
-        player = (
-            db.query(Player)
-            .filter(Player.name == item["name"], Player.team_id == team.id)
-            .one_or_none()
-        )
+        player = find_player_by_name(db, item["name"], team.id)
         if player is None:
             player = Player(name=item["name"], team_id=team.id)
             db.add(player)
@@ -559,11 +580,7 @@ def apply_draft(parsed: list[dict], db: Session) -> int:
     count = 0
     for item in parsed:
         team = _get_or_create_team(db, item["team_abbreviation"])
-        player = (
-            db.query(Player)
-            .filter(Player.name == item["name"], Player.team_id == team.id)
-            .one_or_none()
-        )
+        player = find_player_by_name(db, item["name"], team.id)
         if player is None:
             player = Player(name=item["name"], team_id=team.id)
             db.add(player)
@@ -601,18 +618,15 @@ def _upsert_prev_season_stat(
     verraient pas l'une l'autre via une requête DB tant que flush() n'a pas
     été appelé, et créeraient deux lignes en conflit avec la contrainte
     UNIQUE(season, player_name) au lieu de fusionner en une seule."""
-    stat = cache.get(name)
+    key = normalize_player_name(name)
+    stat = cache.get(key)
     if stat is None:
-        stat = (
-            db.query(PreviousSeasonPlayerStat)
-            .filter(PreviousSeasonPlayerStat.season == season, PreviousSeasonPlayerStat.player_name == name)
-            .one_or_none()
-        )
+        stat = find_prev_season_stat_by_name(db, season, name)
     if stat is None:
         stat = PreviousSeasonPlayerStat(season=season, player_name=name, team_abbreviation=team_abbreviation)
         db.add(stat)
     stat.team_abbreviation = team_abbreviation
-    cache[name] = stat
+    cache[key] = stat
     return stat
 
 

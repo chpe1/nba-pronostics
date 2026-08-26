@@ -329,6 +329,25 @@ def test_transfer_bonus_detects_incoming_player(db_session):
     assert bonus == pytest.approx(22.0)  # PER N-1, pas le PER courant (15.0)
 
 
+def test_transfer_bonus_detects_incoming_player_case_insensitive(db_session):
+    """Point 1 (retour d'usage réel) : le rapprochement Player.name /
+    PreviousSeasonPlayerStat.player_name doit ignorer la casse -- un joueur
+    actuel "LEBRON JAMES" doit retrouver sa ligne N-1 "LeBron James"."""
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(Player(name="LEBRON JAMES", team_id=team.id, per=15.0, mpg=20.0))
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON, player_name="LeBron James", team_abbreviation="LAL", per=22.0, mpg=30.0
+        )
+    )
+    db_session.flush()
+
+    bonus = calc.compute_transfer_bonus(db_session, team, _settings(), PREV_SEASON)
+    assert bonus == pytest.approx(22.0)
+
+
 def test_transfer_bonus_ignores_player_already_on_team_last_season(db_session):
     team = _team()
     db_session.add(team)
