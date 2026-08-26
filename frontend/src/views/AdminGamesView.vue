@@ -53,11 +53,13 @@ async function save(game) {
     if (form.home_score !== null && form.home_score !== '') payload.home_score = Number(form.home_score)
     if (form.away_score !== null && form.away_score !== '') payload.away_score = Number(form.away_score)
 
-    const updated = await apiFetch(`/api/games/${game.id}`, { method: 'PATCH', body: payload })
-    const idx = games.value.findIndex((g) => g.id === game.id)
-    games.value[idx] = updated
-    forms.value[game.id] = buildForm(updated)
+    await apiFetch(`/api/games/${game.id}`, { method: 'PATCH', body: payload })
+    // Recharge depuis le serveur plutôt qu'une simple mise à jour locale :
+    // un changement de date peut faire sortir le match de la liste de la
+    // date actuellement affichée (report vers un autre jour) -- un simple
+    // patch en place laisserait le match affiché à tort sur l'ancienne date.
     savedId.value = game.id
+    await loadGames()
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Échec de l'enregistrement."
   } finally {

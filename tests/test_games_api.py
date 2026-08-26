@@ -135,3 +135,87 @@ def test_update_game_without_manually_overridden_field_leaves_existing_value(cli
 
     assert response.status_code == 200
     assert response.json()["manually_overridden"] is True
+
+
+# --- Garde-fou anti double-booking (point 2, retour d'usage réel) ----------
+
+
+def test_update_game_reschedule_rejects_home_team_double_booking(client, db_session, auth_headers):
+    """Un report qui ferait jouer l'équipe à domicile un deuxième match le
+    même jour doit être refusé (409), pas accepté silencieusement."""
+    home, away = _teams(db_session)
+    third = Team(name="Miami Heat", abbreviation="MIA")
+    db_session.add(third)
+    db_session.flush()
+
+    target_date = date.today() + timedelta(days=5)
+    # Match existant : home (Celtics) reçoit déjà Miami ce jour-là.
+    _game(db_session, home, third, target_date)
+    # Match à reporter : Celtics @ Lakers, actuellement un autre jour.
+    game = _game(db_session, home, away, date.today())
+
+    new_date = datetime.combine(target_date, datetime.min.time()).replace(hour=20)
+    response = client.patch(
+        f"/api/games/{game.id}",
+        json={"game_date": new_date.isoformat()},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 409
+    assert "Boston Celtics" in response.json()["detail"]
+    db_session.refresh(game)
+    assert game.game_date.date() == date.today()  # inchangé
+
+
+def test_update_game_reschedule_rejects_away_team_double_booking(client, db_session, auth_headers):
+    """Même contrôle côté équipe à l'extérieur."""
+    home, away = _teams(db_session)
+    third = Team(name="Miami Heat", abbreviation="MIA")
+    db_session.add(third)
+    db_session.flush()
+
+    target_date = date.today() + timedelta(days=5)
+    # Match existant : away (Lakers) joue déjà à l'extérieur chez Miami ce jour-là.
+    _game(db_session, third, away, target_date)
+    game = _game(db_session, home, away, date.today())
+
+    new_date = datetime.combine(target_date, datetime.min.time()).replace(hour=20)
+    response = client.patch(
+        f"/api/games/{game.id}",
+        json={"game_date": new_date.isoformat()},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 409
+    assert "Los Angeles Lakers" in response.json()["detail"]
+
+
+def test_update_game_reschedule_to_free_date_succeeds(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+    new_date = datetime.combine(date.today() + timedelta(days=5), datetime.min.time()).replace(hour=20)
+
+    response = client.patch(
+        f"/api/games/{game.id}",
+        json={"game_date": new_date.isoformat()},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["game_date"] == new_date.isoformat()
+
+
+def test_update_game_reschedule_excludes_itself_from_conflict_check(client, db_session, auth_headers):
+    """Changer seulement l'heure (même jour) ne doit jamais se heurter au
+    match lui-même dans la vérification de conflit."""
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+    new_time = datetime.combine(date.today(), datetime.min.time()).replace(hour=21, minute=30)
+
+    response = client.patch(
+        f"/api/games/{game.id}",
+        json={"game_date": new_time.isoformat()},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
