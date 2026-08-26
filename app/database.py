@@ -1,7 +1,12 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./nba_pronostics.db"
+# Surchargeable via DATABASE_URL (ex: pour une base de dev séparée lors des
+# vérifications manuelles en navigateur, sans jamais toucher la vraie base
+# une fois de vraies données chargées).
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./nba_pronostics.db")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,

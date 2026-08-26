@@ -1,3 +1,4 @@
+import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -20,6 +21,14 @@ config = context.config
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Même variable d'environnement que app/database.py (DATABASE_URL) : sans
+# cette surcharge, `alembic upgrade head` ignorerait DATABASE_URL et
+# appliquerait toujours les migrations sur alembic.ini::sqlalchemy.url (la
+# vraie base), rendant impossible de créer le schéma d'une base de dev
+# séparée pour les vérifications manuelles.
+if os.getenv("DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 # add your model's MetaData object here
 # for 'autogenerate' support
