@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
 import CsvUploadForm from '@/components/CsvUploadForm.vue'
+import CsvTemplatesCard from '@/components/CsvTemplatesCard.vue'
 import ImportHistoryTable from '@/components/ImportHistoryTable.vue'
 
 const history = ref([])
@@ -27,6 +28,7 @@ onMounted(loadHistory)
       {{ errorMessage }}
     </p>
 
+    <CsvTemplatesCard />
     <CsvUploadForm @imported="loadHistory" />
     <ImportHistoryTable :history="history" />
   </section>

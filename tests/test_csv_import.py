@@ -538,3 +538,64 @@ def test_apply_schedule_never_touches_manually_overridden_game(db_session):
     assert game.status == GameStatus.SCHEDULED
     assert game.home_score is None and game.away_score is None
     assert game.game_date.hour == 22 and game.game_date.minute == 15
+
+
+# --- Modèles CSV téléchargeables ---------------------------------------------
+
+
+def test_generate_template_csv_unknown_key_raises():
+    with pytest.raises(ValueError):
+        csv_import.generate_template_csv("not_a_real_key")
+
+
+@pytest.mark.parametrize("key", csv_import.TEMPLATE_KEYS)
+def test_generate_template_csv_has_header_and_non_empty_example_row(key):
+    content = csv_import.generate_template_csv(key)
+    lines = content.strip("\r\n").split("\r\n")
+    assert len(lines) == 2
+    header = lines[0].split(",")
+    example = lines[1].split(",")
+    assert len(header) == len(example)
+    assert all(cell.strip() != "" for cell in example)
+
+
+def test_generate_template_players_advanced_league_includes_team_column():
+    content = csv_import.generate_template_csv("players_advanced_league")
+    header = content.splitlines()[0].split(",")
+    assert header == ["Player", "Team", "PER", "G", "MP"]
+
+
+def test_generate_template_players_advanced_team_excludes_team_column():
+    content = csv_import.generate_template_csv("players_advanced_team")
+    header = content.splitlines()[0].split(",")
+    assert "Team" not in header
+    assert header == ["Player", "PER", "G", "MP"]
+
+
+def test_generate_template_columns_match_required_columns_order():
+    """Vérifie que le modèle est bien dérivé de REQUIRED_COLUMNS (même ordre,
+    même source de vérité que la validation à l'import), pas d'une liste
+    recopiée séparément."""
+    for key, import_type in [
+        ("teams_home_away", ImportType.TEAMS_HOME_AWAY),
+        ("players_advanced_team", ImportType.PLAYERS_ADVANCED),
+        ("draft", ImportType.DRAFT),
+        ("schedule", ImportType.SCHEDULE),
+    ]:
+        header = csv_import.generate_template_csv(key).splitlines()[0].split(",")
+        assert header == list(csv_import.REQUIRED_COLUMNS[import_type])
+
+
+def test_every_required_column_has_an_example_value():
+    """Test anti-désynchronisation demandé explicitement : si une future
+    colonne requise est ajoutée à REQUIRED_COLUMNS sans exemple associé,
+    ce test échoue bruyamment plutôt que de produire un modèle avec une
+    cellule vide (ou un KeyError en prod)."""
+    all_required_columns = {
+        column
+        for columns in csv_import.REQUIRED_COLUMNS.values()
+        for column in columns
+    }
+    all_required_columns.add("Team")  # réintégré pour players_advanced_league
+    missing = all_required_columns - csv_import._EXAMPLE_VALUES.keys()
+    assert missing == set()

@@ -24,6 +24,7 @@ dans Player/Team courants), pour la détection des transferts (Étape 6bis).
 """
 from __future__ import annotations
 
+import csv
 import io
 import re
 from datetime import datetime, time, timedelta
@@ -34,13 +35,16 @@ from sqlalchemy.orm import Session
 from app.models import Game, GameStatus, ImportType, Player, PreviousSeasonPlayerStat, Team
 from app.services.nba_teams import ABBREVIATION_TO_NAME, NBA_TEAMS, normalize_abbreviation, resolve_team_name
 
-REQUIRED_COLUMNS: dict[ImportType, set[str]] = {
-    ImportType.TEAMS_HOME_AWAY: {"Team", "Home", "Road"},
+# Ordre figé (pas juste un ensemble) : c'est aussi la source de vérité pour
+# l'ordre des colonnes des modèles CSV téléchargeables (generate_template_csv
+# plus bas), en plus de la validation à l'import.
+REQUIRED_COLUMNS: dict[ImportType, tuple[str, ...]] = {
+    ImportType.TEAMS_HOME_AWAY: ("Team", "Home", "Road"),
     # Team volontairement absent : présent seulement dans la variante ligue
     # entière (voir docstring du module) -- validé séparément selon le cas.
-    ImportType.PLAYERS_ADVANCED: {"Player", "PER", "G", "MP"},
-    ImportType.DRAFT: {"Pk", "Tm", "Player"},
-    ImportType.SCHEDULE: {"Date", "Start (ET)", "Visitor/Neutral", "Home/Neutral"},
+    ImportType.PLAYERS_ADVANCED: ("Player", "PER", "G", "MP"),
+    ImportType.DRAFT: ("Pk", "Tm", "Player"),
+    ImportType.SCHEDULE: ("Date", "Start (ET)", "Visitor/Neutral", "Home/Neutral"),
 }
 
 # Basketball-Reference ajoute une ligne agrégée "TOT" (toutes équipes
@@ -113,7 +117,82 @@ def detect_import_type(df: pd.DataFrame) -> ImportType | None:
 def validate_columns(df: pd.DataFrame, import_type: ImportType) -> list[str]:
     """Retourne la liste des colonnes requises manquantes (triée)."""
     required = REQUIRED_COLUMNS[import_type]
-    return sorted(required - set(df.columns))
+    return sorted(set(required) - set(df.columns))
+
+
+# Modèles CSV téléchargeables (aide-mémoire du format attendu, back-office
+# Imports) : 5 clés pour les 4 types + les 2 variantes de players_advanced
+# (avec/sans colonne Team -- voir docstring du module).
+TEMPLATE_KEYS: tuple[str, ...] = (
+    "teams_home_away",
+    "players_advanced_league",
+    "players_advanced_team",
+    "draft",
+    "schedule",
+)
+
+_TEMPLATE_IMPORT_TYPE: dict[str, ImportType] = {
+    "teams_home_away": ImportType.TEAMS_HOME_AWAY,
+    "players_advanced_league": ImportType.PLAYERS_ADVANCED,
+    "players_advanced_team": ImportType.PLAYERS_ADVANCED,
+    "draft": ImportType.DRAFT,
+    "schedule": ImportType.SCHEDULE,
+}
+
+# Valeurs d'exemple UNIQUEMENT cosmétiques (pour que le modèle montre à quoi
+# ressemble une valeur plausible, pas juste un nom de colonne) -- ce n'est
+# PAS une source de vérité sur les colonnes requises, qui reste
+# REQUIRED_COLUMNS. Une valeur manquante ici est détectée par un test dédié
+# (tests/test_csv_import.py), jamais silencieuse : contrairement à
+# REQUIRED_COLUMNS, un oubli ici ne peut pas casser un vrai import,
+# seulement rendre un modèle incomplet.
+_EXAMPLE_VALUES: dict[str, str] = {
+    "Team": "Boston Celtics",
+    "Home": "24-6",
+    "Road": "18-16",
+    "Player": "Jayson Tatum",
+    "PER": "24.3",
+    "G": "72",
+    "MP": "2450",
+    "Pk": "1",
+    "Tm": "BOS",
+    "Date": "Tue Oct 21 2025",
+    "Start (ET)": "7:30p",
+    "Visitor/Neutral": "Los Angeles Lakers",
+    "Home/Neutral": "Boston Celtics",
+}
+
+
+def generate_template_csv(key: str) -> str:
+    """Génère un modèle CSV minimal (en-têtes + une ligne d'exemple) pour la
+    clé de modèle donnée -- voir TEMPLATE_KEYS. Les colonnes viennent
+    directement de REQUIRED_COLUMNS (même source de vérité que la
+    validation à l'import) : un futur changement de colonnes requises se
+    répercute automatiquement ici, sans liste séparée à maintenir à la main.
+
+    Ne reproduit PAS les artefacts réels de Basketball-Reference (double
+    en-tête de la draft, colonnes dupliquées MP/PTS/TRB/AST, colonnes
+    optionnelles comme PTS) : le modèle représente la structure minimale
+    propre attendue par l'app, pas une réplique exacte d'un export réel."""
+    if key not in _TEMPLATE_IMPORT_TYPE:
+        raise ValueError(f"Modèle inconnu : {key!r}")
+
+    import_type = _TEMPLATE_IMPORT_TYPE[key]
+    columns = list(REQUIRED_COLUMNS[import_type])
+    if key == "players_advanced_league":
+        # Seule exception : Team est volontairement exclu de
+        # REQUIRED_COLUMNS[PLAYERS_ADVANCED] (variant-dépendant, voir
+        # commentaire à sa définition) -- réintégré ici uniquement pour
+        # cette variante précise du modèle.
+        columns.insert(1, "Team")
+
+    example_row = [_EXAMPLE_VALUES[column] for column in columns]
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(columns)
+    writer.writerow(example_row)
+    return buffer.getvalue()
 
 
 def _parse_win_loss(value: object) -> tuple[int, int] | None:

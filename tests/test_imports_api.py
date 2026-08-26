@@ -226,3 +226,31 @@ def test_schedule_confirmed_import_creates_games(client, db_session, auth_header
     assert db_session.query(Game).count() == 1200
     assert db_session.query(Game).filter(Game.status == GameStatus.SCHEDULED).count() == 1200
     assert db_session.query(Game).filter(Game.season == "2026-2027").count() == 1200
+
+
+# --- Modèles CSV téléchargeables ---------------------------------------------
+
+
+def test_download_template_requires_authentication(client):
+    response = client.get("/api/imports/template", params={"type": "draft"})
+    assert response.status_code == 401
+
+
+def test_download_template_unknown_key_returns_400(client, auth_headers):
+    response = client.get(
+        "/api/imports/template", params={"type": "not_a_real_key"}, headers=auth_headers
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["teams_home_away", "players_advanced_league", "players_advanced_team", "draft", "schedule"],
+)
+def test_download_template_returns_csv_with_content_disposition(client, auth_headers, key):
+    response = client.get("/api/imports/template", params={"type": key}, headers=auth_headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert f'modele_{key}.csv' in response.headers["content-disposition"]
+    lines = response.text.strip().splitlines()
+    assert len(lines) == 2

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
@@ -157,6 +157,24 @@ async def import_stats(
     db.refresh(history)
 
     return ImportResultResponse(import_history=history)
+
+
+@router.get("/template")
+def download_template(
+    type: str = Query(..., description="Un de : " + ", ".join(csv_import.TEMPLATE_KEYS)),
+):
+    """Aide-mémoire rapide du format actuellement attendu par chaque type de
+    fichier -- généré depuis REQUIRED_COLUMNS (même source de vérité que la
+    validation à l'import), pas une liste recopiée à la main."""
+    try:
+        content = csv_import.generate_template_csv(type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="modele_{type}.csv"'},
+    )
 
 
 @router.get("/history", response_model=list[ImportHistoryRead])
