@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
 from app.database import get_db
-from app.models import ImportHistory, ImportStatus, ImportType, SeasonType
+from app.models import ImportHistory, ImportStatus, ImportType, SeasonType, Team
 from app.schemas import ImportHistoryRead, ImportPreviewResponse, ImportResultResponse
 from app.services import csv_import
 
@@ -25,6 +25,13 @@ async def import_stats(
     ),
     season: str | None = Query(
         None, description="Libellé de la saison N-1, ex: '2024-2025' (requis si season_type=previous)"
+    ),
+    team_id: int | None = Query(
+        None,
+        description=(
+            "ID de l'équipe -- requis uniquement pour un roster Advanced "
+            "d'une seule équipe (fichier sans colonne Team), quelle que soit la saison."
+        ),
     ),
     db: Session = Depends(get_db),
 ):
@@ -47,6 +54,28 @@ async def import_stats(
             status_code=400,
             detail=f"Colonnes manquantes pour {detected_type.value} : {', '.join(missing)}",
         )
+
+    # players_advanced accepte un roster d'une seule équipe (pas de colonne
+    # Team, l'équipe est alors implicite au fichier) : team_id devient
+    # obligatoire dans ce cas précis. resolved_team_* est renvoyé dans
+    # l'aperçu dry-run -- seule protection contre une erreur de sélection
+    # dans le menu déroulant, puisque le fichier ne contient aucune info
+    # d'équipe à croiser.
+    team_abbreviation_param: str | None = None
+    resolved_team_name: str | None = None
+    resolved_team_abbreviation: str | None = None
+    if detected_type == ImportType.PLAYERS_ADVANCED and "Team" not in df.columns:
+        if team_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Le paramètre 'team_id' est requis pour un roster par équipe (fichier sans colonne Team).",
+            )
+        team = db.get(Team, team_id)
+        if team is None:
+            raise HTTPException(status_code=404, detail="Équipe introuvable")
+        team_abbreviation_param = team.abbreviation
+        resolved_team_name = team.name
+        resolved_team_abbreviation = team.abbreviation
 
     # La draft n'a pas de notion de saison précédente (toujours l'effectif
     # actuel). Le calendrier n'a pas cette notion non plus, mais pour la
@@ -79,7 +108,10 @@ async def import_stats(
         parser = csv_import.PARSERS[detected_type]
         applier = csv_import.APPLIERS[detected_type]
 
-    parsed, errors = parser(df)
+    if detected_type == ImportType.PLAYERS_ADVANCED:
+        parsed, errors = parser(df, team_abbreviation=team_abbreviation_param)
+    else:
+        parsed, errors = parser(df)
     filename = file.filename or "fichier.csv"
 
     if dry_run:
@@ -92,6 +124,8 @@ async def import_stats(
             errors=errors,
             season_type=effective_season_type,
             season=season if detected_type == ImportType.SCHEDULE or effective_season_type == SeasonType.PREVIOUS else None,
+            resolved_team_name=resolved_team_name,
+            resolved_team_abbreviation=resolved_team_abbreviation,
         )
 
     if detected_type == ImportType.SCHEDULE:

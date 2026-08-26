@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
 
 const emit = defineEmits(['imported'])
@@ -10,6 +10,17 @@ const errorMessage = ref('')
 const isLoading = ref(false)
 const seasonType = ref('current')
 const season = ref('')
+const teams = ref([])
+const teamId = ref('')
+
+async function loadTeams() {
+  try {
+    teams.value = await apiFetch('/api/teams')
+  } catch {
+    // Non bloquant : seul le roster par équipe en a besoin, l'erreur backend
+    // (team_id manquant) guide de toute façon si ce champ reste vide.
+  }
+}
 
 function onFileChange(event) {
   selectedFile.value = event.target.files[0] ?? null
@@ -36,6 +47,11 @@ async function upload(dryRun) {
     if (season.value.trim()) {
       params.set('season', season.value.trim())
     }
+    // Requis uniquement pour un roster Advanced d'une seule équipe (fichier
+    // sans colonne Team) ; sans effet sinon.
+    if (teamId.value) {
+      params.set('team_id', teamId.value)
+    }
     const result = await apiFetch(`/api/imports/stats?${params.toString()}`, {
       method: 'POST',
       body: formData,
@@ -55,6 +71,8 @@ async function upload(dryRun) {
     isLoading.value = false
   }
 }
+
+onMounted(loadTeams)
 </script>
 
 <template>
@@ -89,6 +107,17 @@ async function upload(dryRun) {
       </p>
     </fieldset>
 
+    <fieldset class="mb-3 text-sm text-gray-700">
+      <legend class="mb-1 font-medium text-gray-900">Équipe (roster par équipe uniquement)</legend>
+      <select v-model="teamId" class="w-full max-w-xs rounded-lg border border-gray-300 px-2 py-1 text-sm">
+        <option value="">—</option>
+        <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
+      </select>
+      <p class="mt-1 text-xs text-gray-500">
+        Requis uniquement pour un roster Advanced d'une seule équipe (fichier sans colonne Team) ; sans effet sinon.
+      </p>
+    </fieldset>
+
     <div class="flex gap-2">
       <button
         type="button"
@@ -114,6 +143,14 @@ async function upload(dryRun) {
     </p>
 
     <div v-if="preview" class="mt-4 text-sm">
+      <p
+        v-if="preview.resolved_team_name"
+        class="mb-2 rounded-lg bg-blue-50 px-3 py-2 font-medium text-blue-900"
+      >
+        ⚠️ Équipe résolue pour cet import : <strong>{{ preview.resolved_team_name }} ({{ preview.resolved_team_abbreviation }})</strong>
+        — vérifie que c'est la bonne avant de confirmer (le fichier ne contient aucune info d'équipe à croiser).
+      </p>
+
       <p class="mb-2 text-gray-700">
         Type détecté : <strong>{{ preview.import_type }}</strong>
         <span v-if="preview.season"> (saison {{ preview.season }})</span> —

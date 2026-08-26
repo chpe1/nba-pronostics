@@ -59,6 +59,37 @@ _COLLAPSED_TO_FULL_NAME: dict[str, str] = {
 # quand un import joueurs arrive avant l'import équipes).
 ABBREVIATION_TO_NAME: dict[str, str] = {abbr: full_name for full_name, abbr in NBA_TEAMS.items()}
 
+# Basketball-Reference utilise pour certaines équipes une abréviation qui lui
+# est propre, différente de l'abréviation officielle de la ligue utilisée
+# comme référence dans NBA_TEAMS. "BRK" (Brooklyn) et "PHO" (Phoenix)
+# rencontrés concrètement sur un vrai export (page Draft, colonne Tm) ;
+# "CHO" (Charlotte) vérifié le 2026-08-25 par recherche systématique des 30
+# abréviations réellement utilisées sur basketball-reference.com (pages
+# d'équipe indexées) -- Basketball-Reference distingue ainsi les Hornets
+# actuels (depuis 2014) de l'ancienne franchise Charlotte Hornets (1988-2002,
+# devenue les Pelicans) qui utilisait déjà "CHH"/"CHA" dans son historique.
+# Les 27 autres équipes (dont toutes celles ayant déménagé/changé de nom :
+# NOP, OKC, MEM, UTA, LAC, GSW) confirmées identiques à l'abréviation
+# canonique de NBA_TEAMS. Normalisées vers l'abréviation canonique AVANT
+# toute validation/écriture en base, pour ne jamais créer une deuxième Team
+# pour la même équipe. Liste tenue à jour au 2026-08-25 ; à revérifier si
+# Basketball-Reference change ses conventions ou si une 30e franchise
+# relocalise/se renomme.
+_ABBREVIATION_ALIASES: dict[str, str] = {
+    "BRK": "BKN",
+    "PHO": "PHX",
+    "CHO": "CHA",
+}
+
+
+def normalize_abbreviation(abbreviation: str) -> str:
+    """Convertit une abréviation Basketball-Reference propriétaire (ex:
+    "BRK", "PHO") vers l'abréviation canonique utilisée dans ABBREVIATION_TO_NAME
+    (ex: "BKN", "PHX"). Retourne l'entrée telle quelle si elle n'est pas
+    concernée (déjà canonique, ou véritablement inconnue -- la validation
+    "équipe inconnue" reste à la charge de l'appelant)."""
+    return _ABBREVIATION_ALIASES.get(abbreviation, abbreviation)
+
 
 def get_abbreviation(full_name: str) -> str | None:
     """Retourne l'abréviation officielle pour un nom complet d'équipe, ou None."""

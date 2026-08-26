@@ -38,14 +38,14 @@ def list_players(team_id: int | None = Query(default=None), db: Session = Depend
 @router.post("", response_model=PlayerWithTeamRead)
 def create_or_upsert_player(payload: PlayerManualCreate, response: Response, db: Session = Depends(get_db)):
     """Upsert par (name, team_id) -- même clé que les appliers CSV
-    (apply_players_advanced/apply_players_per_game/apply_draft), pour qu'un
+    (apply_players_advanced/apply_draft), pour qu'un
     joueur ajouté à la main soit retrouvé (et complété, pas dupliqué) par un
     futur import CSV du même joueur, et inversement.
 
     Décision volontaire (à l'inverse de Game.manually_overridden pour les
     matchs) : aucun verrou n'est posé ici. Un per/mpg saisi à la main reste
     un simple placeholder, écrasé sans protection par le prochain import CSV
-    Advanced/Per Game du même joueur -- comportement déjà en place côté
+    Advanced du même joueur -- comportement déjà en place côté
     import, non modifié par cet endpoint."""
     team = db.get(Team, payload.team_id)
     if team is None:
@@ -74,7 +74,15 @@ def update_player(player_id: int, payload: PlayerManualUpdate, db: Session = Dep
     """Édition directe par id (liste/édition inline) : on connaît déjà la
     ligne exacte à corriger, pas besoin de repasser par la clé
     (name, team_id) -- permet aussi de corriger name/team_id eux-mêmes sans
-    déclencher de logique d'upsert."""
+    déclencher de logique d'upsert.
+
+    Garde-fou : refuse (409) toute modification qui ferait converger
+    name/team_id vers une combinaison déjà utilisée par un AUTRE joueur. Sans
+    ce contrôle, deux lignes pourraient finir par partager la même clé
+    (name, team_id) -- exactement celle utilisée par l'upsert CSV
+    (apply_players_advanced/apply_draft) -- et un
+    futur import ne retrouverait alors qu'une seule des deux lignes de façon
+    imprévisible, cassant silencieusement le matching pour l'autre."""
     player = db.get(Player, player_id)
     if player is None:
         raise HTTPException(status_code=404, detail="Joueur introuvable")
@@ -85,7 +93,27 @@ def update_player(player_id: int, payload: PlayerManualUpdate, db: Session = Dep
         team = db.get(Team, fields["team_id"])
         if team is None:
             raise HTTPException(status_code=404, detail="Équipe introuvable")
-        player.team_id = team.id
+
+    if "name" in fields or "team_id" in fields:
+        target_name = fields.get("name", player.name)
+        target_team_id = fields.get("team_id", player.team_id)
+        conflict = (
+            db.query(Player)
+            .filter(
+                Player.name == target_name,
+                Player.team_id == target_team_id,
+                Player.id != player.id,
+            )
+            .one_or_none()
+        )
+        if conflict is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Un autre joueur existe déjà avec ce nom dans cette équipe",
+            )
+
+    if "team_id" in fields:
+        player.team_id = fields["team_id"]
     if "name" in fields:
         player.name = fields["name"]
     if "draft_pick" in fields:

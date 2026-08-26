@@ -120,7 +120,7 @@ onMounted(async () => {
     <h1 class="text-xl font-semibold text-gray-900">Joueurs</h1>
     <p class="text-sm text-gray-500">
       Ajouter ou corriger un joueur à la main (rookie drafté, correction ponctuelle). Un
-      PER/MPG saisi ici est un simple placeholder : le prochain import CSV Advanced/Per Game du
+      PER/MPG saisi ici est un simple placeholder : le prochain import CSV Advanced du
       même joueur l'écrase normalement, sans protection particulière.
     </p>
 

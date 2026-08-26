@@ -12,7 +12,6 @@ from app.database import Base
 class ImportType(str, enum.Enum):
     TEAMS_HOME_AWAY = "teams_home_away"
     PLAYERS_ADVANCED = "players_advanced"
-    PLAYERS_PER_GAME = "players_per_game"
     DRAFT = "draft"
     SCHEDULE = "schedule"
 
@@ -26,9 +25,8 @@ class ImportStatus(str, enum.Enum):
 class SeasonType(str, enum.Enum):
     """La saison à laquelle appartiennent les données d'un import CSV.
 
-    "previous" concerne uniquement teams_home_away/players_advanced/
-    players_per_game (voir csv_import.py) ; sans objet pour "draft",
-    toujours "current".
+    "previous" concerne uniquement teams_home_away/players_advanced (voir
+    csv_import.py) ; sans objet pour "draft", toujours "current".
     """
 
     CURRENT = "current"

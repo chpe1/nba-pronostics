@@ -25,11 +25,6 @@ def test_detect_players_advanced():
     assert csv_import.detect_import_type(df) == ImportType.PLAYERS_ADVANCED
 
 
-def test_detect_players_per_game():
-    df = _read("players_per_game.csv")
-    assert csv_import.detect_import_type(df) == ImportType.PLAYERS_PER_GAME
-
-
 def test_players_advanced_drops_br_blank_columns():
     df = _read("players_advanced.csv")
     assert not any(str(c).startswith("Unnamed") for c in df.columns)
@@ -55,21 +50,38 @@ def test_parse_teams_home_away_unknown_team_reports_error():
     assert len(parsed) == len(df) - 1
 
 
-def test_parse_players_advanced_extracts_per():
+def test_parse_players_advanced_extracts_per_and_raw_mp_g():
     df = _read("players_advanced.csv")
     parsed, errors = csv_import.parse_players_advanced(df)
     assert errors == []
     player_a = next(item for item in parsed if item["name"] == "Player A")
     assert player_a["team_abbreviation"] == "BOS"
     assert player_a["per"] == pytest.approx(24.3)
+    assert player_a["g"] == pytest.approx(58)
+    assert player_a["mp"] == pytest.approx(1980)
 
 
-def test_parse_players_per_game_extracts_mpg():
-    df = _read("players_per_game.csv")
-    parsed, errors = csv_import.parse_players_per_game(df)
+def test_apply_players_advanced_derives_mpg_from_mp_and_g(db_session):
+    df = _read("players_advanced.csv")
+    parsed, errors = csv_import.parse_players_advanced(df)
     assert errors == []
-    player_a = next(item for item in parsed if item["name"] == "Player A")
-    assert player_a["mpg"] == pytest.approx(34.1)
+
+    csv_import.apply_players_advanced(parsed, db_session)
+
+    player_a = db_session.query(Player).filter(Player.name == "Player A").one()
+    assert player_a.per == pytest.approx(24.3)
+    assert player_a.mpg == pytest.approx(1980 / 58)
+
+
+def test_apply_players_advanced_g_zero_gives_mpg_zero(db_session):
+    df = pd.DataFrame([{"Player": "Bench Warmer", "Team": "BOS", "PER": 5.0, "G": 0, "MP": 0}])
+    parsed, errors = csv_import.parse_players_advanced(df)
+    assert errors == []
+
+    csv_import.apply_players_advanced(parsed, db_session)
+
+    player = db_session.query(Player).filter(Player.name == "Bench Warmer").one()
+    assert player.mpg == 0.0
 
 
 def test_parse_players_unknown_team_reports_error():
@@ -78,6 +90,47 @@ def test_parse_players_unknown_team_reports_error():
     parsed, errors = csv_import.parse_players_advanced(df)
     assert len(errors) == 1
     assert "inconnue" in errors[0]["message"]
+
+
+# --- Roster par équipe (pas de colonne Team, fichier réel) ------------------
+
+
+def test_detect_roster_by_team_advanced_as_players_advanced():
+    """Le vrai fichier n'a pas de colonne Team (une seule équipe) -- doit
+    quand même être détecté comme PLAYERS_ADVANCED (Player+PER suffisent)."""
+    df = _read("roster_exemple_equipe_advanced.csv")
+    assert csv_import.detect_import_type(df) == ImportType.PLAYERS_ADVANCED
+    assert "Team" not in df.columns
+
+
+def test_parse_players_advanced_without_team_column_uses_provided_abbreviation():
+    df = _read("roster_exemple_equipe_advanced.csv")
+    parsed, errors = csv_import.parse_players_advanced(df, team_abbreviation="DET")
+    assert errors == []
+    assert all(item["team_abbreviation"] == "DET" for item in parsed)
+    cade = next(item for item in parsed if item["name"] == "Cade Cunningham")
+    assert cade["per"] == pytest.approx(21.6)
+
+
+def test_parse_players_advanced_without_team_column_skips_team_totals_row():
+    df = _read("roster_exemple_equipe_advanced.csv")
+    parsed, errors = csv_import.parse_players_advanced(df, team_abbreviation="DET")
+    assert errors == []
+    assert all(item["name"] != "Team Totals" for item in parsed)
+
+
+def test_apply_players_advanced_without_team_column_creates_players_on_given_team(db_session):
+    df = _read("roster_exemple_equipe_advanced.csv")
+    parsed, errors = csv_import.parse_players_advanced(df, team_abbreviation="DET")
+    assert errors == []
+
+    count = csv_import.apply_players_advanced(parsed, db_session)
+
+    assert count == len(parsed)
+    cade = db_session.query(Player).filter(Player.name == "Cade Cunningham").one()
+    assert cade.team.abbreviation == "DET"
+    assert cade.per == pytest.approx(21.6)
+    assert db_session.query(Player).filter(Player.name == "Team Totals").count() == 0
 
 
 # --- Draft (nouveau 4e type CSV) --------------------------------------------
@@ -90,6 +143,29 @@ def _draft_df(rows: list[dict]) -> pd.DataFrame:
 def test_detect_draft():
     df = _draft_df([{"Pk": 1, "Tm": "BOS", "Player": "Rookie One"}])
     assert csv_import.detect_import_type(df) == ImportType.DRAFT
+
+
+def test_real_draft_file_with_grouped_header_row_is_detected_and_parsed():
+    """Vrai fichier Basketball-Reference : 2 lignes d'en-tête (ligne de
+    regroupement "Round 1"/"Totals"/"Per Game"/"Advanced", puis la vraie
+    ligne d'en-tête). Sans _promote_grouped_header_if_needed, Pk/Tm/Rk sont
+    supprimés comme colonnes "Unnamed" et la détection échoue -- verrouille
+    le comportement corrigé bout en bout (read_csv + detect + parse)."""
+    df = _read("draft.csv")
+    assert csv_import.detect_import_type(df) == ImportType.DRAFT
+    assert csv_import.validate_columns(df, ImportType.DRAFT) == []
+
+    parsed, errors = csv_import.parse_draft(df)
+    assert errors == []
+    assert len(parsed) == 60
+
+    first = next(item for item in parsed if item["name"] == "AJ Dybantsa")
+    assert first == {"name": "AJ Dybantsa", "team_abbreviation": "WAS", "draft_pick": 1}
+
+    # College vide pour un international : ignoré par parse_draft, pas une erreur.
+    international = next(item for item in parsed if item["name"] == "Karim López")
+    assert international["team_abbreviation"] == "DET"
+    assert international["draft_pick"] == 21
 
 
 def test_parse_draft_extracts_pick_and_team():
@@ -133,7 +209,7 @@ def test_apply_draft_then_stats_import_updates_same_player_not_duplicate(db_sess
     parsed, _ = csv_import.parse_draft(draft_df)
     csv_import.apply_draft(parsed, db_session)
 
-    stats_df = pd.DataFrame([{"Player": "Rookie One", "Team": "BOS", "PER": 14.2}])
+    stats_df = pd.DataFrame([{"Player": "Rookie One", "Team": "BOS", "PER": 14.2, "G": 20, "MP": 300}])
     parsed_stats, errors = csv_import.parse_players_advanced(stats_df)
     assert errors == []
     csv_import.apply_players_advanced(parsed_stats, db_session)
@@ -169,10 +245,10 @@ def test_prev_season_players_advanced_ignores_tot_and_keeps_last_team(db_session
     (l'équipe de fin de saison) doit être conservée."""
     df = pd.DataFrame(
         [
-            {"Player": "Traded Player", "Team": "TOT", "PER": 18.5},
-            {"Player": "Traded Player", "Team": "BOS", "PER": 17.0},
-            {"Player": "Traded Player", "Team": "LAL", "PER": 19.8},
-            {"Player": "Stable Player", "Team": "MIA", "PER": 20.0},
+            {"Player": "Traded Player", "Team": "TOT", "PER": 18.5, "G": 60, "MP": 1500},
+            {"Player": "Traded Player", "Team": "BOS", "PER": 17.0, "G": 30, "MP": 700},
+            {"Player": "Traded Player", "Team": "LAL", "PER": 19.8, "G": 30, "MP": 800},
+            {"Player": "Stable Player", "Team": "MIA", "PER": 20.0, "G": 40, "MP": 1000},
         ]
     )
     parsed, errors = csv_import.parse_players_advanced_prev_season(df)
@@ -188,6 +264,7 @@ def test_prev_season_players_advanced_ignores_tot_and_keeps_last_team(db_session
     )
     assert traded.team_abbreviation == "LAL"  # dernière équipe, pas TOT ni BOS
     assert traded.per == pytest.approx(19.8)  # valeur de la ligne LAL, pas TOT (18.5)
+    assert traded.mpg == pytest.approx(800 / 30)
 
     stable = (
         db_session.query(PreviousSeasonPlayerStat)
@@ -196,46 +273,43 @@ def test_prev_season_players_advanced_ignores_tot_and_keeps_last_team(db_session
     )
     assert stable.team_abbreviation == "MIA"
     assert stable.per == pytest.approx(20.0)
+    assert stable.mpg == pytest.approx(1000 / 40)
 
 
-def test_prev_season_players_per_game_ignores_tot(db_session):
-    df = pd.DataFrame(
-        [
-            {"Player": "Traded Player", "Team": "TOT", "MP": 30.0},
-            {"Player": "Traded Player", "Team": "DET", "MP": 22.0},
-            {"Player": "Traded Player", "Team": "CHI", "MP": 28.5},
-        ]
-    )
-    parsed, errors = csv_import.parse_players_per_game_prev_season(df)
+def test_prev_season_advanced_alone_sets_both_per_and_mpg(db_session):
+    """Depuis la suppression de players_per_game : un seul import Advanced
+    (N-1) renseigne à la fois per et mpg (dérivé de MP/G), plus besoin d'un
+    second fichier."""
+    df = pd.DataFrame([{"Player": "Stable Player", "Team": "MIA", "PER": 20.0, "G": 40, "MP": 1240}])
+
+    parsed, errors = csv_import.parse_players_advanced_prev_season(df)
     assert errors == []
-
-    csv_import.apply_players_per_game_prev_season(parsed, db_session, season="2024-2025")
-
-    traded = (
-        db_session.query(PreviousSeasonPlayerStat)
-        .filter(PreviousSeasonPlayerStat.player_name == "Traded Player")
-        .one()
-    )
-    assert traded.team_abbreviation == "CHI"
-    assert traded.mpg == pytest.approx(28.5)
-
-
-def test_prev_season_advanced_and_per_game_merge_on_same_stat_row(db_session):
-    """Même principe de mise à jour partielle que Player : les deux fichiers
-    (Advanced, Per Game) renseignent chacun un seul champ de la même ligne."""
-    advanced_df = pd.DataFrame([{"Player": "Stable Player", "Team": "MIA", "PER": 20.0}])
-    per_game_df = pd.DataFrame([{"Player": "Stable Player", "Team": "MIA", "MP": 31.0}])
-
-    parsed_adv, _ = csv_import.parse_players_advanced_prev_season(advanced_df)
-    csv_import.apply_players_advanced_prev_season(parsed_adv, db_session, season="2024-2025")
-    parsed_pg, _ = csv_import.parse_players_per_game_prev_season(per_game_df)
-    csv_import.apply_players_per_game_prev_season(parsed_pg, db_session, season="2024-2025")
+    csv_import.apply_players_advanced_prev_season(parsed, db_session, season="2024-2025")
 
     stat = db_session.query(PreviousSeasonPlayerStat).filter(
         PreviousSeasonPlayerStat.player_name == "Stable Player"
     ).one()
     assert stat.per == pytest.approx(20.0)
     assert stat.mpg == pytest.approx(31.0)
+
+
+def test_prev_season_advanced_without_team_column_uses_provided_abbreviation(db_session):
+    """Impact sur les rosters N-1 par équipe (Étape 6bis) : même mécanisme
+    que la saison courante -- pas de colonne Team, team_abbreviation fourni
+    explicitement, ligne "Team Totals" ignorée."""
+    df = _read("roster_exemple_equipe_advanced.csv")
+    parsed, errors = csv_import.parse_players_advanced_prev_season(df, team_abbreviation="DET")
+    assert errors == []
+    assert all(item["team_abbreviation"] == "DET" for item in parsed)
+    assert all(item["name"] != "Team Totals" for item in parsed)
+
+    csv_import.apply_players_advanced_prev_season(parsed, db_session, season="2024-2025")
+
+    cade = db_session.query(PreviousSeasonPlayerStat).filter(
+        PreviousSeasonPlayerStat.player_name == "Cade Cunningham"
+    ).one()
+    assert cade.team_abbreviation == "DET"
+    assert cade.per == pytest.approx(21.6)
 
 
 def test_prev_season_stat_does_not_pollute_current_player_queries(db_session):
@@ -249,7 +323,7 @@ def test_prev_season_stat_does_not_pollute_current_player_queries(db_session):
     db_session.add(current_player)
     db_session.flush()
 
-    df = pd.DataFrame([{"Player": "Stable Player", "Team": "MIA", "PER": 20.0}])
+    df = pd.DataFrame([{"Player": "Stable Player", "Team": "MIA", "PER": 20.0, "G": 40, "MP": 1000}])
     parsed, _ = csv_import.parse_players_advanced_prev_season(df)
     csv_import.apply_players_advanced_prev_season(parsed, db_session, season="2024-2025")
 

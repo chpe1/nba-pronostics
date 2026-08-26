@@ -57,13 +57,83 @@ def test_player_import_creates_team_on_the_fly(client, db_session, auth_headers)
     assert db_session.query(Team).filter(Team.abbreviation == "BOS").count() == 1
 
 
-def test_per_and_mpg_imports_merge_on_same_player(client, db_session, auth_headers):
+def test_players_advanced_import_sets_both_per_and_mpg(client, db_session, auth_headers):
+    """Depuis la suppression de players_per_game : un seul import Advanced
+    renseigne à la fois per et mpg (dérivé de MP/G du même fichier)."""
     _upload(client, "players_advanced.csv", dry_run=False, headers=auth_headers)
-    _upload(client, "players_per_game.csv", dry_run=False, headers=auth_headers)
 
     player_a = db_session.query(Player).filter(Player.name == "Player A").one()
     assert player_a.per > 0
     assert player_a.mpg > 0
+
+
+# --- Roster par équipe (Advanced, pas de colonne Team) ----------------------
+
+
+def test_roster_by_team_import_without_team_id_returns_400(client, auth_headers):
+    response = _upload(
+        client, "roster_exemple_equipe_advanced.csv", dry_run=True, headers=auth_headers
+    )
+    assert response.status_code == 400
+    assert "team_id" in response.json()["detail"]
+
+
+def test_roster_by_team_import_unknown_team_id_returns_404(client, auth_headers):
+    response = _upload(
+        client, "roster_exemple_equipe_advanced.csv", dry_run=True, headers=auth_headers, team_id=999999
+    )
+    assert response.status_code == 404
+
+
+def test_roster_by_team_dry_run_shows_resolved_team(client, db_session, auth_headers):
+    """Seule protection visible contre une erreur de sélection dans le menu
+    déroulant, le fichier ne contenant lui-même aucune info d'équipe."""
+    pistons = Team(name="Detroit Pistons", abbreviation="DET")
+    db_session.add(pistons)
+    db_session.commit()
+
+    response = _upload(
+        client,
+        "roster_exemple_equipe_advanced.csv",
+        dry_run=True,
+        headers=auth_headers,
+        team_id=pistons.id,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolved_team_name"] == "Detroit Pistons"
+    assert body["resolved_team_abbreviation"] == "DET"
+    assert body["row_count"] == 20  # 20 joueurs, "Team Totals" exclue
+    assert body["error_count"] == 0
+
+
+def test_roster_by_team_confirmed_import_creates_players_on_given_team(client, db_session, auth_headers):
+    pistons = Team(name="Detroit Pistons", abbreviation="DET")
+    db_session.add(pistons)
+    db_session.commit()
+
+    response = _upload(
+        client,
+        "roster_exemple_equipe_advanced.csv",
+        dry_run=False,
+        headers=auth_headers,
+        team_id=pistons.id,
+    )
+    assert response.status_code == 200
+    assert db_session.query(Player).filter(Player.team_id == pistons.id).count() == 20
+    assert db_session.query(Player).filter(Player.name == "Team Totals").count() == 0
+    cade = db_session.query(Player).filter(Player.name == "Cade Cunningham").one()
+    assert cade.mpg == pytest.approx(2172 / 64)
+
+
+def test_players_advanced_with_team_column_ignores_team_id_param(client, db_session, auth_headers):
+    """La variante ligue entière (colonne Team présente) doit continuer à
+    fonctionner sans changement, team_id n'étant pas requis dans ce cas."""
+    response = _upload(client, "players_advanced.csv", dry_run=True, headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolved_team_name"] is None
+    assert body["resolved_team_abbreviation"] is None
 
 
 # --- Étape 6bis : saison précédente + draft ---------------------------------

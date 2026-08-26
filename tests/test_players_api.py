@@ -1,3 +1,5 @@
+import pytest
+
 from app.models import Player, Team
 from app.services.csv_import import apply_players_advanced
 
@@ -119,12 +121,13 @@ def test_manual_placeholder_is_overwritten_by_next_csv_import_without_protection
     player_id = response.json()["id"]
 
     apply_players_advanced(
-        [{"name": "Joe Rookie", "team_abbreviation": "BOS", "per": 25.0}], db_session
+        [{"name": "Joe Rookie", "team_abbreviation": "BOS", "per": 25.0, "g": 10, "mp": 200}], db_session
     )
     db_session.commit()
 
     updated = db_session.get(Player, player_id)
     assert updated.per == 25.0
+    assert updated.mpg == pytest.approx(20.0)
     assert db_session.query(Player).count() == 1
 
 
@@ -169,6 +172,43 @@ def test_update_player_partial_edit_leaves_other_fields_untouched(client, db_ses
     assert body["mpg"] == 35.0
     assert body["draft_pick"] == 3
     assert body["name"] == "Jayson Tatum"
+
+
+def test_update_player_conflicting_name_and_team_returns_409(client, db_session, auth_headers):
+    """Garde-fou demandé explicitement : un PATCH qui ferait converger
+    name/team_id vers la clé (name, team_id) d'un AUTRE joueur existant doit
+    être refusé -- sinon deux lignes partageraient la même clé d'upsert CSV,
+    et un futur import ne retrouverait qu'une seule des deux de façon
+    imprévisible."""
+    bos, _ = _teams(db_session)
+    existing = Player(name="Jayson Tatum", team_id=bos.id)
+    other = Player(name="Jaylen Brown", team_id=bos.id)
+    db_session.add_all([existing, other])
+    db_session.commit()
+
+    response = client.patch(
+        f"/api/players/{other.id}", json={"name": "Jayson Tatum"}, headers=auth_headers
+    )
+
+    assert response.status_code == 409
+    db_session.refresh(other)
+    assert other.name == "Jaylen Brown"  # inchangé
+
+
+def test_update_player_same_name_and_team_as_self_is_not_a_conflict(client, db_session, auth_headers):
+    bos, _ = _teams(db_session)
+    player = Player(name="Jayson Tatum", team_id=bos.id, per=20.0)
+    db_session.add(player)
+    db_session.commit()
+
+    response = client.patch(
+        f"/api/players/{player.id}",
+        json={"name": "Jayson Tatum", "team_id": bos.id, "per": 21.0},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["per"] == 21.0
 
 
 def test_update_player_rename_and_reassign_team(client, db_session, auth_headers):
