@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
 import SettingsSlider from '@/components/SettingsSlider.vue'
+import InfoTooltip from '@/components/InfoTooltip.vue'
 
 const settings = ref(null)
 const draftBonusConfigText = ref('{}')
@@ -89,12 +90,27 @@ onMounted(loadSettings)
       <SettingsSlider v-model="settings.back_to_back_penalty" label="Malus Back-to-Back" :min="0" :max="20" :step="0.5" />
       <SettingsSlider v-model="settings.three_in_four_penalty" label="Malus 3 matchs en 4 nuits" :min="0" :max="20" :step="0.5" />
       <SettingsSlider v-model="settings.mpg_threshold" label="Seuil MPG minimum" :min="0" :max="40" :step="1" />
-      <SettingsSlider v-model="settings.reliability_threshold_low" label="Seuil de fiabilité — Moyenne" :min="0" :max="50" :step="0.5" />
-      <SettingsSlider v-model="settings.reliability_threshold_high" label="Seuil de fiabilité — Forte" :min="0" :max="50" :step="0.5" />
+      <SettingsSlider
+        v-model="settings.reliability_threshold_low"
+        label="Seuil de fiabilité — Moyenne"
+        :min="0"
+        :max="50"
+        :step="0.5"
+        help="Écart de points minimum (après tous les bonus/malus) pour que la jauge de fiabilité du pronostic passe de Faible à Moyenne."
+      />
+      <SettingsSlider
+        v-model="settings.reliability_threshold_high"
+        label="Seuil de fiabilité — Forte"
+        :min="0"
+        :max="50"
+        :step="0.5"
+        help="Écart de points minimum pour que la jauge de fiabilité passe de Moyenne à Forte."
+      />
 
       <div>
-        <label class="mb-1 block text-sm font-medium text-gray-700">
+        <label class="mb-1 flex items-center text-sm font-medium text-gray-700">
           Bonus Draft (JSON, pick → bonus)
+          <InfoTooltip text="Bonus ajouté à la note d'une équipe pour chaque rookie drafté dans son effectif (selon son pick, ex: {&quot;1&quot;: 8, &quot;2&quot;: 6}). Actif seulement pendant les 10 premiers matchs de la saison de l'équipe." />
         </label>
         <textarea
           v-model="draftBonusConfigText"

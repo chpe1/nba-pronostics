@@ -1,9 +1,12 @@
 <script setup>
+import InfoTooltip from '@/components/InfoTooltip.vue'
+
 const props = defineProps({
   label: { type: String, required: true },
   min: { type: Number, default: 0 },
   max: { type: Number, default: 10 },
   step: { type: Number, default: 0.1 },
+  help: { type: String, default: '' },
 })
 
 const value = defineModel({ type: Number, required: true })
@@ -12,7 +15,10 @@ const value = defineModel({ type: Number, required: true })
 <template>
   <div>
     <div class="mb-1 flex items-center justify-between text-sm">
-      <label class="font-medium text-gray-700">{{ props.label }}</label>
+      <label class="flex items-center font-medium text-gray-700">
+        {{ props.label }}
+        <InfoTooltip v-if="props.help" :text="props.help" />
+      </label>
       <span class="tabular-nums text-gray-500">{{ value }}</span>
     </div>
     <input
