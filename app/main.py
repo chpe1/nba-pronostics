@@ -5,17 +5,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from app.logging_config import setup_logging  # noqa: E402
 
-from app.api.auth import router as auth_router
-from app.api.games import router as games_router
-from app.api.imports import router as imports_router
-from app.api.players import router as players_router
-from app.api.predictions import router as predictions_router
-from app.api.settings import router as settings_router
-from app.api.teams import router as teams_router
-from app.services.scheduler import start_scheduler
+setup_logging()
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+from app.api.auth import router as auth_router  # noqa: E402
+from app.api.games import router as games_router  # noqa: E402
+from app.api.imports import router as imports_router  # noqa: E402
+from app.api.players import router as players_router  # noqa: E402
+from app.api.predictions import router as predictions_router  # noqa: E402
+from app.api.settings import router as settings_router  # noqa: E402
+from app.api.teams import router as teams_router  # noqa: E402
+from app.services.scheduler import start_scheduler  # noqa: E402
 
 # Désactivés par défaut (dev/tests) : pas d'appel réseau planifié sans action
 # explicite. Mettre ENABLE_INJURY_SCHEDULER / ENABLE_SCORES_SCHEDULER à true

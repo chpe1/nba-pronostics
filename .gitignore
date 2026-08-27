@@ -17,6 +17,9 @@ venv/
 *.sqlite
 *.sqlite3
 
+# Logs applicatifs (RotatingFileHandler, voir app/logging_config.py)
+logs/
+
 # Frontend (Vue.js / Vite)
 node_modules/
 dist/
