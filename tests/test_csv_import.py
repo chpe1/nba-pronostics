@@ -457,6 +457,66 @@ def test_prev_season_players_advanced_ignores_tot_and_keeps_last_team(db_session
     assert stable.mpg == pytest.approx(1000 / 40)
 
 
+def test_prev_season_players_advanced_ignores_nTM_and_keeps_last_team(db_session):
+    """Découvert le 2026-08-27 sur un vrai export ligue entière : la table
+    Advanced n'utilise pas "TOT" pour la ligne agrégée d'un joueur échangé,
+    mais "2TM"/"3TM"/"4TM"... (nombre d'équipes jouées) -- même artefact
+    garanti que TOT, à ignorer silencieusement de la même façon (voir
+    _is_aggregate_team_marker)."""
+    df = pd.DataFrame(
+        [
+            {"Player": "Traded Player", "Team": "2TM", "PER": 18.5, "G": 60, "MP": 1500},
+            {"Player": "Traded Player", "Team": "BOS", "PER": 17.0, "G": 30, "MP": 700},
+            {"Player": "Traded Player", "Team": "LAL", "PER": 19.8, "G": 30, "MP": 800},
+            {"Player": "Well Traveled", "Team": "3TM", "PER": 10.0, "G": 60, "MP": 900},
+            {"Player": "Well Traveled", "Team": "MIA", "PER": 9.0, "G": 40, "MP": 500},
+        ]
+    )
+    parsed, errors = csv_import.parse_players_advanced_prev_season(df)
+    assert errors == []  # 2TM/3TM ne sont pas des erreurs
+    assert [p["team_abbreviation"] for p in parsed] == ["BOS", "LAL", "MIA"]
+
+    csv_import.apply_players_advanced_prev_season(parsed, db_session, season="2024-2025")
+
+    traded = (
+        db_session.query(PreviousSeasonPlayerStat)
+        .filter(PreviousSeasonPlayerStat.player_name == "Traded Player")
+        .one()
+    )
+    assert traded.team_abbreviation == "LAL"  # dernière équipe, pas 2TM ni BOS
+    assert traded.per == pytest.approx(19.8)
+
+
+def test_prev_season_players_advanced_ignores_league_average_row():
+    """Découvert le 2026-08-27 sur le même vrai fichier que le cas 2TM/3TM :
+    l'export ligue entière se termine par une ligne "League Average" (colonne
+    Team vide -- pandas la lit comme NaN, donc str(NaN) donne littéralement
+    "nan", pas une chaîne vide). Artefact garanti du format source comme
+    "Team Totals", à ignorer silencieusement (voir _AGGREGATE_PLAYER_MARKERS)."""
+    df = pd.DataFrame(
+        [
+            {"Player": "Stable Player", "Team": "MIA", "PER": 20.0, "G": 40, "MP": 1000},
+            {"Player": "League Average", "Team": None, "PER": 14.2, "G": None, "MP": None},
+        ]
+    )
+    parsed, errors = csv_import.parse_players_advanced_prev_season(df)
+    assert errors == []  # "League Average" n'est pas une erreur
+    assert [p["name"] for p in parsed] == ["Stable Player"]
+
+
+def test_parse_players_advanced_ignores_league_average_row():
+    """Même artefact, côté saison courante (parse_players_advanced)."""
+    df = pd.DataFrame(
+        [
+            {"Player": "Stable Player", "Team": "MIA", "PER": 20.0, "G": 40, "MP": 1000},
+            {"Player": "League Average", "Team": None, "PER": 14.2, "G": None, "MP": None},
+        ]
+    )
+    parsed, errors = csv_import.parse_players_advanced(df)
+    assert errors == []
+    assert [p["name"] for p in parsed] == ["Stable Player"]
+
+
 def test_parse_players_advanced_prev_season_rejects_unrealistic_mpg():
     df = pd.DataFrame([{"Player": "Iron Man", "Team": "BOS", "PER": 20.0, "G": 10, "MP": 500}])  # 50.0 mpg
     parsed, errors = csv_import.parse_players_advanced_prev_season(df)

@@ -48,15 +48,29 @@ REQUIRED_COLUMNS: dict[ImportType, tuple[str, ...]] = {
     ImportType.SCHEDULE: ("Date", "Start (ET)", "Visitor/Neutral", "Home/Neutral"),
 }
 
-# Basketball-Reference ajoute une ligne agrégée "TOT" (toutes équipes
-# confondues) pour un joueur échangé en cours de saison, en plus d'une ligne
-# par équipe jouée. Sans objet pour nous : jamais une "vraie" équipe.
+# Basketball-Reference ajoute une ligne agrégée (toutes équipes confondues)
+# pour un joueur échangé en cours de saison, en plus d'une ligne par équipe
+# jouée. Notation différente selon la table : "TOT" (la plupart), ou
+# "2TM"/"3TM"/"4TM"... (table Advanced -- découvert le 2026-08-27 sur un vrai
+# export ligue entière, jamais rencontré avant sur les fichiers par équipe).
+# Sans objet pour nous dans les deux cas : jamais une "vraie" équipe.
 _AGGREGATE_TEAM_MARKER = "TOT"
+_AGGREGATE_TEAM_COUNT_PATTERN = re.compile(r"^\d+TM$")
 
-# Ligne d'agrégat par équipe en fin d'export "roster d'une seule équipe"
-# (colonne Player). Artefact distinct de _AGGREGATE_TEAM_MARKER ci-dessus :
-# celui-ci est un nom de "joueur" spécial, pas un marqueur d'équipe.
-_AGGREGATE_PLAYER_MARKER = "Team Totals"
+
+def _is_aggregate_team_marker(team_abbr: str) -> bool:
+    return team_abbr == _AGGREGATE_TEAM_MARKER or bool(_AGGREGATE_TEAM_COUNT_PATTERN.match(team_abbr))
+
+
+# Lignes d'agrégat en fin d'export players_advanced (colonne Player).
+# Artefact distinct de _AGGREGATE_TEAM_MARKER ci-dessus : ce sont des noms de
+# "joueur" spéciaux, pas un marqueur d'équipe. "Team Totals" apparaît sur
+# l'export "roster d'une seule équipe" (une ligne par équipe) ; "League
+# Average" apparaît sur l'export ligue entière (une seule ligne, colonne
+# Team vide -- découvert le 2026-08-27 sur un vrai fichier). Les deux sont
+# des artefacts garantis du format source, ignorés silencieusement de la
+# même façon.
+_AGGREGATE_PLAYER_MARKERS = ("Team Totals", "League Average")
 
 _SCHEDULE_TIME_PATTERN = re.compile(r"^(\d{1,2}):(\d{2})([ap])$", re.IGNORECASE)
 
@@ -288,7 +302,7 @@ def parse_players_advanced(
     for idx, row in df.iterrows():
         row_num = int(idx) + 2
         name = str(row.get("Player", "")).strip()
-        if name == _AGGREGATE_PLAYER_MARKER:
+        if name in _AGGREGATE_PLAYER_MARKERS:
             continue
         if not name:
             errors.append({"row": row_num, "message": "Colonne Player manquante"})
@@ -340,11 +354,14 @@ def parse_players_advanced_prev_season(
 
     Les exports Advanced de Basketball-Reference contiennent, pour un
     joueur échangé en cours de saison N-1, une ligne par équipe jouée *plus*
-    une ligne agrégée `Tm="TOT"`. Cette ligne TOT est ignorée silencieusement
-    ici (pas une erreur) -- contrairement à `parse_players_advanced` (saison
-    courante), où ce cas ne se présente pas dans notre usage. Distinct de
-    `_AGGREGATE_PLAYER_MARKER` ("Team Totals", ligne de joueur spéciale) :
-    ici c'est un marqueur dans la colonne équipe elle-même.
+    une ligne agrégée dans la colonne équipe -- `Tm="TOT"` sur la plupart des
+    tables, `"2TM"`/`"3TM"`/`"4TM"`... sur l'export ligue entière de la table
+    Advanced (vu le 2026-08-27 sur un vrai fichier, jamais rencontré avant).
+    Ces lignes sont ignorées silencieusement ici (pas une erreur, voir
+    `_is_aggregate_team_marker`) -- contrairement à `parse_players_advanced`
+    (saison courante), où ce cas ne se présente pas dans notre usage. Distinct
+    de `_AGGREGATE_PLAYER_MARKERS` ("Team Totals"/"League Average", lignes de
+    joueur spéciales) : ici c'est un marqueur dans la colonne équipe elle-même.
 
     Quand plusieurs lignes d'équipe réelles existent pour un même joueur
     (trade en cours de saison N-1), elles sont toutes conservées dans
@@ -358,7 +375,7 @@ def parse_players_advanced_prev_season(
     for idx, row in df.iterrows():
         row_num = int(idx) + 2
         name = str(row.get("Player", "")).strip()
-        if name == _AGGREGATE_PLAYER_MARKER:
+        if name in _AGGREGATE_PLAYER_MARKERS:
             continue
         if not name:
             errors.append({"row": row_num, "message": "Colonne Player manquante"})
@@ -369,7 +386,7 @@ def parse_players_advanced_prev_season(
             if not team_abbr:
                 errors.append({"row": row_num, "message": "Colonne Team manquante"})
                 continue
-            if team_abbr == _AGGREGATE_TEAM_MARKER:
+            if _is_aggregate_team_marker(team_abbr):
                 continue
             if team_abbr not in ABBREVIATION_TO_NAME:
                 errors.append({"row": row_num, "message": f"Équipe inconnue : {team_abbr!r}"})
