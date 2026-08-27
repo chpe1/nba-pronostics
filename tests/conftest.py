@@ -1,3 +1,14 @@
+import os
+import tempfile
+from pathlib import Path
+
+# Isole le fichier de log des tests du vrai logs/app.log : importer app.main
+# ci-dessous déclenche setup_logging(), donc cette variable doit être fixée
+# avant cet import (même convention que DATABASE_URL -- jamais dans .env).
+# Fichier de test conservé après le run (pas de nettoyage automatique) pour
+# rester consultable si une suite de tests échoue de façon confuse.
+os.environ.setdefault("LOG_FILE", str(Path(tempfile.gettempdir()) / "nba_pronostics_test.log"))
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

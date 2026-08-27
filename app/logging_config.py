@@ -6,11 +6,12 @@ app.services.scores_fetcher, etc.) soient capturés automatiquement par
 propagation, sans câblage par module.
 """
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
-LOG_FILE = LOG_DIR / "app.log"
+DEFAULT_LOG_FILE = LOG_DIR / "app.log"
 
 # Usage perso, faible volume (deux jobs planifiés, quelques lignes par
 # passage, tracebacks occasionnelles en cas d'échec réseau) : 1 Mo x 5
@@ -23,17 +24,25 @@ LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 
 def setup_logging() -> None:
+    """Configure le logging racine (fichier + console, niveau INFO).
+
+    Le chemin du fichier est surchargeable via la variable d'environnement
+    LOG_FILE (jamais dans .env -- même convention que DATABASE_URL) : sert à
+    isoler le fichier de test (tests/conftest.py) du vrai logs/app.log,
+    sans quoi importer app.main pendant les tests écrirait dedans.
+    """
     root_logger = logging.getLogger()
 
     if any(isinstance(h, RotatingFileHandler) for h in root_logger.handlers):
         return
 
-    LOG_DIR.mkdir(exist_ok=True)
+    log_file = Path(os.environ["LOG_FILE"]) if os.environ.get("LOG_FILE") else DEFAULT_LOG_FILE
+    log_file.parent.mkdir(parents=True, exist_ok=True)
 
     formatter = logging.Formatter(LOG_FORMAT)
 
     file_handler = RotatingFileHandler(
-        LOG_FILE, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8"
+        log_file, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8"
     )
     file_handler.setFormatter(formatter)
 

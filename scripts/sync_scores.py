@@ -7,6 +7,7 @@ Usage :
     python scripts/sync_scores.py 2026-10-21      # date précise
 """
 import argparse
+import logging
 import sys
 from datetime import date
 from pathlib import Path
@@ -20,8 +21,12 @@ load_dotenv()
 import os  # noqa: E402
 
 from app.database import SessionLocal  # noqa: E402
+from app.logging_config import setup_logging  # noqa: E402
 from app.services.nba_calendar import current_nba_date  # noqa: E402
 from app.services.scores_fetcher import sync_scores_for_date  # noqa: E402
+
+setup_logging()
+logger = logging.getLogger("scripts.sync_scores")
 
 
 def main() -> None:
@@ -38,15 +43,18 @@ def main() -> None:
 
     api_key = os.getenv("BALLDONTLIE_API_KEY")
     if not api_key:
-        print("BALLDONTLIE_API_KEY absente de l'environnement (.env) -- synchronisation impossible.")
+        logger.error("BALLDONTLIE_API_KEY absente de l'environnement (.env) -- synchronisation impossible.")
         raise SystemExit(1)
 
     db = SessionLocal()
     try:
         result = sync_scores_for_date(db, api_key, target_date)
-        print(
-            f"Scores synchronisés pour {target_date} : "
-            f"{result['fetched']} récupéré(s), {result['updated']} mis à jour, {result['skipped']} ignoré(s)."
+        logger.info(
+            "Scores synchronisés pour %s : %d récupéré(s), %d mis à jour, %d ignoré(s).",
+            target_date,
+            result["fetched"],
+            result["updated"],
+            result["skipped"],
         )
     finally:
         db.close()
