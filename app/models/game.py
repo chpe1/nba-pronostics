@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.database import Base
 
@@ -21,12 +21,25 @@ class GameStatus(str, enum.Enum):
 
 class Game(Base):
     __tablename__ = "games"
+    # La clé d'upsert du calendrier (apply_schedule, csv_import.py) est
+    # (date SANS l'heure, home_team_id, away_team_id) -- pas les colonnes
+    # game_date/home_team_id/away_team_id brutes, puisque game_date inclut
+    # l'heure. game_date_only (ci-dessous) existe uniquement pour porter
+    # cette contrainte UNIQUE au niveau de la base, en plus de la logique
+    # d'upsert côté code.
+    __table_args__ = (
+        UniqueConstraint("game_date_only", "home_team_id", "away_team_id", name="uq_game_date_teams"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Saison au format "2025-2026", utile pour filtrer les stats par saison
     # et calculer la règle des 10 premiers matchs.
     season: Mapped[str] = mapped_column(String(9), nullable=False)
     game_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # Dérivé automatiquement de game_date par le @validates ci-dessous à
+    # chaque affectation -- jamais renseigné directement ailleurs dans le
+    # code. Sert uniquement de support à la contrainte UNIQUE ci-dessus.
+    game_date_only: Mapped[date] = mapped_column(Date, nullable=False)
 
     home_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
     away_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
@@ -55,6 +68,11 @@ class Game(Base):
     away_team: Mapped["Team"] = relationship(
         "Team", back_populates="away_games", foreign_keys=[away_team_id]
     )
+
+    @validates("game_date")
+    def _sync_game_date_only(self, key: str, value: datetime) -> datetime:
+        self.game_date_only = value.date()
+        return value
 
     def __repr__(self) -> str:
         return f"<Game {self.away_team_id}@{self.home_team_id} {self.game_date:%Y-%m-%d}>"

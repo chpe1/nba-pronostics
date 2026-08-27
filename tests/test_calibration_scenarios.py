@@ -82,13 +82,18 @@ def test_favorite_losing_star_flips_matchup_with_low_reliability(db_session, set
 
 
 def test_bench_player_injury_below_mpg_threshold_has_no_effect(db_session, league, settings):
+    """compute_matchup ne modifie ni ne persiste rien sur `game` (fonction de
+    lecture pure) -- une seule ligne Game suffit pour les deux calculs
+    avant/après. Deux lignes distinctes pour le même (date, domicile,
+    extérieur) heurteraient désormais la contrainte UNIQUE ajoutée le
+    2026-08-27 (uq_game_date_teams), à raison : ça n'a jamais représenté un
+    vrai second match, seulement deux passes de calcul sur un scénario."""
     roster = league.rosters["BOS"]
-    baseline_game = create_scheduled_game(db_session, league.teams["BOS"], league.teams["DET"], game_date=TARGET_DATE)
-    baseline = compute_matchup(db_session, baseline_game, settings)
+    game = create_scheduled_game(db_session, league.teams["BOS"], league.teams["DET"], game_date=TARGET_DATE)
+    baseline = compute_matchup(db_session, game, settings)
 
     roster.bench_player.injury_status = InjuryStatus.OUT
     db_session.flush()
-    game = create_scheduled_game(db_session, league.teams["BOS"], league.teams["DET"], game_date=TARGET_DATE)
     result = compute_matchup(db_session, game, settings)
 
     assert result.home.final_note == pytest.approx(baseline.home.final_note)

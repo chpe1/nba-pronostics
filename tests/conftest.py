@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.security import create_access_token, hash_password
-from app.database import Base, get_db
+from app.database import Base, enable_sqlite_foreign_keys, get_db
 from app.main import app
 
 TEST_ADMIN_USERNAME = "admin"
@@ -14,6 +14,7 @@ TEST_ADMIN_PASSWORD = "test-password-123"
 @pytest.fixture()
 def db_session(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    enable_sqlite_foreign_keys(engine)
     Base.metadata.create_all(bind=engine)
     TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = TestSessionLocal()

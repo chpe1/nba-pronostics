@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -31,6 +31,15 @@ class InjuryStatus(str, enum.Enum):
 
 class Player(Base):
     __tablename__ = "players"
+    # Filet de sécurité complémentaire, PAS un remplacement de la
+    # déduplication insensible à la casse : cette contrainte bloque un
+    # doublon EXACT (même chaîne, même team_id) qui contournerait
+    # find_player_by_name suite à un bug futur non anticipé. Elle ne détecte
+    # PAS "LeBron James" vs "LEBRON JAMES" -- SQLite ne replie que l'ASCII,
+    # comme LOWER() -- cette casse-là reste protégée uniquement par
+    # find_player_by_name (app/services/player_matching.py). Voir CLAUDE.md,
+    # "Décisions d'architecture", point 4.
+    __table_args__ = (UniqueConstraint("name", "team_id", name="uq_player_name_team"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
