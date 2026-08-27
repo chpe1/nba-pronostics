@@ -31,6 +31,7 @@ def _calibrated_settings(**overrides) -> Settings:
         back_to_back_penalty=2.0,
         three_in_four_penalty=3.5,
         mpg_threshold=15.0,
+        player_sample_size_threshold=5,
         draft_bonus_config={"1": 8.0},
         reliability_threshold_low=7.0,
         reliability_threshold_high=30.0,

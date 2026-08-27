@@ -9,6 +9,7 @@ class SettingsUpdate(BaseModel):
     back_to_back_penalty: float | None = None
     three_in_four_penalty: float | None = None
     mpg_threshold: float | None = None
+    player_sample_size_threshold: int | None = None
     draft_bonus_config: dict | None = None
     reliability_threshold_low: float | None = None
     reliability_threshold_high: float | None = None
@@ -25,6 +26,7 @@ class SettingsRead(BaseModel):
     back_to_back_penalty: float
     three_in_four_penalty: float
     mpg_threshold: float
+    player_sample_size_threshold: int
     draft_bonus_config: dict
     reliability_threshold_low: float
     reliability_threshold_high: float

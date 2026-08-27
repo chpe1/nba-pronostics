@@ -142,32 +142,60 @@ def compute_note_de_base(team: Team, is_home: bool, in_early_season: bool) -> fl
     return team.win_pct_home if is_home else team.win_pct_away
 
 
-def _relevant_players_query(db: Session, team: Team, settings: Settings):
-    return db.query(Player).filter(
-        Player.team_id == team.id,
-        Player.is_active.is_(True),
-        Player.mpg > settings.mpg_threshold,
-    )
+def _effective_per_mpg(
+    db: Session, player: Player, prev_season: str, settings: Settings
+) -> tuple[float, float]:
+    """PER/MPG à utiliser pour `player` dans les calculs d'absence : ses
+    valeurs courantes si son échantillon cette saison (games_played_this_season)
+    est suffisant, sinon son PER/MPG N-1 (garde-fou petit échantillon
+    INDIVIDUEL, Settings.player_sample_size_threshold -- distinct du drapeau
+    "early season" au niveau équipe, EARLY_SEASON_GAME_THRESHOLD : un joueur
+    précis peut rester sous son seuil alors que son équipe a dépassé le sien,
+    voir CLAUDE.md).
+
+    Aucun fallback possible pour un joueur sans PreviousSeasonPlayerStat
+    (rookie ou nouveau dans la ligue) : ses valeurs courantes sont gardées
+    telles quelles même avec un petit échantillon -- limite acceptée, rien
+    d'autre à quoi se raccrocher."""
+    if player.games_played_this_season >= settings.player_sample_size_threshold:
+        return player.per, player.mpg
+    stat = find_prev_season_stat_by_name(db, prev_season, player.name)
+    if stat is None or stat.per is None or stat.mpg is None:
+        return player.per, player.mpg
+    return stat.per, stat.mpg
 
 
-def compute_injury_penalty(db: Session, team: Team, settings: Settings) -> float:
-    absent_players = _relevant_players_query(db, team, settings).filter(
-        Player.injury_status.in_(ABSENT_STATUSES)
-    )
-    return sum(p.per for p in absent_players.all())
+def _relevant_players(
+    db: Session, team: Team, prev_season: str, settings: Settings
+) -> list[tuple[Player, float, float]]:
+    """Joueurs actifs de `team` avec leur PER/MPG effectifs (voir
+    _effective_per_mpg), filtrés sur le MPG effectif > settings.mpg_threshold.
+    Le filtre ne peut plus se faire en SQL (comme avant) puisque la valeur
+    dépend d'un éventuel fallback calculé en Python."""
+    players = db.query(Player).filter(Player.team_id == team.id, Player.is_active.is_(True)).all()
+    result = []
+    for player in players:
+        per, mpg = _effective_per_mpg(db, player, prev_season, settings)
+        if mpg > settings.mpg_threshold:
+            result.append((player, per, mpg))
+    return result
+
+
+def compute_injury_penalty(db: Session, team: Team, settings: Settings, prev_season: str) -> float:
+    relevant = _relevant_players(db, team, prev_season, settings)
+    return sum(per for player, per, _mpg in relevant if player.injury_status in ABSENT_STATUSES)
 
 
 def get_questionable_players(
-    db: Session, team: Team, settings: Settings
+    db: Session, team: Team, settings: Settings, prev_season: str
 ) -> list[QuestionablePlayerInfo]:
     """Joueurs Questionable pertinents (filtre MPG), à titre informatif
     uniquement (badge "incertain" côté frontend) — n'affecte pas le calcul."""
-    players = _relevant_players_query(db, team, settings).filter(
-        Player.injury_status == InjuryStatus.QUESTIONABLE
-    )
+    relevant = _relevant_players(db, team, prev_season, settings)
     return [
-        QuestionablePlayerInfo(name=p.name, per=p.per, reason=p.injury_reason)
-        for p in players.all()
+        QuestionablePlayerInfo(name=player.name, per=per, reason=player.injury_reason)
+        for player, per, _mpg in relevant
+        if player.injury_status == InjuryStatus.QUESTIONABLE
     ]
 
 
@@ -292,20 +320,24 @@ def compute_team_note(
 ) -> TeamNoteBreakdown:
     games_played = count_finished_games_this_season(db, team, season, before_date=game_date)
     in_early_season = games_played < EARLY_SEASON_GAME_THRESHOLD
+    # Calculé inconditionnellement (pas seulement si in_early_season) : le
+    # garde-fou petit échantillon INDIVIDUEL (_effective_per_mpg) doit pouvoir
+    # s'appliquer même quand l'ÉQUIPE a dépassé ses 10 premiers matchs -- les
+    # deux mécanismes sont indépendants (voir CLAUDE.md).
+    prev_season = previous_season_label(season)
 
     note_de_base = compute_note_de_base(team, is_home, in_early_season)
-    injury_penalty = compute_injury_penalty(db, team, settings)
+    injury_penalty = compute_injury_penalty(db, team, settings, prev_season)
     calendar = compute_calendar_penalty(db, team, game_date, settings)
     draft_bonus = compute_draft_bonus(db, team, settings) if in_early_season else 0.0
     if in_early_season:
-        prev_season = previous_season_label(season)
         transfer_adjustment = (
             compute_transfer_bonus(db, team, settings, prev_season)
             - compute_transfer_malus(db, team, settings, prev_season)
         ) * settings.transfer_impact_multiplier
     else:
         transfer_adjustment = 0.0
-    questionable_players = get_questionable_players(db, team, settings)
+    questionable_players = get_questionable_players(db, team, settings, prev_season)
 
     final_note = (
         (note_de_base * settings.base_note_multiplier)

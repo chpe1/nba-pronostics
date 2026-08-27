@@ -20,6 +20,7 @@ def test_get_settings_creates_default_row_if_missing(client, db_session, auth_he
     assert body["back_to_back_penalty"] == 2.0
     assert body["three_in_four_penalty"] == 3.5
     assert body["mpg_threshold"] == 15.0
+    assert body["player_sample_size_threshold"] == 5
     assert body["reliability_threshold_low"] == 7.0
     assert body["reliability_threshold_high"] == 30.0
     assert body["transfer_impact_multiplier"] == 0.4

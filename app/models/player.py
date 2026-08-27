@@ -55,6 +55,13 @@ class Player(Base):
     # Temps de jeu moyen (minutes) : filtre de pertinence à 15 min appliqué
     # côté algorithme, pas ici.
     mpg: Mapped[float] = mapped_column(Float, default=0.0)
+    # Nombre de matchs joués cette saison (colonne G du fichier Advanced,
+    # déjà extraite pour calculer mpg = mp/g -- voir csv_import.py). Sert de
+    # garde-fou petit échantillon côté algorithme (Settings.player_sample_size_threshold,
+    # voir pronostic_calculator.py) : PAS mis à jour en temps réel entre deux
+    # imports CSV, donc temporairement figé après le dernier import -- limite
+    # acceptée, voir CLAUDE.md ("Décisions d'architecture").
+    games_played_this_season: Mapped[int] = mapped_column(Integer, default=0)
 
     injury_status: Mapped[InjuryStatus] = mapped_column(
         Enum(InjuryStatus), default=InjuryStatus.HEALTHY, nullable=False

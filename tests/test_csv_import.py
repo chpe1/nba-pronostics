@@ -191,6 +191,7 @@ def test_apply_players_advanced_derives_mpg_from_mp_and_g(db_session):
     player_a = db_session.query(Player).filter(Player.name == "Player A").one()
     assert player_a.per == pytest.approx(24.3)
     assert player_a.mpg == pytest.approx(1980 / 58)
+    assert player_a.games_played_this_season == 58
 
 
 def test_apply_players_advanced_g_zero_gives_mpg_zero(db_session):

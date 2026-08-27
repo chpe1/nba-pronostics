@@ -2,7 +2,7 @@
 
 Quatre types de fichiers reconnus :
 - teams_home_away  : table "Expanded Standings" (colonnes Team/Home/Road) -> Team.win_pct_home/away
-- players_advanced : table "Advanced" (colonnes PER/G/MP) -> Player.per + Player.mpg (dérivé de MP/G)
+- players_advanced : table "Advanced" (colonnes PER/G/MP) -> Player.per + Player.mpg (dérivé de MP/G) + Player.games_played_this_season (= G, saison courante uniquement)
 - draft             : table de la page Draft (colonnes Pk/Tm/Player)       -> Player (création rookie) + draft_pick
 - schedule          : export "Games" (colonnes Date/Start (ET)/Visitor/Home) -> Game (upsert)
 
@@ -583,6 +583,7 @@ def apply_players_advanced(parsed: list[dict], db: Session) -> int:
             db.add(player)
         player.per = item["per"]
         player.mpg = item["mp"] / item["g"] if item["g"] else 0.0
+        player.games_played_this_season = int(item["g"])
         count += 1
     db.flush()
     return count

@@ -37,6 +37,7 @@ def _settings(**overrides) -> Settings:
         back_to_back_penalty=3.0,
         three_in_four_penalty=5.0,
         mpg_threshold=15.0,
+        player_sample_size_threshold=5,
         draft_bonus_config={},
         reliability_threshold_low=5.0,
         reliability_threshold_high=10.0,
@@ -78,6 +79,8 @@ def test_note_de_base_uses_previous_season_when_early_season():
 
 # --- compute_injury_penalty / get_questionable_players --------------------
 
+PREV_SEASON = "2024-2025"
+
 
 def test_injury_penalty_counts_only_out_and_doubtful_above_mpg_threshold(db_session):
     team = _team()
@@ -87,19 +90,19 @@ def test_injury_penalty_counts_only_out_and_doubtful_above_mpg_threshold(db_sess
 
     db_session.add_all(
         [
-            Player(name="Out Star", team_id=team.id, per=25.0, mpg=32.0, injury_status=InjuryStatus.OUT),
-            Player(name="Doubtful Starter", team_id=team.id, per=15.0, mpg=28.0, injury_status=InjuryStatus.DOUBTFUL),
-            Player(name="Questionable Guy", team_id=team.id, per=20.0, mpg=30.0, injury_status=InjuryStatus.QUESTIONABLE, injury_reason="Ankle"),
-            Player(name="Out Bench Player", team_id=team.id, per=10.0, mpg=8.0, injury_status=InjuryStatus.OUT),
-            Player(name="Healthy Starter", team_id=team.id, per=18.0, mpg=30.0, injury_status=InjuryStatus.HEALTHY),
+            Player(name="Out Star", team_id=team.id, per=25.0, mpg=32.0, games_played_this_season=20, injury_status=InjuryStatus.OUT),
+            Player(name="Doubtful Starter", team_id=team.id, per=15.0, mpg=28.0, games_played_this_season=20, injury_status=InjuryStatus.DOUBTFUL),
+            Player(name="Questionable Guy", team_id=team.id, per=20.0, mpg=30.0, games_played_this_season=20, injury_status=InjuryStatus.QUESTIONABLE, injury_reason="Ankle"),
+            Player(name="Out Bench Player", team_id=team.id, per=10.0, mpg=8.0, games_played_this_season=20, injury_status=InjuryStatus.OUT),
+            Player(name="Healthy Starter", team_id=team.id, per=18.0, mpg=30.0, games_played_this_season=20, injury_status=InjuryStatus.HEALTHY),
         ]
     )
     db_session.flush()
 
-    penalty = calc.compute_injury_penalty(db_session, team, settings)
+    penalty = calc.compute_injury_penalty(db_session, team, settings, PREV_SEASON)
     assert penalty == pytest.approx(40.0)  # 25.0 + 15.0, pas le joueur OUT sous le seuil MPG
 
-    questionable = calc.get_questionable_players(db_session, team, settings)
+    questionable = calc.get_questionable_players(db_session, team, settings, PREV_SEASON)
     assert len(questionable) == 1
     assert questionable[0].name == "Questionable Guy"
     assert questionable[0].reason == "Ankle"
@@ -109,10 +112,117 @@ def test_injury_penalty_zero_when_no_absent_players(db_session):
     team = _team()
     db_session.add(team)
     db_session.flush()
-    db_session.add(Player(name="Healthy Starter", team_id=team.id, per=18.0, mpg=30.0, injury_status=InjuryStatus.HEALTHY))
+    db_session.add(Player(name="Healthy Starter", team_id=team.id, per=18.0, mpg=30.0, games_played_this_season=20, injury_status=InjuryStatus.HEALTHY))
     db_session.flush()
 
-    assert calc.compute_injury_penalty(db_session, team, _settings()) == 0.0
+    assert calc.compute_injury_penalty(db_session, team, _settings(), PREV_SEASON) == 0.0
+
+
+# --- garde-fou petit échantillon individuel (games_played_this_season) ----
+
+
+def test_injury_penalty_player_absent_from_player_table_is_simply_not_evaluated(db_session):
+    """Avant tout import courant, le joueur n'existe pas encore dans Player
+    -- rien à évaluer pour lui, pas de crash (comportement déjà inhérent à la
+    requête, testé ici explicitement)."""
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+
+    assert calc.compute_injury_penalty(db_session, team, _settings(), PREV_SEASON) == 0.0
+    assert calc.get_questionable_players(db_session, team, _settings(), PREV_SEASON) == []
+
+
+def test_injury_penalty_uses_prev_season_stat_when_games_played_below_threshold(db_session):
+    """G courant sous le seuil + PreviousSeasonPlayerStat existant -> PER/MPG
+    N-1 utilisés à la place des valeurs courantes, pour le calcul ET pour le
+    filtre MPG."""
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    settings = _settings(player_sample_size_threshold=5, mpg_threshold=15.0)
+
+    db_session.add(
+        Player(
+            name="Comeback Star",
+            team_id=team.id,
+            per=99.0,  # valeur courante aberrante (petit échantillon), ne doit pas être utilisée
+            mpg=5.0,  # sous le seuil MPG courant -- ne doit pas non plus être utilisé
+            games_played_this_season=2,
+            injury_status=InjuryStatus.OUT,
+        )
+    )
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON,
+            player_name="Comeback Star",
+            team_abbreviation=team.abbreviation,
+            per=22.0,
+            mpg=30.0,
+        )
+    )
+    db_session.flush()
+
+    penalty = calc.compute_injury_penalty(db_session, team, settings, PREV_SEASON)
+    assert penalty == pytest.approx(22.0)
+
+
+def test_injury_penalty_ignores_prev_season_stat_when_games_played_above_threshold(db_session):
+    """G courant au-dessus du seuil -> valeur courante utilisée même si une
+    ligne N-1 différente existe."""
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    settings = _settings(player_sample_size_threshold=5, mpg_threshold=15.0)
+
+    db_session.add(
+        Player(
+            name="Established Starter",
+            team_id=team.id,
+            per=18.0,
+            mpg=30.0,
+            games_played_this_season=6,
+            injury_status=InjuryStatus.OUT,
+        )
+    )
+    db_session.add(
+        PreviousSeasonPlayerStat(
+            season=PREV_SEASON,
+            player_name="Established Starter",
+            team_abbreviation=team.abbreviation,
+            per=99.0,
+            mpg=99.0,
+        )
+    )
+    db_session.flush()
+
+    penalty = calc.compute_injury_penalty(db_session, team, settings, PREV_SEASON)
+    assert penalty == pytest.approx(18.0)
+
+
+def test_injury_penalty_keeps_current_value_when_no_prev_season_stat_exists(db_session):
+    """Cas 4 (limite acceptée) : G courant sous le seuil mais aucun
+    PreviousSeasonPlayerStat (rookie/nouveau dans la ligue) -> valeur
+    courante conservée telle quelle, pas de crash."""
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+    settings = _settings(player_sample_size_threshold=5, mpg_threshold=15.0)
+
+    db_session.add(
+        Player(
+            name="Rookie No History",
+            team_id=team.id,
+            per=12.0,
+            mpg=20.0,
+            games_played_this_season=1,
+            injury_status=InjuryStatus.OUT,
+        )
+    )
+    db_session.flush()
+
+    penalty = calc.compute_injury_penalty(db_session, team, settings, PREV_SEASON)
+    assert penalty == pytest.approx(12.0)
 
 
 # --- compute_calendar_penalty ----------------------------------------------

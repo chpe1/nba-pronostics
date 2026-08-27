@@ -34,6 +34,15 @@ class Settings(Base):
     # Seuil de temps de jeu (MPG) minimum pour la prise en compte du PER
     mpg_threshold: Mapped[float] = mapped_column(Float, default=15.0)
 
+    # Garde-fou petit échantillon INDIVIDUEL (par joueur, sur son nombre de
+    # matchs joués cette saison) : distinct de EARLY_SEASON_GAME_THRESHOLD
+    # (équipe, pronostic_calculator.py) -- un joueur précis peut rester sous
+    # ce seuil alors que son équipe a dépassé le sien (retour de blessure,
+    # call-up en cours de saison). Sous ce seuil, PER/MPG N-1 utilisés à la
+    # place des valeurs courantes si disponibles (voir compute_injury_penalty).
+    # Non calibré par simulation (pas de vraies données) -- voir docs/calibrage-v1.md.
+    player_sample_size_threshold: Mapped[int] = mapped_column(Integer, default=5)
+
     # Bonus Draft par pick, ex: {"1": 8.0, "2": 6.0, ...} (échelle 0-100 points)
     draft_bonus_config: Mapped[dict] = mapped_column(JSON, default=dict)
 
