@@ -10,6 +10,7 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 const savingId = ref(null)
 const savedId = ref(null)
+const deletingId = ref(null)
 
 const newPlayer = ref({ name: '', team_id: '', draft_pick: '', per: '', mpg: '' })
 const isCreating = ref(false)
@@ -75,6 +76,25 @@ async function save(player) {
     errorMessage.value = error instanceof ApiError ? error.message : "Échec de l'enregistrement."
   } finally {
     savingId.value = null
+  }
+}
+
+async function deletePlayer(player) {
+  const confirmed = window.confirm(
+    `Supprimer définitivement ${player.name} (${player.team_abbreviation}) ? Cette action est irréversible.`
+  )
+  if (!confirmed) return
+
+  errorMessage.value = ''
+  deletingId.value = player.id
+  try {
+    await apiFetch(`/api/players/${player.id}`, { method: 'DELETE' })
+    players.value = players.value.filter((p) => p.id !== player.id)
+    delete forms.value[player.id]
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : 'Échec de la suppression.'
+  } finally {
+    deletingId.value = null
   }
 }
 
@@ -210,14 +230,24 @@ onMounted(async () => {
         </div>
       </div>
 
-      <button
-        type="button"
-        class="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-        :disabled="savingId === player.id"
-        @click="save(player)"
-      >
-        {{ savingId === player.id ? 'Enregistrement…' : 'Enregistrer' }}
-      </button>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          :disabled="savingId === player.id || deletingId === player.id"
+          @click="save(player)"
+        >
+          {{ savingId === player.id ? 'Enregistrement…' : 'Enregistrer' }}
+        </button>
+        <button
+          type="button"
+          class="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+          :disabled="savingId === player.id || deletingId === player.id"
+          @click="deletePlayer(player)"
+        >
+          {{ deletingId === player.id ? 'Suppression…' : 'Supprimer' }}
+        </button>
+      </div>
       <p v-if="savedId === player.id" class="text-xs text-emerald-700">Enregistré.</p>
     </div>
   </section>

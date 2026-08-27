@@ -88,6 +88,18 @@ def create_or_upsert_player(payload: PlayerManualCreate, response: Response, db:
     return _to_read(player)
 
 
+@router.delete("/{player_id}", status_code=204)
+def delete_player(player_id: int, db: Session = Depends(get_db)):
+    """Suppression directe par id -- capacité manquante depuis l'Étape 7,
+    symétrique de POST/PATCH. Aucune table ne référence `players.id` par
+    clé étrangère (vérifié), donc pas de cascade à gérer."""
+    player = db.get(Player, player_id)
+    if player is None:
+        raise HTTPException(status_code=404, detail="Joueur introuvable")
+    db.delete(player)
+    db.commit()
+
+
 @router.patch("/{player_id}", response_model=PlayerWithTeamRead)
 def update_player(player_id: int, payload: PlayerManualUpdate, db: Session = Depends(get_db)):
     """Édition directe par id (liste/édition inline) : on connaît déjà la

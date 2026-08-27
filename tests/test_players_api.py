@@ -312,3 +312,48 @@ def test_update_player_rename_and_reassign_team(client, db_session, auth_headers
     assert body["name"] == "Correct Name"
     assert body["team_id"] == lal.id
     assert body["team_abbreviation"] == "LAL"
+
+
+def test_delete_player_requires_authentication(client, db_session):
+    bos, _ = _teams(db_session)
+    player = Player(name="Jayson Tatum", team_id=bos.id)
+    db_session.add(player)
+    db_session.commit()
+
+    response = client.delete(f"/api/players/{player.id}")
+    assert response.status_code == 401
+    assert db_session.query(Player).count() == 1
+
+
+def test_delete_player_unknown_id_returns_404(client, auth_headers):
+    response = client.delete("/api/players/999999", headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_delete_player_removes_it(client, db_session, auth_headers):
+    bos, _ = _teams(db_session)
+    player = Player(name="Jayson Tatum", team_id=bos.id)
+    db_session.add(player)
+    db_session.commit()
+    player_id = player.id
+
+    response = client.delete(f"/api/players/{player_id}", headers=auth_headers)
+
+    assert response.status_code == 204
+    assert db_session.get(Player, player_id) is None
+    assert db_session.query(Player).count() == 0
+
+
+def test_delete_player_does_not_affect_other_players(client, db_session, auth_headers):
+    bos, _ = _teams(db_session)
+    keep = Player(name="Jaylen Brown", team_id=bos.id)
+    remove = Player(name="Jayson Tatum", team_id=bos.id)
+    db_session.add_all([keep, remove])
+    db_session.commit()
+
+    response = client.delete(f"/api/players/{remove.id}", headers=auth_headers)
+
+    assert response.status_code == 204
+    remaining = db_session.query(Player).all()
+    assert len(remaining) == 1
+    assert remaining[0].id == keep.id
