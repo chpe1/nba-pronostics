@@ -1,9 +1,32 @@
 from datetime import UTC, datetime, timedelta
 
-from app.core.security import create_access_token
+import pytest
+
+from app.core.security import MIN_JWT_SECRET_BYTES, create_access_token, decode_access_token
 from app.models import LoginLockout
 from app.services.login_lockout import MAX_FAILED_ATTEMPTS
 from tests.conftest import TEST_ADMIN_PASSWORD, TEST_ADMIN_USERNAME
+
+
+# --- Validation du secret JWT (audit sécurité 2026-08-29) -------------------
+
+
+def test_create_access_token_rejects_secret_shorter_than_minimum(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET_KEY", "too-short")
+    with pytest.raises(RuntimeError, match="trop court"):
+        create_access_token("admin")
+
+
+def test_decode_access_token_rejects_secret_shorter_than_minimum(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET_KEY", "too-short")
+    with pytest.raises(RuntimeError, match="trop court"):
+        decode_access_token("irrelevant-token")
+
+
+def test_create_access_token_accepts_secret_at_exactly_the_minimum(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET_KEY", "a" * MIN_JWT_SECRET_BYTES)
+    token = create_access_token("admin")
+    assert len(token) > 0
 
 
 def test_login_success_returns_jwt(client, admin_env):

@@ -53,7 +53,9 @@ def admin_env(monkeypatch):
     """Configure les variables d'environnement admin/JWT pour la durée du test."""
     monkeypatch.setenv("ADMIN_USERNAME", TEST_ADMIN_USERNAME)
     monkeypatch.setenv("ADMIN_PASSWORD_HASH", hash_password(TEST_ADMIN_PASSWORD))
-    monkeypatch.setenv("JWT_SECRET_KEY", "test-only-secret-key")
+    # >= 32 octets (app.core.security.MIN_JWT_SECRET_BYTES) -- représentatif
+    # d'une config valide, pas un secret plus court que ce que l'app accepte.
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-only-secret-key-not-for-production")
     monkeypatch.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480")
     return {"username": TEST_ADMIN_USERNAME, "password": TEST_ADMIN_PASSWORD}
 

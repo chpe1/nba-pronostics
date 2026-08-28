@@ -21,6 +21,11 @@ from jose import JWTError, jwt
 
 JWT_ALGORITHM = "HS256"
 DEFAULT_TOKEN_EXPIRE_MINUTES = 480
+# Recommandation habituelle pour une clé de signature HS256 (voir .env.example,
+# qui documente déjà `secrets.token_hex(32)`) -- appliquée ici, pas seulement
+# documentée : un secret trop court réduit la résistance de la signature à
+# une attaque par force brute hors ligne.
+MIN_JWT_SECRET_BYTES = 32
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -37,6 +42,22 @@ def get_jwt_secret() -> str | None:
     return os.getenv("JWT_SECRET_KEY")
 
 
+def _require_jwt_secret() -> str:
+    """Lève RuntimeError si JWT_SECRET_KEY est absent OU trop court -- la
+    présence seule ne suffit pas, voir MIN_JWT_SECRET_BYTES ci-dessus."""
+    secret = get_jwt_secret()
+    if not secret:
+        raise RuntimeError("JWT_SECRET_KEY n'est pas configuré (.env)")
+    secret_length = len(secret.encode("utf-8"))
+    if secret_length < MIN_JWT_SECRET_BYTES:
+        raise RuntimeError(
+            f"JWT_SECRET_KEY trop court ({secret_length} octets, {MIN_JWT_SECRET_BYTES} "
+            "minimum recommandés) -- générer via : "
+            "python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    return secret
+
+
 def get_token_expire_minutes() -> int:
     return int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", DEFAULT_TOKEN_EXPIRE_MINUTES))
 
@@ -50,9 +71,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(username: str) -> str:
-    secret = get_jwt_secret()
-    if not secret:
-        raise RuntimeError("JWT_SECRET_KEY n'est pas configuré (.env)")
+    secret = _require_jwt_secret()
     expire = datetime.now(UTC) + timedelta(minutes=get_token_expire_minutes())
     payload = {"sub": username, "exp": expire}
     return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
@@ -60,9 +79,7 @@ def create_access_token(username: str) -> str:
 
 def decode_access_token(token: str) -> str:
     """Retourne le username (sub) si le token est valide ; lève JWTError sinon."""
-    secret = get_jwt_secret()
-    if not secret:
-        raise RuntimeError("JWT_SECRET_KEY n'est pas configuré (.env)")
+    secret = _require_jwt_secret()
     payload = jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
     return payload["sub"]
 
