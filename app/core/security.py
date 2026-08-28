@@ -4,9 +4,10 @@ Les identifiants/secrets sont lus depuis les variables d'environnement à
 chaque appel (pas de constantes figées à l'import), pour rester facilement
 surchargeables en test via `monkeypatch.setenv`.
 
-Limitation connue (documentée dans CLAUDE.md) : pas de protection
-anti-brute-force sur /api/auth/login — acceptable en usage local, à ajouter
-avant tout déploiement public (Phase 2).
+Protection anti-brute-force sur /api/auth/login : voir
+app/services/login_lockout.py (verrou global persisté en base, appliqué par
+app/api/auth.py -- pas dans ce module, qui reste des utilitaires JWT/bcrypt
+sans état).
 """
 from __future__ import annotations
 

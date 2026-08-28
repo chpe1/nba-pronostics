@@ -19,10 +19,15 @@ async function handleSubmit() {
     await authStore.login(username.value, password.value)
     router.push({ name: 'admin-imports' })
   } catch (error) {
-    errorMessage.value =
-      error instanceof ApiError && error.status === 401
-        ? 'Identifiants invalides.'
-        : 'Connexion impossible pour le moment.'
+    if (error instanceof ApiError && error.status === 401) {
+      errorMessage.value = 'Identifiants invalides.'
+    } else if (error instanceof ApiError && error.status === 429) {
+      // Verrou anti-brute-force (app/services/login_lockout.py) : le
+      // message du backend inclut déjà le délai d'attente restant.
+      errorMessage.value = error.message
+    } else {
+      errorMessage.value = 'Connexion impossible pour le moment.'
+    }
   } finally {
     isSubmitting.value = false
   }

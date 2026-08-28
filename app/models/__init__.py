@@ -5,6 +5,7 @@ from app.models.settings import Settings
 from app.models.import_history import ImportHistory, ImportType, ImportStatus, SeasonType
 from app.models.prediction import Prediction, ReliabilityLevel
 from app.models.previous_season_player_stat import PreviousSeasonPlayerStat
+from app.models.login_lockout import LoginLockout
 
 __all__ = [
     "Team",
@@ -21,4 +22,5 @@ __all__ = [
     "Prediction",
     "ReliabilityLevel",
     "PreviousSeasonPlayerStat",
+    "LoginLockout",
 ]
