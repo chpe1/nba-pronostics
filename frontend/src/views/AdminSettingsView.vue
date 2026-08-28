@@ -42,6 +42,7 @@ async function save() {
         back_to_back_penalty: settings.value.back_to_back_penalty,
         three_in_four_penalty: settings.value.three_in_four_penalty,
         mpg_threshold: settings.value.mpg_threshold,
+        player_sample_size_threshold: settings.value.player_sample_size_threshold,
         reliability_threshold_low: settings.value.reliability_threshold_low,
         reliability_threshold_high: settings.value.reliability_threshold_high,
         transfer_impact_multiplier: settings.value.transfer_impact_multiplier,
@@ -90,6 +91,14 @@ onMounted(loadSettings)
       <SettingsSlider v-model="settings.back_to_back_penalty" label="Malus Back-to-Back" :min="0" :max="20" :step="0.5" />
       <SettingsSlider v-model="settings.three_in_four_penalty" label="Malus 3 matchs en 4 nuits" :min="0" :max="20" :step="0.5" />
       <SettingsSlider v-model="settings.mpg_threshold" label="Seuil MPG minimum" :min="0" :max="40" :step="1" />
+      <SettingsSlider
+        v-model="settings.player_sample_size_threshold"
+        label="Seuil échantillon individuel (matchs)"
+        :min="0"
+        :max="15"
+        :step="1"
+        help="Sous ce nombre de matchs joués cette saison par un joueur, son PER/MPG de la saison précédente est utilisé à la place de sa valeur courante (trop peu fiable sur un si petit échantillon). Distinct du seuil équipe de 10 matchs (début de saison) : un joueur précis peut y rester après un retour de blessure même si son équipe l'a dépassé."
+      />
       <SettingsSlider
         v-model="settings.reliability_threshold_low"
         label="Seuil de fiabilité — Moyenne"
