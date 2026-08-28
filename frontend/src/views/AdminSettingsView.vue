@@ -85,12 +85,54 @@ onMounted(loadSettings)
         </p>
       </div>
 
-      <SettingsSlider v-model="settings.base_note_multiplier" label="Multiplicateur note de base (Curseur A)" :min="0" :max="200" :step="5" />
-      <SettingsSlider v-model="settings.per_impact_multiplier" label="Multiplicateur impact PER (Curseur B)" :min="0" :max="5" :step="0.05" />
-      <SettingsSlider v-model="settings.transfer_impact_multiplier" label="Multiplicateur Bonus/Malus Transferts" :min="0" :max="5" :step="0.05" />
-      <SettingsSlider v-model="settings.back_to_back_penalty" label="Malus Back-to-Back" :min="0" :max="20" :step="0.5" />
-      <SettingsSlider v-model="settings.three_in_four_penalty" label="Malus 3 matchs en 4 nuits" :min="0" :max="20" :step="0.5" />
-      <SettingsSlider v-model="settings.mpg_threshold" label="Seuil MPG minimum" :min="0" :max="40" :step="1" />
+      <SettingsSlider
+        v-model="settings.base_note_multiplier"
+        label="Multiplicateur note de base (Curseur A)"
+        :min="0"
+        :max="200"
+        :step="5"
+        help="Transforme le pourcentage de victoires (0-1) en une note comparable aux autres composants de l'équation (PER, malus calendrier...) -- calibré pour une échelle 0-100 par défaut."
+      />
+      <SettingsSlider
+        v-model="settings.per_impact_multiplier"
+        label="Multiplicateur impact PER (Curseur B)"
+        :min="0"
+        :max="5"
+        :step="0.05"
+        help="Pondère le PER des joueurs absents (Out/Doubtful) avant de le soustraire à la note de base -- un PER brut (échelle ~10-30) écraserait sinon totalement une note calibrée sur 0-100."
+      />
+      <SettingsSlider
+        v-model="settings.transfer_impact_multiplier"
+        label="Multiplicateur Bonus/Malus Transferts"
+        :min="0"
+        :max="5"
+        :step="0.05"
+        help="Pondère le PER (saison précédente) des joueurs arrivés ou partis cet été avant de l'ajouter ou de le retrancher à la note -- même principe que le Curseur B, actif uniquement pendant les 10 premiers matchs de la saison de l'équipe."
+      />
+      <SettingsSlider
+        v-model="settings.back_to_back_penalty"
+        label="Malus Back-to-Back"
+        :min="0"
+        :max="20"
+        :step="0.5"
+        help="Points retirés à la note d'une équipe qui joue un match au lendemain immédiat d'un précédent, sans jour de repos."
+      />
+      <SettingsSlider
+        v-model="settings.three_in_four_penalty"
+        label="Malus 3 matchs en 4 nuits"
+        :min="0"
+        :max="20"
+        :step="0.5"
+        help="Points retirés à une équipe qui dispute son 3e match en 4 nuits (fatigue cumulée). Si le back-to-back s'applique aussi au même match, seul le malus le plus sévère des deux est appliqué, jamais les deux cumulés."
+      />
+      <SettingsSlider
+        v-model="settings.mpg_threshold"
+        label="Seuil MPG minimum"
+        :min="0"
+        :max="40"
+        :step="1"
+        help="Temps de jeu minimum (minutes/match) pour qu'un joueur absent ou incertain soit pris en compte dans le calcul -- écarte les joueurs de fin de banc dont l'absence n'a pas d'impact réel."
+      />
       <SettingsSlider
         v-model="settings.player_sample_size_threshold"
         label="Seuil échantillon individuel (matchs)"
