@@ -63,7 +63,7 @@ onMounted(loadSettings)
 
 <template>
   <section class="mx-auto max-w-md space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-gray-900">Réglages de l'algorithme</h1>
+    <h1 class="text-xl font-semibold text-gray-900">Réglages généraux de l'algorithme</h1>
 
     <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
     <p v-if="successMessage" class="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">

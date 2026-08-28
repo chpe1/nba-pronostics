@@ -107,6 +107,9 @@ def test_injury_penalty_counts_only_out_and_doubtful_above_mpg_threshold(db_sess
     assert questionable[0].name == "Questionable Guy"
     assert questionable[0].reason == "Ankle"
 
+    absent = calc.get_absent_players(db_session, team, settings, PREV_SEASON)
+    assert {p.name for p in absent} == {"Out Star", "Doubtful Starter"}  # pas le joueur OUT sous le seuil MPG
+
 
 def test_injury_penalty_zero_when_no_absent_players(db_session):
     team = _team()
@@ -411,6 +414,8 @@ def test_save_prediction_upserts_single_row_per_game(db_session):
 
     assert second.id == first_id  # même ligne, pas de doublon
     assert second.breakdown["away"]["note_de_base"] == pytest.approx(0.9)
+    assert second.breakdown["home"]["absent_players"] == []
+    assert second.breakdown["away"]["absent_players"] == []
 
 
 # --- Bonus/Malus Transferts (Étape 6bis) ------------------------------------

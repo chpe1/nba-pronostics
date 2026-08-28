@@ -2,15 +2,23 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
 from app.database import get_db
 from app.models import Game, Prediction, Settings
-from app.schemas.prediction import GameWithPredictionRead, PredictionRead, RecentRecordRead
+from app.schemas.prediction import (
+    GameWithPredictionRead,
+    MatchupSimulationRead,
+    MatchupSimulationRequest,
+    PredictionRead,
+    RecentRecordRead,
+    TeamGamePredictionRead,
+)
 from app.services.nba_calendar import current_nba_date
-from app.services.pronostic_calculator import compute_recent_record, save_prediction
+from app.services.pronostic_calculator import breakdown_to_dict, compute_matchup, compute_recent_record, save_prediction
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
 
@@ -107,3 +115,88 @@ def recalculate_predictions(
     for prediction in predictions:
         db.refresh(prediction)
     return predictions
+
+
+@router.get(
+    "/by-team/{team_id}",
+    response_model=list[TeamGamePredictionRead],
+    dependencies=[Depends(get_current_admin)],
+)
+def list_predictions_for_team(team_id: int, db: Session = Depends(get_db)):
+    """Page de diagnostic par équipe (back-office) : tous les matchs de
+    `team_id` (passés et à venir) ayant déjà une Prediction calculée --
+    jointure interne sur Prediction, donc liste vide si le roster courant de
+    l'équipe n'a pas encore été importé (aucun calcul possible pour l'instant,
+    pas une erreur)."""
+    rows = (
+        db.query(Game, Prediction)
+        .join(Prediction, Prediction.game_id == Game.id)
+        .filter(or_(Game.home_team_id == team_id, Game.away_team_id == team_id))
+        .order_by(Game.game_date)
+        .all()
+    )
+    return [
+        TeamGamePredictionRead(
+            id=game.id,
+            season=game.season,
+            game_date=game.game_date,
+            home_team_id=game.home_team_id,
+            home_team_name=game.home_team.name,
+            home_team_abbreviation=game.home_team.abbreviation,
+            away_team_id=game.away_team_id,
+            away_team_name=game.away_team.name,
+            away_team_abbreviation=game.away_team.abbreviation,
+            home_score=game.home_score,
+            away_score=game.away_score,
+            status=game.status,
+            prediction=PredictionRead.model_validate(prediction),
+        )
+        for game, prediction in rows
+    ]
+
+
+@router.post(
+    "/simulate",
+    response_model=MatchupSimulationRead,
+    dependencies=[Depends(get_current_admin)],
+)
+def simulate_prediction(payload: MatchupSimulationRequest, db: Session = Depends(get_db)):
+    """Simulateur ponctuel (page de diagnostic par équipe) : recalcule un
+    match avec un mélange de réglages réels + overrides, SANS jamais écrire
+    en base -- ni sur la vraie ligne Settings, ni en créant une Prediction.
+
+    L'objet Settings construit ici est transitoire (jamais db.add()) :
+    compute_matchup/compute_team_note ne font que LIRE des attributs sur
+    l'objet settings qu'on leur passe (settings.mpg_threshold,
+    settings.draft_bonus_config.get(...), etc.), jamais de requête ni
+    d'écriture basée dessus -- un objet non attaché à la session fonctionne
+    donc à l'identique d'un vrai, sans dupliquer la moindre logique de calcul."""
+    game = db.get(Game, payload.game_id)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Match introuvable")
+
+    real_settings = _get_or_create_settings(db)
+    transient_settings = Settings(
+        base_note_multiplier=real_settings.base_note_multiplier,
+        per_impact_multiplier=real_settings.per_impact_multiplier,
+        back_to_back_penalty=real_settings.back_to_back_penalty,
+        three_in_four_penalty=real_settings.three_in_four_penalty,
+        mpg_threshold=real_settings.mpg_threshold,
+        player_sample_size_threshold=real_settings.player_sample_size_threshold,
+        draft_bonus_config=dict(real_settings.draft_bonus_config),
+        reliability_threshold_low=real_settings.reliability_threshold_low,
+        reliability_threshold_high=real_settings.reliability_threshold_high,
+        transfer_impact_multiplier=real_settings.transfer_impact_multiplier,
+        current_season=real_settings.current_season,
+    )
+    for field, value in payload.overrides.model_dump(exclude_unset=True).items():
+        setattr(transient_settings, field, value)
+
+    result = compute_matchup(db, game, transient_settings)
+    return MatchupSimulationRead(
+        predicted_winner_team_id=result.predicted_winner_team_id,
+        spread=result.spread,
+        reliability=result.reliability,
+        home=breakdown_to_dict(result.home),
+        away=breakdown_to_dict(result.away),
+    )

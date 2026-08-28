@@ -109,6 +109,7 @@ class TeamNoteBreakdown:
     transfer_adjustment: float
     final_note: float
     questionable_players: list[QuestionablePlayerInfo] = field(default_factory=list)
+    absent_players: list[QuestionablePlayerInfo] = field(default_factory=list)
 
 
 @dataclass
@@ -196,6 +197,21 @@ def get_questionable_players(
         QuestionablePlayerInfo(name=player.name, per=per, reason=player.injury_reason)
         for player, per, _mpg in relevant
         if player.injury_status == InjuryStatus.QUESTIONABLE
+    ]
+
+
+def get_absent_players(
+    db: Session, team: Team, settings: Settings, prev_season: str
+) -> list[QuestionablePlayerInfo]:
+    """Détail des joueurs (OUT/DOUBTFUL) qui composent compute_injury_penalty
+    -- symétrique de get_questionable_players, purement informatif (le
+    diagnostic par équipe affiche ce détail à côté du total déjà exposé via
+    injury_penalty, qui reste la seule valeur utilisée dans le calcul)."""
+    relevant = _relevant_players(db, team, prev_season, settings)
+    return [
+        QuestionablePlayerInfo(name=player.name, per=per, reason=player.injury_reason)
+        for player, per, _mpg in relevant
+        if player.injury_status in ABSENT_STATUSES
     ]
 
 
@@ -338,6 +354,7 @@ def compute_team_note(
     else:
         transfer_adjustment = 0.0
     questionable_players = get_questionable_players(db, team, settings, prev_season)
+    absent_players = get_absent_players(db, team, settings, prev_season)
 
     final_note = (
         (note_de_base * settings.base_note_multiplier)
@@ -362,6 +379,7 @@ def compute_team_note(
         transfer_adjustment=transfer_adjustment,
         final_note=final_note,
         questionable_players=questionable_players,
+        absent_players=absent_players,
     )
 
 
@@ -393,7 +411,11 @@ def compute_matchup(db: Session, game: Game, settings: Settings) -> MatchupResul
     )
 
 
-def _breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
+def breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
+    """Sérialisation partagée entre save_prediction (persisté dans
+    Prediction.breakdown) et l'endpoint de simulation ponctuelle
+    (app/api/predictions.py::simulate_prediction, jamais persisté) -- un seul
+    format pour les deux, affiché par le même composant frontend."""
     return {
         "team_id": breakdown.team_id,
         "team_name": breakdown.team_name,
@@ -410,6 +432,9 @@ def _breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
         "final_note": breakdown.final_note,
         "questionable_players": [
             {"name": p.name, "per": p.per, "reason": p.reason} for p in breakdown.questionable_players
+        ],
+        "absent_players": [
+            {"name": p.name, "per": p.per, "reason": p.reason} for p in breakdown.absent_players
         ],
     }
 
@@ -428,8 +453,8 @@ def save_prediction(db: Session, game: Game, settings: Settings) -> Prediction:
     prediction.spread = result.spread
     prediction.reliability = result.reliability
     prediction.breakdown = {
-        "home": _breakdown_to_dict(result.home),
-        "away": _breakdown_to_dict(result.away),
+        "home": breakdown_to_dict(result.home),
+        "away": breakdown_to_dict(result.away),
     }
 
     db.flush()

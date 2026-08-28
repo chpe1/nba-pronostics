@@ -7,6 +7,7 @@ import AdminImportsView from '@/views/AdminImportsView.vue'
 import AdminSettingsView from '@/views/AdminSettingsView.vue'
 import AdminGamesView from '@/views/AdminGamesView.vue'
 import AdminPlayersView from '@/views/AdminPlayersView.vue'
+import AdminTeamDiagnosticView from '@/views/AdminTeamDiagnosticView.vue'
 
 const routes = [
   { path: '/', name: 'dashboard', component: DashboardView },
@@ -33,6 +34,12 @@ const routes = [
     path: '/admin/players',
     name: 'admin-players',
     component: AdminPlayersView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/diagnostic',
+    name: 'admin-team-diagnostic',
+    component: AdminTeamDiagnosticView,
     meta: { requiresAuth: true },
   },
 ]
