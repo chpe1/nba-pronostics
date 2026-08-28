@@ -2,6 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
 import MatchupResultCard from '@/components/MatchupResultCard.vue'
+import InfoTooltip from '@/components/InfoTooltip.vue'
+import { SETTINGS_HELP } from '@/constants/settingsHelp'
 
 const teams = ref([])
 const selectedTeamId = ref('')
@@ -11,15 +13,15 @@ const isLoadingGames = ref(false)
 const errorMessage = ref('')
 
 const OVERRIDE_FIELDS = [
-  { key: 'base_note_multiplier', label: 'Multiplicateur note de base (Curseur A)' },
-  { key: 'per_impact_multiplier', label: 'Multiplicateur impact PER (Curseur B)' },
-  { key: 'transfer_impact_multiplier', label: 'Multiplicateur Bonus/Malus Transferts' },
-  { key: 'back_to_back_penalty', label: 'Malus Back-to-Back' },
-  { key: 'three_in_four_penalty', label: 'Malus 3 matchs en 4 nuits' },
-  { key: 'mpg_threshold', label: 'Seuil MPG minimum' },
-  { key: 'player_sample_size_threshold', label: 'Seuil échantillon individuel (matchs)' },
-  { key: 'reliability_threshold_low', label: 'Seuil de fiabilité — Moyenne' },
-  { key: 'reliability_threshold_high', label: 'Seuil de fiabilité — Forte' },
+  { key: 'base_note_multiplier', label: 'Multiplicateur note de base (Curseur A)', help: SETTINGS_HELP.base_note_multiplier },
+  { key: 'per_impact_multiplier', label: 'Multiplicateur impact PER (Curseur B)', help: SETTINGS_HELP.per_impact_multiplier },
+  { key: 'transfer_impact_multiplier', label: 'Multiplicateur Bonus/Malus Transferts', help: SETTINGS_HELP.transfer_impact_multiplier },
+  { key: 'back_to_back_penalty', label: 'Malus Back-to-Back', help: SETTINGS_HELP.back_to_back_penalty },
+  { key: 'three_in_four_penalty', label: 'Malus 3 matchs en 4 nuits', help: SETTINGS_HELP.three_in_four_penalty },
+  { key: 'mpg_threshold', label: 'Seuil MPG minimum', help: SETTINGS_HELP.mpg_threshold },
+  { key: 'player_sample_size_threshold', label: 'Seuil échantillon individuel (matchs)', help: SETTINGS_HELP.player_sample_size_threshold },
+  { key: 'reliability_threshold_low', label: 'Seuil de fiabilité — Moyenne', help: SETTINGS_HELP.reliability_threshold_low },
+  { key: 'reliability_threshold_high', label: 'Seuil de fiabilité — Forte', help: SETTINGS_HELP.reliability_threshold_high },
 ]
 
 const overrideForm = ref(Object.fromEntries(OVERRIDE_FIELDS.map((f) => [f.key, ''])))
@@ -173,7 +175,10 @@ onMounted(loadTeams)
 
         <div class="grid grid-cols-2 gap-3">
           <div v-for="field in OVERRIDE_FIELDS" :key="field.key">
-            <label class="mb-1 block text-xs font-medium text-gray-700">{{ field.label }}</label>
+            <label class="mb-1 flex items-center text-xs font-medium text-gray-700">
+              {{ field.label }}
+              <InfoTooltip :text="field.help" />
+            </label>
             <input
               v-model="overrideForm[field.key]"
               type="number"
@@ -184,7 +189,10 @@ onMounted(loadTeams)
         </div>
 
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Bonus Draft (JSON, pick → bonus)</label>
+          <label class="mb-1 flex items-center text-xs font-medium text-gray-700">
+            Bonus Draft (JSON, pick → bonus)
+            <InfoTooltip :text="SETTINGS_HELP.draft_bonus_config" />
+          </label>
           <textarea
             v-model="draftBonusOverrideText"
             rows="3"

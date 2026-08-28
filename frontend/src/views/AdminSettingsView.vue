@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
 import SettingsSlider from '@/components/SettingsSlider.vue'
 import InfoTooltip from '@/components/InfoTooltip.vue'
+import { SETTINGS_HELP } from '@/constants/settingsHelp'
 
 const settings = ref(null)
 const draftBonusConfigText = ref('{}')
@@ -91,7 +92,7 @@ onMounted(loadSettings)
         :min="0"
         :max="200"
         :step="5"
-        help="Transforme le pourcentage de victoires (0-1) en une note comparable aux autres composants de l'équation (PER, malus calendrier...) -- calibré pour une échelle 0-100 par défaut."
+        :help="SETTINGS_HELP.base_note_multiplier"
       />
       <SettingsSlider
         v-model="settings.per_impact_multiplier"
@@ -99,7 +100,7 @@ onMounted(loadSettings)
         :min="0"
         :max="5"
         :step="0.05"
-        help="Pondère le PER des joueurs absents (Out/Doubtful) avant de le soustraire à la note de base -- un PER brut (échelle ~10-30) écraserait sinon totalement une note calibrée sur 0-100."
+        :help="SETTINGS_HELP.per_impact_multiplier"
       />
       <SettingsSlider
         v-model="settings.transfer_impact_multiplier"
@@ -107,7 +108,7 @@ onMounted(loadSettings)
         :min="0"
         :max="5"
         :step="0.05"
-        help="Pondère le PER (saison précédente) des joueurs arrivés ou partis cet été avant de l'ajouter ou de le retrancher à la note -- même principe que le Curseur B, actif uniquement pendant les 10 premiers matchs de la saison de l'équipe."
+        :help="SETTINGS_HELP.transfer_impact_multiplier"
       />
       <SettingsSlider
         v-model="settings.back_to_back_penalty"
@@ -115,7 +116,7 @@ onMounted(loadSettings)
         :min="0"
         :max="20"
         :step="0.5"
-        help="Points retirés à la note d'une équipe qui joue un match au lendemain immédiat d'un précédent, sans jour de repos."
+        :help="SETTINGS_HELP.back_to_back_penalty"
       />
       <SettingsSlider
         v-model="settings.three_in_four_penalty"
@@ -123,7 +124,7 @@ onMounted(loadSettings)
         :min="0"
         :max="20"
         :step="0.5"
-        help="Points retirés à une équipe qui dispute son 3e match en 4 nuits (fatigue cumulée). Si le back-to-back s'applique aussi au même match, seul le malus le plus sévère des deux est appliqué, jamais les deux cumulés."
+        :help="SETTINGS_HELP.three_in_four_penalty"
       />
       <SettingsSlider
         v-model="settings.mpg_threshold"
@@ -131,7 +132,7 @@ onMounted(loadSettings)
         :min="0"
         :max="40"
         :step="1"
-        help="Temps de jeu minimum (minutes/match) pour qu'un joueur absent ou incertain soit pris en compte dans le calcul -- écarte les joueurs de fin de banc dont l'absence n'a pas d'impact réel."
+        :help="SETTINGS_HELP.mpg_threshold"
       />
       <SettingsSlider
         v-model="settings.player_sample_size_threshold"
@@ -139,7 +140,7 @@ onMounted(loadSettings)
         :min="0"
         :max="15"
         :step="1"
-        help="Sous ce nombre de matchs joués cette saison par un joueur, son PER/MPG de la saison précédente est utilisé à la place de sa valeur courante (trop peu fiable sur un si petit échantillon). Distinct du seuil équipe de 10 matchs (début de saison) : un joueur précis peut y rester après un retour de blessure même si son équipe l'a dépassé."
+        :help="SETTINGS_HELP.player_sample_size_threshold"
       />
       <SettingsSlider
         v-model="settings.reliability_threshold_low"
@@ -147,7 +148,7 @@ onMounted(loadSettings)
         :min="0"
         :max="50"
         :step="0.5"
-        help="Écart de points minimum (après tous les bonus/malus) pour que la jauge de fiabilité du pronostic passe de Faible à Moyenne."
+        :help="SETTINGS_HELP.reliability_threshold_low"
       />
       <SettingsSlider
         v-model="settings.reliability_threshold_high"
@@ -155,13 +156,13 @@ onMounted(loadSettings)
         :min="0"
         :max="50"
         :step="0.5"
-        help="Écart de points minimum pour que la jauge de fiabilité passe de Moyenne à Forte."
+        :help="SETTINGS_HELP.reliability_threshold_high"
       />
 
       <div>
         <label class="mb-1 flex items-center text-sm font-medium text-gray-700">
           Bonus Draft (JSON, pick → bonus)
-          <InfoTooltip text="Bonus ajouté à la note d'une équipe pour chaque rookie drafté dans son effectif (selon son pick, ex: {&quot;1&quot;: 8, &quot;2&quot;: 6}). Actif seulement pendant les 10 premiers matchs de la saison de l'équipe." />
+          <InfoTooltip :text="SETTINGS_HELP.draft_bonus_config" />
         </label>
         <textarea
           v-model="draftBonusConfigText"
