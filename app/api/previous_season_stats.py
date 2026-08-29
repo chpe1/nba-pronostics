@@ -84,8 +84,7 @@ def create_previous_season_stat(payload: PreviousSeasonPlayerStatCreate, db: Ses
 def update_previous_season_stat(
     stat_id: int, payload: PreviousSeasonPlayerStatUpdate, db: Session = Depends(get_db)
 ):
-    """Édition directe par id -- pas de suppression pour cette table (non
-    demandée), seulement création/édition."""
+    """Édition directe par id."""
     stat = db.get(PreviousSeasonPlayerStat, stat_id)
     if stat is None:
         raise HTTPException(status_code=404, detail="Ligne introuvable")
@@ -112,3 +111,24 @@ def update_previous_season_stat(
     db.commit()
     db.refresh(stat)
     return stat
+
+
+@router.delete("/{stat_id}", status_code=204)
+def delete_previous_season_stat(stat_id: int, db: Session = Depends(get_db)):
+    """Suppression directe par id -- symétrique de DELETE /api/players/{id}
+    et DELETE /api/games/{id}. Contrairement à Game (référencée par
+    Prediction.game_id), aucune table ne référence previous_season_player_stats.id
+    par clé étrangère (vérifié) : tous les rapprochements se font par
+    (season, player_name) via find_prev_season_stat_by_name, jamais par id --
+    pas de cascade à gérer.
+
+    N'affecte qu'un futur recalcul (le joueur concerné retombe sur le cas
+    "pas de fallback disponible", déjà géré) : une Prediction déjà
+    sauvegardée stocke un résultat figé au moment du calcul (des valeurs,
+    jamais une référence vivante vers cette table), donc totalement
+    inchangée par cette suppression."""
+    stat = db.get(PreviousSeasonPlayerStat, stat_id)
+    if stat is None:
+        raise HTTPException(status_code=404, detail="Ligne introuvable")
+    db.delete(stat)
+    db.commit()

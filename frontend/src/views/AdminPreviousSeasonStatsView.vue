@@ -10,6 +10,7 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 const savingId = ref(null)
 const savedId = ref(null)
+const deletingId = ref(null)
 
 const newStat = ref({ season: '', player_name: '', team_abbreviation: '', per: '', mpg: '' })
 const isCreating = ref(false)
@@ -111,6 +112,27 @@ async function createStat() {
   }
 }
 
+async function deleteStat(stat) {
+  const confirmed = window.confirm(
+    `Supprimer définitivement la ligne ${stat.player_name} (${stat.season}, ${stat.team_abbreviation}) ? ` +
+      "N'affecte que les futurs recalculs (le joueur retombe sur le cas \"pas de fallback disponible\") -- " +
+      'les pronostics déjà calculés ne changent pas. Cette action est irréversible.'
+  )
+  if (!confirmed) return
+
+  errorMessage.value = ''
+  deletingId.value = stat.id
+  try {
+    await apiFetch(`/api/previous-season-stats/${stat.id}`, { method: 'DELETE' })
+    stats.value = stats.value.filter((s) => s.id !== stat.id)
+    delete forms.value[stat.id]
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : 'Échec de la suppression.'
+  } finally {
+    deletingId.value = null
+  }
+}
+
 onMounted(async () => {
   await loadDefaultSeason()
   await loadStats()
@@ -123,8 +145,7 @@ onMounted(async () => {
     <p class="text-sm text-gray-500">
       Corriger une ligne à la main (ex : une résolution d'équipe erronée sur un cas d'encodage
       particulier) sans devoir réimporter tout le fichier ligue entière. Sert à la détection des
-      transferts et au garde-fou petit échantillon — pas de suppression ici, seulement
-      création/édition.
+      transferts et au garde-fou petit échantillon.
     </p>
 
     <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
@@ -210,14 +231,24 @@ onMounted(async () => {
         </div>
       </div>
 
-      <button
-        type="button"
-        class="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-        :disabled="savingId === stat.id"
-        @click="save(stat)"
-      >
-        {{ savingId === stat.id ? 'Enregistrement…' : 'Enregistrer' }}
-      </button>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          :disabled="savingId === stat.id || deletingId === stat.id"
+          @click="save(stat)"
+        >
+          {{ savingId === stat.id ? 'Enregistrement…' : 'Enregistrer' }}
+        </button>
+        <button
+          type="button"
+          class="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+          :disabled="savingId === stat.id || deletingId === stat.id"
+          @click="deleteStat(stat)"
+        >
+          {{ deletingId === stat.id ? 'Suppression…' : 'Supprimer' }}
+        </button>
+      </div>
       <p v-if="savedId === stat.id" class="text-xs text-emerald-700">Enregistré.</p>
     </div>
   </section>
