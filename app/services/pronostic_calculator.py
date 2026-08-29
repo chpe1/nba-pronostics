@@ -215,32 +215,24 @@ def get_absent_players(
     ]
 
 
-def _team_games_before(db: Session, team: Team, before_date: date, since_date: date) -> list[Game]:
-    return (
-        db.query(Game)
-        .filter(
-            Game.status == GameStatus.FINISHED,
-            Game.game_date >= since_date,
-            Game.game_date < before_date,
-            or_(Game.home_team_id == team.id, Game.away_team_id == team.id),
-        )
-        .all()
-    )
-
-
 def compute_calendar_flags(db: Session, team: Team, game_date: date) -> dict:
     """Statut B2B/3-en-4 PUREMENT calendaire, jamais dépendant de Settings --
-    contrairement à compute_calendar_penalty, ne filtre PAS sur
-    Game.status == FINISHED : le calendrier d'une saison est connu à
-    l'avance, un match futur peut donc être un vrai back-to-back/3-en-4 même
-    si les matchs qui le précèdent n'ont pas encore été joués. Utilisée pour
-    l'affichage public (GameCard.vue, jamais masqué même pour un match
-    anticipé) -- PAS pour le calcul du malus lui-même, qui reste
-    volontairement inchangé (voir CLAUDE.md pour la limite connue de
-    compute_calendar_penalty sur un recalcul lointain)."""
+    source de vérité UNIQUE pour la fenêtre calendaire, utilisée à la fois
+    par l'affichage public (GameCard.vue, jamais masqué même pour un match
+    anticipé) et par compute_calendar_penalty (le vrai calcul du malus, qui
+    délègue ici pour ses deux booléens).
+
+    Ne filtre PAS sur Game.status == FINISHED : le calendrier d'une saison
+    est connu à l'avance, un match futur peut donc être un vrai
+    back-to-back/3-en-4 même si les matchs qui le précèdent n'ont pas encore
+    été joués (statut encore SCHEDULED) -- limite corrigée le 2026-08-29,
+    voir CLAUDE.md. Exclut en revanche Game.status == POSTPONED : un match
+    reporté ne se joue plus à sa date d'origine, il ne doit donc jamais
+    compter dans la fenêtre à cette date-là."""
     recent_games = (
         db.query(Game)
         .filter(
+            Game.status != GameStatus.POSTPONED,
             Game.game_date >= game_date - timedelta(days=THREE_IN_FOUR_WINDOW_DAYS),
             Game.game_date < game_date,
             or_(Game.home_team_id == team.id, Game.away_team_id == team.id),
@@ -258,26 +250,19 @@ def compute_calendar_flags(db: Session, team: Team, game_date: date) -> dict:
 def compute_calendar_penalty(db: Session, team: Team, game_date: date, settings: Settings) -> dict:
     """Retourne le détail (is_back_to_back, is_three_in_four, penalty) : si
     les deux conditions sont vraies, on applique le malus le plus sévère des
-    deux plutôt que de les cumuler."""
-    recent_games = _team_games_before(
-        db, team, before_date=game_date, since_date=game_date - timedelta(days=THREE_IN_FOUR_WINDOW_DAYS)
-    )
-    recent_dates = {g.game_date.date() if hasattr(g.game_date, "date") else g.game_date for g in recent_games}
-
-    is_back_to_back = (game_date - timedelta(days=1)) in recent_dates
-    is_three_in_four = len(recent_dates) >= THREE_IN_FOUR_GAME_COUNT
+    deux plutôt que de les cumuler. Les deux booléens viennent de
+    compute_calendar_flags (source de vérité unique de la fenêtre
+    calendaire) -- cette fonction n'ajoute que la pondération par les
+    curseurs Settings."""
+    flags = compute_calendar_flags(db, team, game_date)
 
     penalty = 0.0
-    if is_back_to_back:
+    if flags["is_back_to_back"]:
         penalty = max(penalty, settings.back_to_back_penalty)
-    if is_three_in_four:
+    if flags["is_three_in_four"]:
         penalty = max(penalty, settings.three_in_four_penalty)
 
-    return {
-        "is_back_to_back": is_back_to_back,
-        "is_three_in_four": is_three_in_four,
-        "penalty": penalty,
-    }
+    return {**flags, "penalty": penalty}
 
 
 def compute_draft_bonus(db: Session, team: Team, settings: Settings) -> float:

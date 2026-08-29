@@ -75,6 +75,19 @@ def _scheduled_game(db_session, team: Team, opponent: Team, game_date: date) -> 
     return game
 
 
+def _postponed_game(db_session, team: Team, opponent: Team, game_date: date) -> Game:
+    game = Game(
+        season=SEASON,
+        game_date=datetime.combine(game_date, datetime.min.time()),
+        home_team_id=team.id,
+        away_team_id=opponent.id,
+        status=GameStatus.POSTPONED,
+    )
+    db_session.add(game)
+    db_session.flush()
+    return game
+
+
 # --- compute_note_de_base -------------------------------------------------
 
 
@@ -329,12 +342,13 @@ def test_calendar_flags_none_when_well_rested(db_session):
     assert result == {"is_back_to_back": False, "is_three_in_four": False}
 
 
-def test_calendar_flags_work_for_scheduled_games_unlike_penalty(db_session):
-    """Différence clé avec compute_calendar_penalty : le calendrier d'une
-    saison est connu à l'avance, donc un match SCHEDULED (pas encore joué)
-    compte quand même -- sinon un match futur montrerait toujours "aucun B2B"
-    à tort, simplement parce que les matchs précédents n'ont pas encore eu
-    lieu."""
+def test_calendar_flags_and_penalty_agree_on_scheduled_games(db_session):
+    """Corrigé le 2026-08-29 : compute_calendar_penalty délègue désormais à
+    compute_calendar_flags pour ses deux booléens -- un match SCHEDULED (pas
+    encore joué) compte donc pour les deux, le calendrier d'une saison étant
+    connu à l'avance. Avant ce correctif, compute_calendar_penalty ignorait
+    ces matchs (filtre FINISHED) et sous-évaluait le malus pour un recalcul
+    loin à l'avance (voir CLAUDE.md)."""
     team = _team()
     opponent = _team(name="Los Angeles Lakers", abbreviation="LAL")
     db_session.add_all([team, opponent])
@@ -344,12 +358,40 @@ def test_calendar_flags_work_for_scheduled_games_unlike_penalty(db_session):
     _scheduled_game(db_session, team, opponent, game_date - timedelta(days=1))
 
     flags_result = calc.compute_calendar_flags(db_session, team, game_date)
-    assert flags_result["is_back_to_back"] is True
-
-    # compute_calendar_penalty, lui, ne voit rien (filtre FINISHED) -- limite
-    # connue et volontairement non corrigée dans le cadre de cette fonctionnalité.
     penalty_result = calc.compute_calendar_penalty(db_session, team, game_date, _settings())
-    assert penalty_result["is_back_to_back"] is False
+
+    assert flags_result["is_back_to_back"] is True
+    assert penalty_result["is_back_to_back"] is True
+    assert penalty_result["penalty"] == pytest.approx(3.0)
+
+
+def test_calendar_flags_excludes_postponed_games(db_session):
+    """Un match reporté ne se joue plus à sa date d'origine -- il ne doit
+    jamais compter dans la fenêtre B2B/3-en-4 à cette date-là."""
+    team = _team()
+    opponent = _team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([team, opponent])
+    db_session.flush()
+
+    game_date = date(2026, 1, 10)
+    _postponed_game(db_session, team, opponent, game_date - timedelta(days=1))
+
+    result = calc.compute_calendar_flags(db_session, team, game_date)
+    assert result == {"is_back_to_back": False, "is_three_in_four": False}
+
+
+def test_calendar_penalty_excludes_postponed_games(db_session):
+    team = _team()
+    opponent = _team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([team, opponent])
+    db_session.flush()
+
+    game_date = date(2026, 1, 10)
+    _postponed_game(db_session, team, opponent, game_date - timedelta(days=1))
+
+    result = calc.compute_calendar_penalty(db_session, team, game_date, _settings())
+    assert result["is_back_to_back"] is False
+    assert result["penalty"] == 0.0
 
 
 # --- compute_draft_bonus ----------------------------------------------------
