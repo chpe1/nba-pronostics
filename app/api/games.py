@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
 from app.database import get_db
-from app.models import Game, GameStatus
+from app.models import Game, GameStatus, Prediction
 from app.schemas import GameManualUpdate, GameWithTeamsRead
 from app.services.nba_calendar import current_nba_date
 
@@ -66,6 +66,26 @@ def list_games(
         )
         for game in games
     ]
+
+
+@router.delete("/{game_id}", status_code=204, dependencies=[Depends(get_current_admin)])
+def delete_game(game_id: int, db: Session = Depends(get_db)):
+    """Suppression directe par id -- symétrique de DELETE /api/players/{id}.
+
+    `Prediction.game_id` référence `games.id` (FK, PRAGMA foreign_keys=ON) :
+    supprimer un match qui a déjà un pronostic calculé échouerait sinon. Le
+    pronostic associé est donc supprimé dans la même transaction, avant le
+    match lui-même -- comportement en cascade explicite (pas une erreur
+    bloquante), un pronostic n'a de sens que rattaché à un match existant."""
+    game = db.get(Game, game_id)
+    if game is None:
+        raise HTTPException(status_code=404, detail="Match introuvable")
+
+    prediction = db.query(Prediction).filter(Prediction.game_id == game_id).one_or_none()
+    if prediction is not None:
+        db.delete(prediction)
+    db.delete(game)
+    db.commit()
 
 
 @router.patch("/{game_id}", response_model=GameWithTeamsRead, dependencies=[Depends(get_current_admin)])

@@ -37,14 +37,3 @@ class TeamRead(TeamBase):
     id: int
     created_at: datetime
     updated_at: datetime
-
-
-class TeamSummaryRead(BaseModel):
-    """Vue allégée utilisée pour peupler un sélecteur d'équipe côté frontend
-    (ex: AdminPlayersView.vue) -- pas besoin des win_pct/created_at."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    abbreviation: str

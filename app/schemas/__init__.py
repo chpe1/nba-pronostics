@@ -1,4 +1,4 @@
-from app.schemas.team import TeamCreate, TeamRead, TeamSummaryRead, TeamUpdate
+from app.schemas.team import TeamCreate, TeamRead, TeamUpdate
 from app.schemas.player import (
     PlayerCreate,
     PlayerManualCreate,
@@ -23,7 +23,6 @@ __all__ = [
     "TeamCreate",
     "TeamRead",
     "TeamUpdate",
-    "TeamSummaryRead",
     "PlayerCreate",
     "PlayerRead",
     "PlayerUpdate",

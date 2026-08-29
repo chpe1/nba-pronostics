@@ -9,6 +9,7 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 const savingId = ref(null)
 const savedId = ref(null)
+const deletingId = ref(null)
 
 function toLocalInputValue(isoString) {
   // game_date est une date/heure naïve (toujours US/ET, jamais convertie --
@@ -64,6 +65,26 @@ async function save(game) {
     errorMessage.value = error instanceof ApiError ? error.message : "Échec de l'enregistrement."
   } finally {
     savingId.value = null
+  }
+}
+
+async function deleteGame(game) {
+  const confirmed = window.confirm(
+    `Supprimer définitivement ${game.away_team_name} @ ${game.home_team_name} ? ` +
+      'Le pronostic déjà calculé pour ce match (le cas échéant) sera aussi supprimé. Cette action est irréversible.'
+  )
+  if (!confirmed) return
+
+  errorMessage.value = ''
+  deletingId.value = game.id
+  try {
+    await apiFetch(`/api/games/${game.id}`, { method: 'DELETE' })
+    games.value = games.value.filter((g) => g.id !== game.id)
+    delete forms.value[game.id]
+  } catch (error) {
+    errorMessage.value = error instanceof ApiError ? error.message : 'Échec de la suppression.'
+  } finally {
+    deletingId.value = null
   }
 }
 
@@ -134,14 +155,24 @@ onMounted(loadGames)
         indisponible) — un match reporté dont le score reste à venir doit garder cette case cochée.
       </p>
 
-      <button
-        type="button"
-        class="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-        :disabled="savingId === game.id"
-        @click="save(game)"
-      >
-        {{ savingId === game.id ? 'Enregistrement…' : 'Enregistrer' }}
-      </button>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          :disabled="savingId === game.id || deletingId === game.id"
+          @click="save(game)"
+        >
+          {{ savingId === game.id ? 'Enregistrement…' : 'Enregistrer' }}
+        </button>
+        <button
+          type="button"
+          class="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+          :disabled="savingId === game.id || deletingId === game.id"
+          @click="deleteGame(game)"
+        >
+          {{ deletingId === game.id ? 'Suppression…' : 'Supprimer' }}
+        </button>
+      </div>
       <p v-if="savedId === game.id" class="text-xs text-emerald-700">Enregistré.</p>
     </div>
   </section>

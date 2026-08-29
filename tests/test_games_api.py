@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from app.models import Game, GameStatus, Team
+from app.models import Game, GameStatus, Prediction, ReliabilityLevel, Team
 
 SEASON = "2025-2026"
 
@@ -219,3 +219,64 @@ def test_update_game_reschedule_excludes_itself_from_conflict_check(client, db_s
     )
 
     assert response.status_code == 200
+
+
+# --- DELETE /api/games/{id} (suppression manuelle) --------------------------
+
+
+def test_delete_game_requires_authentication(client, db_session):
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+    assert client.delete(f"/api/games/{game.id}").status_code == 401
+
+
+def test_delete_game_returns_404_for_unknown_id(client, auth_headers):
+    response = client.delete("/api/games/999999", headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_delete_game_removes_it(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+
+    response = client.delete(f"/api/games/{game.id}", headers=auth_headers)
+
+    assert response.status_code == 204
+    assert db_session.get(Game, game.id) is None
+
+
+def test_delete_game_also_removes_its_prediction(client, db_session, auth_headers):
+    """Prediction.game_id référence games.id (FK, PRAGMA foreign_keys=ON) --
+    supprimer le match échouerait si son pronostic n'était pas nettoyé
+    d'abord (comportement en cascade explicite, pas une erreur bloquante)."""
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+    db_session.add(
+        Prediction(
+            game_id=game.id,
+            home_team_note=0.7,
+            away_team_note=0.4,
+            predicted_winner_team_id=home.id,
+            spread=0.3,
+            reliability=ReliabilityLevel.FAIBLE,
+            breakdown={},
+        )
+    )
+    db_session.commit()
+
+    response = client.delete(f"/api/games/{game.id}", headers=auth_headers)
+
+    assert response.status_code == 204
+    assert db_session.get(Game, game.id) is None
+    assert db_session.query(Prediction).filter(Prediction.game_id == game.id).count() == 0
+
+
+def test_delete_game_without_prediction_does_not_error(client, db_session, auth_headers):
+    """Cas normal (aucun pronostic calculé pour ce match) -- ne doit pas
+    planter sur l'absence de Prediction à nettoyer."""
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away, date.today())
+    assert db_session.query(Prediction).filter(Prediction.game_id == game.id).count() == 0
+
+    response = client.delete(f"/api/games/{game.id}", headers=auth_headers)
+    assert response.status_code == 204

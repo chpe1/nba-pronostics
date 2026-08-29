@@ -8,6 +8,9 @@ import AdminSettingsView from '@/views/AdminSettingsView.vue'
 import AdminGamesView from '@/views/AdminGamesView.vue'
 import AdminPlayersView from '@/views/AdminPlayersView.vue'
 import AdminTeamDiagnosticView from '@/views/AdminTeamDiagnosticView.vue'
+import AdminDatabaseView from '@/views/AdminDatabaseView.vue'
+import AdminTeamsView from '@/views/AdminTeamsView.vue'
+import AdminPreviousSeasonStatsView from '@/views/AdminPreviousSeasonStatsView.vue'
 
 const routes = [
   { path: '/', name: 'dashboard', component: DashboardView },
@@ -40,6 +43,24 @@ const routes = [
     path: '/admin/diagnostic',
     name: 'admin-team-diagnostic',
     component: AdminTeamDiagnosticView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/database',
+    name: 'admin-database',
+    component: AdminDatabaseView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/teams',
+    name: 'admin-teams',
+    component: AdminTeamsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/previous-season-stats',
+    name: 'admin-previous-season-stats',
+    component: AdminPreviousSeasonStatsView,
     meta: { requiresAuth: true },
   },
 ]
