@@ -27,6 +27,28 @@ class RecentRecordRead(BaseModel):
     games_considered: int
 
 
+class TodayPredictionRead(BaseModel):
+    """Comme PredictionRead, mais pour GET /api/predictions/today (Dashboard
+    public) uniquement -- les champs qui révéleraient le résultat sont mis à
+    None quand `is_upcoming` est vrai (match à plus de
+    PREDICTION_REVEAL_THRESHOLD_DAYS jours dans le futur, voir
+    app/api/predictions.py). Schéma volontairement distinct de PredictionRead
+    (utilisé tel quel par by-team/recalculate, jamais masqué) plutôt qu'un
+    champ optionnel ajouté dessus -- le masquage est spécifique à cette seule
+    route publique."""
+
+    id: int
+    game_id: int
+    is_upcoming: bool
+    home_team_note: float | None = None
+    away_team_note: float | None = None
+    predicted_winner_team_id: int | None = None
+    spread: float | None = None
+    reliability: ReliabilityLevel | None = None
+    breakdown: dict | None = None
+    computed_at: datetime
+
+
 class GameWithPredictionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -42,7 +64,7 @@ class GameWithPredictionRead(BaseModel):
     status: GameStatus
     home_team_recent_record: RecentRecordRead
     away_team_recent_record: RecentRecordRead
-    prediction: PredictionRead | None = None
+    prediction: TodayPredictionRead | None = None
 
 
 class TeamGamePredictionRead(BaseModel):

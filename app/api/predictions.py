@@ -16,11 +16,20 @@ from app.schemas.prediction import (
     PredictionRead,
     RecentRecordRead,
     TeamGamePredictionRead,
+    TodayPredictionRead,
 )
 from app.services.nba_calendar import current_nba_date
 from app.services.pronostic_calculator import breakdown_to_dict, compute_matchup, compute_recent_record, save_prediction
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
+
+# Un match à plus de ce nombre de jours dans le futur (par rapport à la vraie
+# date du jour, current_nba_date() -- jamais la date consultée) voit son
+# résultat masqué sur le Dashboard public, même si un pronostic a déjà été
+# calculé pour lui. Constante en dur, pas un curseur Settings : c'est une
+# politique d'affichage sur une route publique, pas un paramètre qui change
+# le calcul d'un pronostic -- voir CLAUDE.md.
+PREDICTION_REVEAL_THRESHOLD_DAYS = 2
 
 
 def _games_for_date(db: Session, target_date: date) -> list[Game]:
@@ -42,6 +51,36 @@ def _get_or_create_settings(db: Session) -> Settings:
         db.commit()
         db.refresh(settings)
     return settings
+
+
+def _to_today_prediction_read(prediction: Prediction, game: Game) -> TodayPredictionRead:
+    """Masque le résultat d'un pronostic déjà calculé pour un match trop
+    anticipé -- comparaison TOUJOURS contre la vraie date du jour
+    (current_nba_date()), jamais contre la date consultée (`date_param`),
+    et ne s'applique qu'au futur : pour une date passée, `days_ahead` est
+    négatif, donc jamais > PREDICTION_REVEAL_THRESHOLD_DAYS."""
+    days_ahead = (game.game_date_only - current_nba_date()).days
+    is_upcoming = days_ahead > PREDICTION_REVEAL_THRESHOLD_DAYS
+
+    if is_upcoming:
+        return TodayPredictionRead(
+            id=prediction.id,
+            game_id=prediction.game_id,
+            is_upcoming=True,
+            computed_at=prediction.computed_at,
+        )
+    return TodayPredictionRead(
+        id=prediction.id,
+        game_id=prediction.game_id,
+        is_upcoming=False,
+        home_team_note=prediction.home_team_note,
+        away_team_note=prediction.away_team_note,
+        predicted_winner_team_id=prediction.predicted_winner_team_id,
+        spread=prediction.spread,
+        reliability=prediction.reliability,
+        breakdown=prediction.breakdown,
+        computed_at=prediction.computed_at,
+    )
 
 
 @router.get("/today", response_model=list[GameWithPredictionRead])
@@ -88,7 +127,7 @@ def get_today_predictions(
                     games_considered=away_record.games_considered,
                 ),
                 prediction=(
-                    PredictionRead.model_validate(predictions_by_game_id[game.id])
+                    _to_today_prediction_read(predictions_by_game_id[game.id], game)
                     if game.id in predictions_by_game_id
                     else None
                 ),

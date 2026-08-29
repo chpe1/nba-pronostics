@@ -95,6 +95,103 @@ def test_today_predictions_includes_existing_prediction(client, db_session):
     assert body[0]["prediction"]["predicted_winner_team_id"] == home.id
 
 
+# --- Masquage des pronostics trop anticipés (GET /today uniquement) --------
+
+
+def _game_with_prediction(db_session, home, away, game_date, spread=20.0) -> tuple[Game, Prediction]:
+    game = _game(db_session, home, away, game_date)
+    prediction = Prediction(
+        game_id=game.id,
+        home_team_note=70.0,
+        away_team_note=50.0,
+        predicted_winner_team_id=home.id,
+        spread=spread,
+        reliability=ReliabilityLevel.FORTE,
+        breakdown={"home": {"final_note": 70.0}, "away": {"final_note": 50.0}},
+    )
+    db_session.add(prediction)
+    db_session.commit()
+    return game, prediction
+
+
+def test_today_predictions_masks_result_more_than_threshold_days_ahead(client, db_session):
+    home, away = _teams(db_session)
+    today = current_nba_date()
+    game, _ = _game_with_prediction(db_session, home, away, today + timedelta(days=3))
+
+    response = client.get("/api/predictions/today", params={"date": (today + timedelta(days=3)).isoformat()})
+    body = response.json()[0]["prediction"]
+
+    assert body["is_upcoming"] is True
+    assert body["predicted_winner_team_id"] is None
+    assert body["spread"] is None
+    assert body["reliability"] is None
+    assert body["home_team_note"] is None
+    assert body["away_team_note"] is None
+    assert body["breakdown"] is None
+
+
+def test_today_predictions_does_not_mask_at_exactly_the_threshold(client, db_session):
+    today = current_nba_date()
+    home, away = _teams(db_session)
+    _game_with_prediction(db_session, home, away, today + timedelta(days=2))
+
+    response = client.get("/api/predictions/today", params={"date": (today + timedelta(days=2)).isoformat()})
+    body = response.json()[0]["prediction"]
+
+    assert body["is_upcoming"] is False
+    assert body["predicted_winner_team_id"] == home.id
+    assert body["spread"] == 20.0
+
+
+def test_today_predictions_never_masks_past_games_even_if_old(client, db_session):
+    today = current_nba_date()
+    home, away = _teams(db_session)
+    _game_with_prediction(db_session, home, away, today - timedelta(days=365))
+
+    response = client.get(
+        "/api/predictions/today", params={"date": (today - timedelta(days=365)).isoformat()}
+    )
+    body = response.json()[0]["prediction"]
+
+    assert body["is_upcoming"] is False
+    assert body["predicted_winner_team_id"] == home.id
+
+
+def test_today_predictions_masking_compares_against_real_today_not_queried_date(client, db_session):
+    """Le seuil ne doit jamais bouger avec la navigation dans le calendrier
+    (sélecteur de date du Dashboard) -- même en consultant directement le
+    jour du match (0 jour d'écart AVEC la date consultée), un match loin
+    dans le futur par rapport à la vraie date du jour reste masqué."""
+    today = current_nba_date()
+    home, away = _teams(db_session)
+    far_future = today + timedelta(days=10)
+    _game_with_prediction(db_session, home, away, far_future)
+
+    response = client.get("/api/predictions/today", params={"date": far_future.isoformat()})
+    body = response.json()[0]["prediction"]
+
+    assert body["is_upcoming"] is True
+    assert body["predicted_winner_team_id"] is None
+
+
+def test_by_team_never_masks_regardless_of_date(client, db_session, auth_headers):
+    """GET /api/predictions/by-team sert à examiner le calcul (Diagnostic
+    équipes), pas à faire une annonce publique anticipée -- jamais masqué,
+    contrairement à /today."""
+    today = current_nba_date()
+    home, away = _teams(db_session)
+    game, _ = _game_with_prediction(db_session, home, away, today + timedelta(days=10))
+
+    response = client.get(f"/api/predictions/by-team/{home.id}", headers=auth_headers)
+    body = response.json()
+
+    assert len(body) == 1
+    assert body[0]["prediction"]["predicted_winner_team_id"] == home.id
+    assert body[0]["prediction"]["spread"] == 20.0
+    assert "is_upcoming" not in body[0]["prediction"]  # PredictionRead, pas TodayPredictionRead
+
+
 def test_recalculate_requires_authentication(client):
     assert client.post("/api/predictions/recalculate").status_code == 401
 
