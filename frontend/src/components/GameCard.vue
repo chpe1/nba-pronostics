@@ -31,7 +31,7 @@ const isAwayWinner = computed(
 
 function formatRecord(record) {
   if (!record || record.games_considered === 0) {
-    return 'Aucun match récent'
+    return 'Aucun match terminé récemment'
   }
   return `${record.wins}V-${record.losses}D sur les ${record.games_considered} derniers`
 }

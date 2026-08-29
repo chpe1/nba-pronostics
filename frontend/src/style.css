@@ -66,6 +66,22 @@
  * =================================================================== */
 
 :root {
+  /* Contrôles natifs (select, date/datetime-local, spinners...) : dessinés
+     par le navigateur, PAS par nos tokens CSS -- color-scheme leur dit
+     dans quel registre se dessiner (sinon ils restent en clair par
+     défaut quel que soit data-theme, d'où un menu déroulant illisible en
+     sombre : texte pâle sur popup blanc). Forcé explicitement par mode
+     (jamais "dark light", qui laisserait le NAVIGATEUR/l'OS choisir --
+     c'est data-theme qui décide ici, jamais prefers-color-scheme seul). */
+  color-scheme: dark;
+  /* accent-color : seul point d'entrée pour teinter un <input type="range"
+     /checkbox/radio> natif -- sans lui ils restent au bleu par défaut du
+     navigateur, ignorant --accent-fill. Un seul déclaration suffit pour
+     les deux modes/tous les accents : var() est réévalué au point d'usage
+     avec l'attribut réellement actif sur cet élément (:root = <html>),
+     pas besoin de le répéter sous [data-theme="light"] ou [data-accent]. */
+  accent-color: var(--accent-fill);
+
   /* Sombre -- "Orange parquet" (défaut), §5.2 */
   --canvas: #0e1015;
   --surface: #1a1d26;
@@ -103,6 +119,8 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
+
   /* Clair, dérivé -- §5.3 */
   --canvas: #f4f5f7;
   --surface: #ffffff;

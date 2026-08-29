@@ -635,6 +635,31 @@ Les lots sont séquentiels et chacun se termine par une vérification en navigat
 mobile**, jamais en desktop seul. Il n'existe aucun test de composant frontend dans ce projet : la
 recette manuelle est le seul filet.
 
+### Constats de recette (2026-08-29) à traiter au lot 3
+
+Remontés lors de la recette du Lot 1, consignés ici pour ne pas se perdre — **rien n'est
+implémenté à ce stade**, ce sont des constats, pas des décisions de design déjà prises.
+
+- **`AdminImportsView` — tableau d'historique qui déborde horizontalement à 360 px.** Il lui faut
+  un traitement mobile explicite : défilement horizontal contenu au tableau lui-même (pas à toute
+  la page), ou passage en liste de cartes sous un certain seuil de largeur.
+- **Encadrés d'information indiscernables du fond en mode sombre** (`CsvUploadForm.vue` : encart
+  "Choisissez un fichier..." ; `CsvTemplatesCard.vue` et similaires). Cause : `--surface-sunken`
+  vaut exactement `--canvas` en sombre (§5.2 : les deux valent `#0E1015`), donc un encart utilisant
+  `bg-surface-sunken` sur le fond de page se confond entièrement avec lui. **Il manque un rôle
+  distinct pour un encadré informatif** (un fond légèrement visible même en sombre) — token à
+  définir et mesurer au Lot 3, volontairement pas inventé maintenant.
+- **`AdminGamesView` — le bouton "Enregistrer" n'est pas l'action mise en avant.** Actuellement un
+  aplat neutre clair (`bg-text`/`text-canvas`, traitement "inversé" générique repris du Lot 1),
+  alors que c'est l'action principale de l'écran. Maintenant qu'`--accent-on` existe (mesuré,
+  voir §5.2/§5.3), **les actions principales du back-office devraient passer en aplat d'accent**
+  (`bg-accent text-accent-on`) plutôt qu'en aplat neutre inversé — à généraliser à tous les
+  boutons "Enregistrer"/actions principales équivalents des 8 écrans admin, pas seulement celui-ci.
+- **Constat général : l'espace admin manque de couleur.** §11 pose que l'accent y sert "aux
+  actions et aux alertes", mais dans l'état actuel (Lots 1 seul appliqué) l'accent n'y apparaît
+  quasiment jamais — la reprise du Lot 1 était mécanique (Point 7), pas un vrai travail de densité
+  colorée. À retravailler au Lot 3 en même temps que la palette dense du back-office.
+
 **Avant le lot 2**, produire l'inventaire écrit des règles d'affichage conditionnelles de
 `GameCard.vue` (badge « À venir », indicateurs calendaires, absents, incertains, bilan V-D) et de
 `AdminGamesView.vue` (case de verrou de synchronisation, rechargement après modification). Cet
