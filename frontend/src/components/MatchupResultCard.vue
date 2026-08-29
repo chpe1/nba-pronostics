@@ -25,35 +25,35 @@ const reliabilityLabel = {
 </script>
 
 <template>
-  <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-4">
-    <h3 class="text-sm font-semibold text-gray-900">{{ title }}</h3>
+  <div class="space-y-4 rounded-xl border border-border bg-surface p-4">
+    <h3 class="text-sm font-semibold text-text">{{ title }}</h3>
 
-    <div class="flex items-center justify-between rounded-lg bg-gray-50 p-3 text-sm">
+    <div class="flex items-center justify-between rounded-lg bg-surface-sunken p-3 text-sm">
       <div>
-        <div class="font-medium text-gray-900">Vainqueur : {{ winnerName }}</div>
-        <div class="text-gray-500">Écart : {{ spread.toFixed(1) }} pts</div>
+        <div class="font-medium text-text">Vainqueur : {{ winnerName }}</div>
+        <div class="text-text-secondary">Écart : {{ spread.toFixed(1) }} pts</div>
       </div>
-      <span class="rounded-full bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700">
+      <span class="rounded-full bg-surface-sunken px-2 py-1 text-xs font-medium text-text-secondary">
         Fiabilité {{ reliabilityLabel[reliability] || reliability }}
       </span>
     </div>
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div v-for="team in teams" :key="team.team_id" class="space-y-2 text-sm">
-        <div class="font-medium text-gray-900">
-          {{ team.team_name }} <span class="text-xs text-gray-500">({{ team.is_home ? 'domicile' : 'extérieur' }})</span>
+        <div class="font-medium text-text">
+          {{ team.team_name }} <span class="text-xs text-text-secondary">({{ team.is_home ? 'domicile' : 'extérieur' }})</span>
         </div>
 
-        <dl class="space-y-1 text-xs text-gray-600">
+        <dl class="space-y-1 text-xs text-text-secondary">
           <div class="flex justify-between">
-            <dt>Note de base<span v-if="team.in_early_season" class="ml-1 text-gray-400">(N-1, début de saison)</span></dt>
+            <dt>Note de base<span v-if="team.in_early_season" class="ml-1 text-text-disabled">(N-1, début de saison)</span></dt>
             <dd class="tabular-nums">{{ team.note_de_base.toFixed(3) }}</dd>
           </div>
           <div class="flex justify-between">
             <dt>Malus PER (absents)</dt>
             <dd class="tabular-nums">{{ team.injury_penalty.toFixed(1) }}</dd>
           </div>
-          <ul v-if="team.absent_players.length" class="ml-2 list-disc space-y-0.5 pl-3 text-gray-500">
+          <ul v-if="team.absent_players.length" class="ml-2 list-disc space-y-0.5 pl-3 text-text-secondary">
             <li v-for="p in team.absent_players" :key="p.name">
               {{ p.name }} — PER {{ p.per.toFixed(1) }}<span v-if="p.reason"> ({{ p.reason }})</span>
             </li>
@@ -62,8 +62,8 @@ const reliabilityLabel = {
           <div class="flex justify-between">
             <dt>
               Malus calendrier
-              <span v-if="team.is_back_to_back" class="text-gray-400">(B2B)</span>
-              <span v-else-if="team.is_three_in_four" class="text-gray-400">(3-en-4)</span>
+              <span v-if="team.is_back_to_back" class="text-text-disabled">(B2B)</span>
+              <span v-else-if="team.is_three_in_four" class="text-text-disabled">(3-en-4)</span>
             </dt>
             <dd class="tabular-nums">{{ team.calendar_penalty.toFixed(1) }}</dd>
           </div>
@@ -76,13 +76,13 @@ const reliabilityLabel = {
             <dd class="tabular-nums">{{ team.transfer_adjustment.toFixed(1) }}</dd>
           </div>
 
-          <ul v-if="team.questionable_players.length" class="space-y-0.5 text-amber-600">
+          <ul v-if="team.questionable_players.length" class="space-y-0.5 text-warning">
             <li v-for="p in team.questionable_players" :key="p.name">
               Incertain : {{ p.name }} — PER {{ p.per.toFixed(1) }}<span v-if="p.reason"> ({{ p.reason }})</span>
             </li>
           </ul>
 
-          <div class="flex justify-between border-t border-gray-200 pt-1 font-medium text-gray-900">
+          <div class="flex justify-between border-t border-border pt-1 font-medium text-text">
             <dt>Note finale</dt>
             <dd class="tabular-nums">{{ team.final_note.toFixed(1) }}</dd>
           </div>

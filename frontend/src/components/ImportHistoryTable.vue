@@ -7,9 +7,9 @@ defineProps({
 })
 
 const STATUS_STYLES = {
-  success: 'bg-emerald-100 text-emerald-800',
-  partial: 'bg-amber-100 text-amber-800',
-  error: 'bg-red-100 text-red-800',
+  success: 'bg-success/15 text-success',
+  partial: 'bg-warning/15 text-warning',
+  error: 'bg-danger/15 text-danger-text',
 }
 
 function formatDate(value) {
@@ -18,14 +18,14 @@ function formatDate(value) {
 </script>
 
 <template>
-  <div class="rounded-xl border border-gray-200 bg-white p-4">
-    <h2 class="mb-3 text-sm font-semibold text-gray-900">Historique des imports</h2>
+  <div class="rounded-xl border border-border bg-surface p-4">
+    <h2 class="mb-3 text-sm font-semibold text-text">Historique des imports</h2>
 
-    <p v-if="history.length === 0" class="text-sm text-gray-500">Aucun import pour l'instant.</p>
+    <p v-if="history.length === 0" class="text-sm text-text-secondary">Aucun import pour l'instant.</p>
 
     <table v-else class="w-full border-collapse text-left text-sm">
       <thead>
-        <tr class="text-xs text-gray-500">
+        <tr class="text-xs text-text-secondary">
           <th class="border-b p-2 font-medium">Date</th>
           <th class="border-b p-2 font-medium">Fichier</th>
           <th class="border-b p-2 font-medium">Type</th>

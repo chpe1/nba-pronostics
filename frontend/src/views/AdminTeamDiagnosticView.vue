@@ -111,20 +111,20 @@ onMounted(loadTeams)
 
 <template>
   <section class="mx-auto max-w-3xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-gray-900">Diagnostic équipes</h1>
-    <p class="text-sm text-gray-500">
+    <h1 class="text-xl font-semibold text-text">Diagnostic équipes</h1>
+    <p class="text-sm text-text-secondary">
       Décomposition détaillée des pronostics déjà calculés pour une équipe, et simulateur ponctuel
       pour tester d'autres réglages sans rien enregistrer.
     </p>
 
-    <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
 
     <div class="flex items-center gap-2">
-      <label for="team-select" class="text-sm font-medium text-gray-700">Équipe</label>
+      <label for="team-select" class="text-sm font-medium text-text">Équipe</label>
       <select
         id="team-select"
         v-model="selectedTeamId"
-        class="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        class="rounded-lg border border-border px-3 py-2 text-sm"
         @change="loadGames"
       >
         <option value="" disabled>Sélectionner une équipe</option>
@@ -132,8 +132,8 @@ onMounted(loadTeams)
       </select>
     </div>
 
-    <p v-if="isLoadingGames" class="text-sm text-gray-500">Chargement…</p>
-    <p v-else-if="selectedTeamId && games.length === 0" class="text-sm text-gray-500">
+    <p v-if="isLoadingGames" class="text-sm text-text-secondary">Chargement…</p>
+    <p v-else-if="selectedTeamId && games.length === 0" class="text-sm text-text-secondary">
       Aucun pronostic calculé pour cette équipe pour l'instant (roster de la saison courante pas
       encore importé, ou aucun recalcul lancé).
     </p>
@@ -144,15 +144,15 @@ onMounted(loadTeams)
         :key="game.id"
         type="button"
         class="block w-full rounded-lg border px-3 py-2 text-left text-sm"
-        :class="game.id === selectedGameId ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white'"
+        :class="game.id === selectedGameId ? 'border-accent bg-accent-tint' : 'border-border bg-surface'"
         @click="selectGame(game)"
       >
-        <span class="font-medium text-gray-900">{{ formatDate(game.game_date) }}</span>
+        <span class="font-medium text-text">{{ formatDate(game.game_date) }}</span>
         — {{ game.away_team_abbreviation }} @ {{ game.home_team_abbreviation }}
-        <span v-if="game.home_score !== null && game.away_score !== null" class="text-gray-500">
+        <span v-if="game.home_score !== null && game.away_score !== null" class="text-text-secondary">
           ({{ game.away_score }}-{{ game.home_score }})
         </span>
-        <span class="text-gray-400">— {{ game.status }}</span>
+        <span class="text-text-disabled">— {{ game.status }}</span>
       </button>
     </div>
 
@@ -166,16 +166,16 @@ onMounted(loadTeams)
         :away="selectedGame.prediction.breakdown.away"
       />
 
-      <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
-        <h2 class="text-sm font-semibold text-gray-900">Simuler avec d'autres réglages</h2>
-        <p class="text-xs text-gray-500">
+      <div class="space-y-3 rounded-xl border border-border bg-surface p-4">
+        <h2 class="text-sm font-semibold text-text">Simuler avec d'autres réglages</h2>
+        <p class="text-xs text-text-secondary">
           Champ vide = valeur réelle actuelle conservée. Rien n'est jamais enregistré (ni les
           réglages, ni un nouveau pronostic).
         </p>
 
         <div class="grid grid-cols-2 gap-3">
           <div v-for="field in OVERRIDE_FIELDS" :key="field.key">
-            <label class="mb-1 flex items-center text-xs font-medium text-gray-700">
+            <label class="mb-1 flex items-center text-xs font-medium text-text">
               {{ field.label }}
               <InfoTooltip :text="field.help" />
             </label>
@@ -183,13 +183,13 @@ onMounted(loadTeams)
               v-model="overrideForm[field.key]"
               type="number"
               step="any"
-              class="w-full rounded-lg border border-gray-300 px-2 py-1 text-sm"
+              class="w-full rounded-lg border border-border px-2 py-1 text-sm"
             />
           </div>
         </div>
 
         <div>
-          <label class="mb-1 flex items-center text-xs font-medium text-gray-700">
+          <label class="mb-1 flex items-center text-xs font-medium text-text">
             Bonus Draft (JSON, pick → bonus)
             <InfoTooltip :text="SETTINGS_HELP.draft_bonus_config" />
           </label>
@@ -197,15 +197,15 @@ onMounted(loadTeams)
             v-model="draftBonusOverrideText"
             rows="3"
             placeholder='ex: {"1": 8, "2": 6}'
-            class="w-full rounded-lg border border-gray-300 p-2 font-mono text-xs"
+            class="w-full rounded-lg border border-border p-2 font-mono text-xs"
           />
         </div>
 
-        <p v-if="simulateError" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ simulateError }}</p>
+        <p v-if="simulateError" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ simulateError }}</p>
 
         <button
           type="button"
-          class="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          class="w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
           :disabled="isSimulating"
           @click="simulate"
         >

@@ -46,11 +46,11 @@ onMounted(loadGames)
 <template>
   <section class="mx-auto max-w-2xl px-4 py-6">
     <div class="mb-4 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">Matchs</h1>
+      <h1 class="text-xl font-semibold text-text">Matchs</h1>
       <button
         v-if="authStore.isAuthenticated"
         type="button"
-        class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        class="rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
         :disabled="isRecalculating"
         @click="recalculate"
       >
@@ -59,22 +59,22 @@ onMounted(loadGames)
     </div>
 
     <div class="mb-4 flex items-center gap-2">
-      <label for="dashboard-date-picker" class="text-sm font-medium text-gray-700">Date</label>
+      <label for="dashboard-date-picker" class="text-sm font-medium text-text">Date</label>
       <input
         id="dashboard-date-picker"
         v-model="selectedDate"
         type="date"
-        class="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        class="rounded-lg border border-border px-3 py-2 text-sm"
         @change="loadGames"
       />
     </div>
 
-    <p v-if="errorMessage" class="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+    <p v-if="errorMessage" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">
       {{ errorMessage }}
     </p>
 
-    <p v-if="isLoading" class="text-sm text-gray-500">Chargement…</p>
-    <p v-else-if="games.length === 0" class="text-sm text-gray-500">Aucun match ce jour-là.</p>
+    <p v-if="isLoading" class="text-sm text-text-secondary">Chargement…</p>
+    <p v-else-if="games.length === 0" class="text-sm text-text-secondary">Aucun match ce jour-là.</p>
 
     <div v-else class="space-y-3">
       <GameCard v-for="game in games" :key="game.id" :game="game" />

@@ -7,9 +7,9 @@ defineProps({
 })
 
 const STYLES = {
-  faible: 'bg-gray-200 text-gray-700',
-  moyenne: 'bg-amber-100 text-amber-800',
-  forte: 'bg-emerald-100 text-emerald-800',
+  faible: 'bg-neutral/15 text-neutral',
+  moyenne: 'bg-warning/15 text-warning',
+  forte: 'bg-success/15 text-success',
 }
 
 const LABELS = {

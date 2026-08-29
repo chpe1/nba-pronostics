@@ -64,23 +64,23 @@ onMounted(loadSettings)
 
 <template>
   <section class="mx-auto max-w-md space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-gray-900">Réglages généraux de l'algorithme</h1>
+    <h1 class="text-xl font-semibold text-text">Réglages généraux de l'algorithme</h1>
 
-    <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
-    <p v-if="successMessage" class="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+    <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
+    <p v-if="successMessage" class="rounded-lg bg-success/10 px-3 py-2 text-sm text-success">
       {{ successMessage }}
     </p>
 
-    <div v-if="settings" class="space-y-5 rounded-xl border border-gray-200 bg-white p-4">
+    <div v-if="settings" class="space-y-5 rounded-xl border border-border bg-surface p-4">
       <div>
-        <label class="mb-1 block text-sm font-medium text-gray-700">Saison courante</label>
+        <label class="mb-1 block text-sm font-medium text-text">Saison courante</label>
         <input
           v-model="settings.current_season"
           type="text"
           placeholder="ex: 2026-2027"
-          class="w-40 rounded-lg border border-gray-300 px-2 py-1 text-sm"
+          class="w-40 rounded-lg border border-border px-2 py-1 text-sm"
         />
-        <p class="mt-1 text-xs text-gray-500">
+        <p class="mt-1 text-xs text-text-secondary">
           À changer une fois par an, au début de la nouvelle saison (jamais déduit automatiquement
           d'une date). Pré-remplit le champ saison du formulaire d'import CSV.
         </p>
@@ -160,20 +160,20 @@ onMounted(loadSettings)
       />
 
       <div>
-        <label class="mb-1 flex items-center text-sm font-medium text-gray-700">
+        <label class="mb-1 flex items-center text-sm font-medium text-text">
           Bonus Draft (JSON, pick → bonus)
           <InfoTooltip :text="SETTINGS_HELP.draft_bonus_config" />
         </label>
         <textarea
           v-model="draftBonusConfigText"
           rows="4"
-          class="w-full rounded-lg border border-gray-300 p-2 font-mono text-xs"
+          class="w-full rounded-lg border border-border p-2 font-mono text-xs"
         />
       </div>
 
       <button
         type="button"
-        class="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        class="w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
         :disabled="isSaving"
         @click="save"
       >

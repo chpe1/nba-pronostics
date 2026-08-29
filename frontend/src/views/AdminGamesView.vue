@@ -93,64 +93,64 @@ onMounted(loadGames)
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-gray-900">Correction manuelle des matchs</h1>
-    <p class="text-sm text-gray-500">
+    <h1 class="text-xl font-semibold text-text">Correction manuelle des matchs</h1>
+    <p class="text-sm text-text-secondary">
       Reporter la date d'un match ou corriger son score à la main (ex : indisponibilité de la
       synchronisation automatique).
     </p>
 
     <div class="flex items-center gap-2">
-      <label for="date-picker" class="text-sm font-medium text-gray-700">Date</label>
+      <label for="date-picker" class="text-sm font-medium text-text">Date</label>
       <input
         id="date-picker"
         v-model="selectedDate"
         type="date"
-        class="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        class="rounded-lg border border-border px-3 py-2 text-sm"
         @change="loadGames"
       />
     </div>
 
-    <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
-    <p v-if="isLoading" class="text-sm text-gray-500">Chargement…</p>
-    <p v-else-if="games.length === 0" class="text-sm text-gray-500">Aucun match ce jour-là.</p>
+    <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
+    <p v-if="isLoading" class="text-sm text-text-secondary">Chargement…</p>
+    <p v-else-if="games.length === 0" class="text-sm text-text-secondary">Aucun match ce jour-là.</p>
 
-    <div v-for="game in games" :key="game.id" class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
-      <div class="text-sm font-medium text-gray-900">
+    <div v-for="game in games" :key="game.id" class="space-y-3 rounded-xl border border-border bg-surface p-4">
+      <div class="text-sm font-medium text-text">
         {{ game.away_team_name }} @ {{ game.home_team_name }}
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Date et heure (US/ET)</label>
+          <label class="mb-1 block text-xs font-medium text-text">Date et heure (US/ET)</label>
           <input
             v-model="forms[game.id].game_date"
             type="datetime-local"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            class="w-full rounded-lg border border-border px-3 py-2 text-sm"
           />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Score {{ game.away_team_abbreviation }} (ext.)</label>
+          <label class="mb-1 block text-xs font-medium text-text">Score {{ game.away_team_abbreviation }} (ext.)</label>
           <input
             v-model="forms[game.id].away_score"
             type="number"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            class="w-full rounded-lg border border-border px-3 py-2 text-sm"
           />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Score {{ game.home_team_abbreviation }} (dom.)</label>
+          <label class="mb-1 block text-xs font-medium text-text">Score {{ game.home_team_abbreviation }} (dom.)</label>
           <input
             v-model="forms[game.id].home_score"
             type="number"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            class="w-full rounded-lg border border-border px-3 py-2 text-sm"
           />
         </div>
       </div>
 
-      <label class="flex items-center gap-2 text-sm text-gray-700">
-        <input v-model="forms[game.id].keep_auto_sync" type="checkbox" class="rounded border-gray-300" />
+      <label class="flex items-center gap-2 text-sm text-text">
+        <input v-model="forms[game.id].keep_auto_sync" type="checkbox" class="rounded border-border" />
         Garder la synchronisation automatique active
       </label>
-      <p class="text-xs text-gray-500">
+      <p class="text-xs text-text-secondary">
         Décochez uniquement si vous saisissez un score définitif à la main (ex : l'API de scores est
         indisponible) — un match reporté dont le score reste à venir doit garder cette case cochée.
       </p>
@@ -158,7 +158,7 @@ onMounted(loadGames)
       <div class="flex gap-2">
         <button
           type="button"
-          class="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          class="flex-1 rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
           :disabled="savingId === game.id || deletingId === game.id"
           @click="save(game)"
         >
@@ -166,14 +166,14 @@ onMounted(loadGames)
         </button>
         <button
           type="button"
-          class="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+          class="rounded-lg border border-danger text-sm font-medium text-danger-text px-3 py-2 disabled:opacity-50"
           :disabled="savingId === game.id || deletingId === game.id"
           @click="deleteGame(game)"
         >
           {{ deletingId === game.id ? 'Suppression…' : 'Supprimer' }}
         </button>
       </div>
-      <p v-if="savedId === game.id" class="text-xs text-emerald-700">Enregistré.</p>
+      <p v-if="savedId === game.id" class="text-xs text-success">Enregistré.</p>
     </div>
   </section>
 </template>

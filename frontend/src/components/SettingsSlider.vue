@@ -15,11 +15,11 @@ const value = defineModel({ type: Number, required: true })
 <template>
   <div>
     <div class="mb-1 flex items-center justify-between text-sm">
-      <label class="flex items-center font-medium text-gray-700">
+      <label class="flex items-center font-medium text-text">
         {{ props.label }}
         <InfoTooltip v-if="props.help" :text="props.help" />
       </label>
-      <span class="tabular-nums text-gray-500">{{ value }}</span>
+      <span class="tabular-nums text-text-secondary">{{ value }}</span>
     </div>
     <input
       v-model.number="value"

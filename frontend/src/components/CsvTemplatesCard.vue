@@ -37,14 +37,14 @@ async function download(key) {
 </script>
 
 <template>
-  <div class="rounded-xl border border-gray-200 bg-white p-4">
-    <h2 class="mb-1 text-sm font-semibold text-gray-900">Modèles de fichiers CSV</h2>
-    <p class="mb-3 text-xs text-gray-500">
+  <div class="rounded-xl border border-border bg-surface p-4">
+    <h2 class="mb-1 text-sm font-semibold text-text">Modèles de fichiers CSV</h2>
+    <p class="mb-3 text-xs text-text-secondary">
       Aide-mémoire du format actuellement attendu par chaque type d'import — pas destiné à être
       rempli directement, juste pour voir vite ce qui a changé le jour où un format évolue.
     </p>
 
-    <p v-if="errorMessage" class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+    <p v-if="errorMessage" class="mb-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">
       {{ errorMessage }}
     </p>
 
@@ -52,13 +52,13 @@ async function download(key) {
       <div v-for="template in TEMPLATES" :key="template.key" class="flex max-w-[220px] flex-col gap-1">
         <button
           type="button"
-          class="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 disabled:opacity-50"
+          class="rounded-lg border border-border px-3 py-2 text-xs font-medium text-text disabled:opacity-50"
           :disabled="downloadingKey === template.key"
           @click="download(template.key)"
         >
           {{ downloadingKey === template.key ? 'Téléchargement…' : template.label }}
         </button>
-        <p v-if="template.note" class="text-[11px] leading-snug text-gray-500">{{ template.note }}</p>
+        <p v-if="template.note" class="text-[11px] leading-snug text-text-secondary">{{ template.note }}</p>
       </div>
     </div>
   </div>

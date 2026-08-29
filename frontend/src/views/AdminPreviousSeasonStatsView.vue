@@ -141,100 +141,100 @@ onMounted(async () => {
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-gray-900">Statistiques joueurs (saison précédente)</h1>
-    <p class="text-sm text-gray-500">
+    <h1 class="text-xl font-semibold text-text">Statistiques joueurs (saison précédente)</h1>
+    <p class="text-sm text-text-secondary">
       Corriger une ligne à la main (ex : une résolution d'équipe erronée sur un cas d'encodage
       particulier) sans devoir réimporter tout le fichier ligue entière. Sert à la détection des
       transferts et au garde-fou petit échantillon.
     </p>
 
-    <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
 
-    <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
-      <h2 class="text-sm font-semibold text-gray-900">Ajouter une ligne</h2>
+    <div class="space-y-3 rounded-xl border border-border bg-surface p-4">
+      <h2 class="text-sm font-semibold text-text">Ajouter une ligne</h2>
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Saison (ex : 2024-2025)</label>
-          <input v-model="newStat.season" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Saison (ex : 2024-2025)</label>
+          <input v-model="newStat.season" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Équipe (abréviation)</label>
-          <input v-model="newStat.team_abbreviation" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Équipe (abréviation)</label>
+          <input v-model="newStat.team_abbreviation" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Nom complet du joueur</label>
-          <input v-model="newStat.player_name" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Nom complet du joueur</label>
+          <input v-model="newStat.player_name" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">PER</label>
-          <input v-model="newStat.per" type="number" step="0.1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">PER</label>
+          <input v-model="newStat.per" type="number" step="0.1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">MPG</label>
-          <input v-model="newStat.mpg" type="number" step="0.1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">MPG</label>
+          <input v-model="newStat.mpg" type="number" step="0.1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
       </div>
       <button
         type="button"
-        class="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        class="w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
         :disabled="isCreating"
         @click="createStat"
       >
         {{ isCreating ? 'Enregistrement…' : 'Ajouter' }}
       </button>
-      <p v-if="createMessage" class="text-xs text-emerald-700">{{ createMessage }}</p>
+      <p v-if="createMessage" class="text-xs text-success">{{ createMessage }}</p>
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
-      <label class="text-sm font-medium text-gray-700">Saison</label>
+      <label class="text-sm font-medium text-text">Saison</label>
       <input
         v-model="filterSeason"
         type="text"
         placeholder="ex : 2024-2025"
-        class="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        class="rounded-lg border border-border px-3 py-2 text-sm"
         @change="loadStats"
       />
-      <label class="text-sm font-medium text-gray-700">Joueur</label>
+      <label class="text-sm font-medium text-text">Joueur</label>
       <input
         v-model="filterPlayerName"
         type="text"
         placeholder="rechercher un nom"
-        class="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        class="rounded-lg border border-border px-3 py-2 text-sm"
         @change="loadStats"
       />
     </div>
 
-    <p v-if="isLoading" class="text-sm text-gray-500">Chargement…</p>
-    <p v-else-if="stats.length === 0" class="text-sm text-gray-500">Aucune ligne pour ces filtres.</p>
+    <p v-if="isLoading" class="text-sm text-text-secondary">Chargement…</p>
+    <p v-else-if="stats.length === 0" class="text-sm text-text-secondary">Aucune ligne pour ces filtres.</p>
 
-    <div v-for="stat in stats" :key="stat.id" class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
+    <div v-for="stat in stats" :key="stat.id" class="space-y-3 rounded-xl border border-border bg-surface p-4">
       <div class="grid grid-cols-2 gap-3">
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Nom complet du joueur</label>
-          <input v-model="forms[stat.id].player_name" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Nom complet du joueur</label>
+          <input v-model="forms[stat.id].player_name" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Saison</label>
-          <input v-model="forms[stat.id].season" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Saison</label>
+          <input v-model="forms[stat.id].season" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Équipe (abréviation)</label>
-          <input v-model="forms[stat.id].team_abbreviation" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Équipe (abréviation)</label>
+          <input v-model="forms[stat.id].team_abbreviation" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">PER</label>
-          <input v-model="forms[stat.id].per" type="number" step="0.1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">PER</label>
+          <input v-model="forms[stat.id].per" type="number" step="0.1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">MPG</label>
-          <input v-model="forms[stat.id].mpg" type="number" step="0.1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">MPG</label>
+          <input v-model="forms[stat.id].mpg" type="number" step="0.1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
       </div>
 
       <div class="flex gap-2">
         <button
           type="button"
-          class="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          class="flex-1 rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
           :disabled="savingId === stat.id || deletingId === stat.id"
           @click="save(stat)"
         >
@@ -242,14 +242,14 @@ onMounted(async () => {
         </button>
         <button
           type="button"
-          class="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+          class="rounded-lg border border-danger text-sm font-medium text-danger-text px-3 py-2 disabled:opacity-50"
           :disabled="savingId === stat.id || deletingId === stat.id"
           @click="deleteStat(stat)"
         >
           {{ deletingId === stat.id ? 'Suppression…' : 'Supprimer' }}
         </button>
       </div>
-      <p v-if="savedId === stat.id" class="text-xs text-emerald-700">Enregistré.</p>
+      <p v-if="savedId === stat.id" class="text-xs text-success">Enregistré.</p>
     </div>
   </section>
 </template>

@@ -16,7 +16,7 @@ const isOpen = ref(false)
   <span class="relative inline-flex">
     <button
       type="button"
-      class="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-semibold leading-none text-gray-600 hover:bg-gray-300"
+      class="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-surface-sunken text-[10px] font-semibold leading-none text-text-secondary hover:bg-border"
       :aria-label="text"
       @click="isOpen = !isOpen"
       @blur="isOpen = false"
@@ -25,7 +25,7 @@ const isOpen = ref(false)
     </button>
     <span
       v-if="isOpen"
-      class="absolute bottom-full left-1/2 z-10 mb-1.5 w-56 -translate-x-1/2 rounded-lg bg-gray-900 p-2 text-xs font-normal leading-snug text-white shadow-lg"
+      class="absolute bottom-full left-1/2 z-10 mb-1.5 w-56 -translate-x-1/2 rounded-lg bg-text p-2 text-xs font-normal leading-snug text-canvas shadow-lg"
     >
       {{ text }}
     </span>

@@ -58,58 +58,58 @@ const awayQuestionablePlayers = computed(() => prediction.value?.breakdown?.away
 </script>
 
 <template>
-  <article class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-    <div class="mb-3 flex items-center justify-between text-sm text-gray-500">
+  <article class="rounded-xl border border-border bg-surface p-4 shadow-sm">
+    <div class="mb-3 flex items-center justify-between text-sm text-text-secondary">
       <span>{{ gameTime }}</span>
       <ReliabilityGauge v-if="isRevealed" :reliability="prediction.reliability" />
-      <span v-else-if="isUpcoming" class="rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-500">
+      <span v-else-if="isUpcoming" class="rounded-full bg-surface-sunken px-2 py-1 text-xs font-medium text-text-secondary">
         À venir
       </span>
     </div>
 
     <div class="space-y-2">
-      <div class="flex items-center justify-between" :class="{ 'font-semibold text-gray-900': isAwayWinner }">
+      <div class="flex items-center justify-between" :class="{ 'font-semibold text-text': isAwayWinner }">
         <div>
           <div class="flex items-center gap-1">
             <span>{{ game.away_team_name }}</span>
             <span
               v-for="label in awayCalendarLabels"
               :key="label"
-              class="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700"
+              class="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning"
             >
               {{ label }}
             </span>
           </div>
-          <div class="text-xs font-normal text-gray-500">{{ formatRecord(game.away_team_recent_record) }}</div>
-          <div v-if="isRevealed && awayAbsentPlayers.length" class="text-xs font-normal text-red-600">
+          <div class="text-xs font-normal text-text-secondary">{{ formatRecord(game.away_team_recent_record) }}</div>
+          <div v-if="isRevealed && awayAbsentPlayers.length" class="text-xs font-normal text-danger-text">
             Absents : {{ awayAbsentPlayers.map((p) => p.name).join(', ') }}
           </div>
-          <div v-if="isRevealed && awayQuestionablePlayers.length" class="text-xs font-normal text-amber-600">
+          <div v-if="isRevealed && awayQuestionablePlayers.length" class="text-xs font-normal text-warning">
             Incertains : {{ awayQuestionablePlayers.map((p) => p.name).join(', ') }}
           </div>
         </div>
         <span v-if="isRevealed" class="tabular-nums">{{ prediction.away_team_note.toFixed(2) }}</span>
       </div>
 
-      <div class="text-center text-xs text-gray-400">@</div>
+      <div class="text-center text-xs text-text-disabled">@</div>
 
-      <div class="flex items-center justify-between" :class="{ 'font-semibold text-gray-900': isHomeWinner }">
+      <div class="flex items-center justify-between" :class="{ 'font-semibold text-text': isHomeWinner }">
         <div>
           <div class="flex items-center gap-1">
             <span>{{ game.home_team_name }}</span>
             <span
               v-for="label in homeCalendarLabels"
               :key="label"
-              class="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700"
+              class="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning"
             >
               {{ label }}
             </span>
           </div>
-          <div class="text-xs font-normal text-gray-500">{{ formatRecord(game.home_team_recent_record) }}</div>
-          <div v-if="isRevealed && homeAbsentPlayers.length" class="text-xs font-normal text-red-600">
+          <div class="text-xs font-normal text-text-secondary">{{ formatRecord(game.home_team_recent_record) }}</div>
+          <div v-if="isRevealed && homeAbsentPlayers.length" class="text-xs font-normal text-danger-text">
             Absents : {{ homeAbsentPlayers.map((p) => p.name).join(', ') }}
           </div>
-          <div v-if="isRevealed && homeQuestionablePlayers.length" class="text-xs font-normal text-amber-600">
+          <div v-if="isRevealed && homeQuestionablePlayers.length" class="text-xs font-normal text-warning">
             Incertains : {{ homeQuestionablePlayers.map((p) => p.name).join(', ') }}
           </div>
         </div>
@@ -117,15 +117,15 @@ const awayQuestionablePlayers = computed(() => prediction.value?.breakdown?.away
       </div>
     </div>
 
-    <div class="mt-3 border-t border-gray-100 pt-2 text-sm">
+    <div class="mt-3 border-t border-border pt-2 text-sm">
       <template v-if="isRevealed">
-        <span class="text-gray-500">Écart projeté :</span>
-        <span class="font-medium text-gray-900">{{ Math.abs(prediction.spread).toFixed(2) }}</span>
+        <span class="text-text-secondary">Écart projeté :</span>
+        <span class="font-medium text-text">{{ Math.abs(prediction.spread).toFixed(2) }}</span>
       </template>
-      <span v-else-if="isUpcoming" class="text-gray-400">
+      <span v-else-if="isUpcoming" class="text-text-disabled">
         Pronostic à venir — révélé quelques jours avant le match
       </span>
-      <span v-else class="text-gray-400">Pronostic pas encore calculé</span>
+      <span v-else class="text-text-disabled">Pronostic pas encore calculé</span>
     </div>
   </article>
 </template>

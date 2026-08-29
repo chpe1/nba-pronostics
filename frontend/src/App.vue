@@ -1,6 +1,8 @@
 <script setup>
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import ThemeToggle from '@/components/ThemeToggle.vue'
+import AdminNavMenu from '@/components/AdminNavMenu.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -12,27 +14,40 @@ function handleLogout() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50">
-    <nav class="border-b border-gray-200 bg-white px-4 py-3">
-      <div class="mx-auto flex max-w-2xl items-center justify-between text-sm">
-        <RouterLink to="/" class="font-semibold text-gray-900">Pronostics NBA</RouterLink>
-        <div class="flex items-center gap-4">
+  <div class="flex min-h-screen flex-col bg-canvas text-text">
+    <header class="border-b border-border bg-surface">
+      <nav class="mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+        <RouterLink
+          :to="{ name: 'dashboard' }"
+          class="text-base font-semibold text-text [&.router-link-exact-active]:text-accent-text"
+        >
+          Pronostics NBA
+        </RouterLink>
+        <div class="flex flex-wrap items-center gap-2 text-sm">
           <template v-if="authStore.isAuthenticated">
-            <RouterLink to="/admin/imports" class="text-gray-600">Imports</RouterLink>
-            <RouterLink to="/admin/games" class="text-gray-600">Matchs</RouterLink>
-            <RouterLink to="/admin/players" class="text-gray-600">Joueurs</RouterLink>
-            <RouterLink to="/admin/teams" class="text-gray-600">Équipes</RouterLink>
-            <RouterLink to="/admin/previous-season-stats" class="text-gray-600">Stats N-1</RouterLink>
-            <RouterLink to="/admin/diagnostic" class="text-gray-600">Diagnostic équipes</RouterLink>
-            <RouterLink to="/admin/database" class="text-gray-600">Base de données</RouterLink>
-            <RouterLink to="/admin/settings" class="text-gray-600">Réglages généraux de l'algorithme</RouterLink>
-            <button type="button" class="text-gray-600" @click="handleLogout">Déconnexion</button>
+            <AdminNavMenu />
+            <button
+              type="button"
+              class="flex h-11 items-center rounded-lg px-3 font-medium text-text-secondary hover:bg-surface-sunken"
+              @click="handleLogout"
+            >
+              Déconnexion
+            </button>
           </template>
-          <RouterLink v-else to="/login" class="text-gray-600">Connexion admin</RouterLink>
+          <RouterLink
+            v-else
+            :to="{ name: 'login' }"
+            class="flex h-11 items-center rounded-lg px-3 font-medium text-text-secondary hover:bg-surface-sunken [&.router-link-exact-active]:text-accent-text"
+          >
+            Connexion admin
+          </RouterLink>
+          <ThemeToggle />
         </div>
-      </div>
-    </nav>
+      </nav>
+    </header>
 
-    <RouterView />
+    <main class="flex-1">
+      <RouterView />
+    </main>
   </div>
 </template>

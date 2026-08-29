@@ -36,40 +36,40 @@ async function handleSubmit() {
 
 <template>
   <section class="mx-auto max-w-sm px-4 py-12">
-    <h1 class="mb-6 text-xl font-semibold text-gray-900">Connexion admin</h1>
+    <h1 class="mb-6 text-xl font-semibold text-text">Connexion admin</h1>
 
     <form class="space-y-4" @submit.prevent="handleSubmit">
       <div>
-        <label for="username" class="mb-1 block text-sm font-medium text-gray-700">Identifiant</label>
+        <label for="username" class="mb-1 block text-sm font-medium text-text">Identifiant</label>
         <input
           id="username"
           v-model="username"
           type="text"
           autocomplete="username"
           required
-          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          class="w-full rounded-lg border border-border px-3 py-2 text-sm"
         />
       </div>
 
       <div>
-        <label for="password" class="mb-1 block text-sm font-medium text-gray-700">Mot de passe</label>
+        <label for="password" class="mb-1 block text-sm font-medium text-text">Mot de passe</label>
         <input
           id="password"
           v-model="password"
           type="password"
           autocomplete="current-password"
           required
-          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          class="w-full rounded-lg border border-border px-3 py-2 text-sm"
         />
       </div>
 
-      <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+      <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">
         {{ errorMessage }}
       </p>
 
       <button
         type="submit"
-        class="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        class="w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
         :disabled="isSubmitting"
       >
         {{ isSubmitting ? 'Connexion…' : 'Se connecter' }}

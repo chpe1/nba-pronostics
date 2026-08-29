@@ -2,8 +2,46 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
+    <meta name="theme-color" content="#0E1015" />
+    <script>
+      // Bloquant, volontairement : lu et appliqué avant le premier rendu
+      // pour éviter un éclair de thème clair au chargement (sombre par
+      // défaut, docs/design-v1.md §7). Seule logique de lecture de la
+      // préférence -- frontend/src/stores/theme.js relit ensuite cet
+      // attribut déjà posé plutôt que de refaire sa propre lecture
+      // localStorage, pour n'avoir qu'un seul endroit qui décide.
+      // Met aussi à jour theme-color (barre du navigateur mobile) --
+      // dupliqué dans theme.js pour le cas où l'utilisateur bascule le
+      // thème après le chargement, ce script ne s'exécutant qu'une fois.
+      (function () {
+        try {
+          var stored = localStorage.getItem('nba-pronostics-theme')
+          var theme = stored === 'light' || stored === 'dark' ? stored : 'dark'
+          document.documentElement.setAttribute('data-theme', theme)
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', theme === 'light' ? '#F4F5F7' : '#0E1015')
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark')
+        }
+      })()
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="preload"
+      href="/fonts/Archivo-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/JetBrainsMono-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <title>Pronostics NBA</title>
   </head>
   <body>

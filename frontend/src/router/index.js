@@ -11,6 +11,7 @@ import AdminTeamDiagnosticView from '@/views/AdminTeamDiagnosticView.vue'
 import AdminDatabaseView from '@/views/AdminDatabaseView.vue'
 import AdminTeamsView from '@/views/AdminTeamsView.vue'
 import AdminPreviousSeasonStatsView from '@/views/AdminPreviousSeasonStatsView.vue'
+import NotFoundView from '@/views/NotFoundView.vue'
 
 const routes = [
   { path: '/', name: 'dashboard', component: DashboardView },
@@ -62,6 +63,11 @@ const routes = [
     name: 'admin-previous-season-stats',
     component: AdminPreviousSeasonStatsView,
     meta: { requiresAuth: true },
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: NotFoundView,
   },
 ]
 

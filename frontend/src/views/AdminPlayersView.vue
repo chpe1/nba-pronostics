@@ -137,59 +137,59 @@ onMounted(async () => {
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-gray-900">Joueurs</h1>
-    <p class="text-sm text-gray-500">
+    <h1 class="text-xl font-semibold text-text">Joueurs</h1>
+    <p class="text-sm text-text-secondary">
       Ajouter ou corriger un joueur à la main (rookie drafté, correction ponctuelle). Un
       PER/MPG saisi ici est un simple placeholder : le prochain import CSV Advanced du
       même joueur l'écrase normalement, sans protection particulière.
     </p>
 
-    <p v-if="errorMessage" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
 
-    <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
-      <h2 class="text-sm font-semibold text-gray-900">Ajouter un joueur</h2>
+    <div class="space-y-3 rounded-xl border border-border bg-surface p-4">
+      <h2 class="text-sm font-semibold text-text">Ajouter un joueur</h2>
       <div class="grid grid-cols-2 gap-3">
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Nom complet (ex : LeBron James)</label>
-          <input v-model="newPlayer.name" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Nom complet (ex : LeBron James)</label>
+          <input v-model="newPlayer.name" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Équipe</label>
-          <select v-model="newPlayer.team_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <label class="mb-1 block text-xs font-medium text-text">Équipe</label>
+          <select v-model="newPlayer.team_id" class="w-full rounded-lg border border-border px-3 py-2 text-sm">
             <option value="" disabled>Sélectionner une équipe</option>
             <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
           </select>
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Pick draft</label>
-          <input v-model="newPlayer.draft_pick" type="number" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Pick draft</label>
+          <input v-model="newPlayer.draft_pick" type="number" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">PER</label>
-          <input v-model="newPlayer.per" type="number" step="0.1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">PER</label>
+          <input v-model="newPlayer.per" type="number" step="0.1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">MPG</label>
-          <input v-model="newPlayer.mpg" type="number" step="0.1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">MPG</label>
+          <input v-model="newPlayer.mpg" type="number" step="0.1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
       </div>
       <button
         type="button"
-        class="w-full rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        class="w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
         :disabled="isCreating"
         @click="createPlayer"
       >
         {{ isCreating ? 'Enregistrement…' : 'Ajouter / mettre à jour' }}
       </button>
-      <p v-if="createMessage" class="text-xs text-emerald-700">{{ createMessage }}</p>
+      <p v-if="createMessage" class="text-xs text-success">{{ createMessage }}</p>
     </div>
 
     <div class="flex items-center gap-2">
-      <label for="team-filter" class="text-sm font-medium text-gray-700">Équipe</label>
+      <label for="team-filter" class="text-sm font-medium text-text">Équipe</label>
       <select
         id="team-filter"
         v-model="selectedTeamId"
-        class="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        class="rounded-lg border border-border px-3 py-2 text-sm"
         @change="loadPlayers"
       >
         <option value="">Toutes les équipes</option>
@@ -197,43 +197,43 @@ onMounted(async () => {
       </select>
     </div>
 
-    <p v-if="isLoading" class="text-sm text-gray-500">Chargement…</p>
-    <p v-else-if="players.length === 0" class="text-sm text-gray-500">Aucun joueur.</p>
+    <p v-if="isLoading" class="text-sm text-text-secondary">Chargement…</p>
+    <p v-else-if="players.length === 0" class="text-sm text-text-secondary">Aucun joueur.</p>
 
-    <div v-for="player in players" :key="player.id" class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
-      <div class="text-sm font-medium text-gray-900">
+    <div v-for="player in players" :key="player.id" class="space-y-3 rounded-xl border border-border bg-surface p-4">
+      <div class="text-sm font-medium text-text">
         {{ player.team_abbreviation }} — {{ player.injury_status }}<span v-if="!player.is_active"> — inactif</span>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Nom complet (ex : LeBron James)</label>
-          <input v-model="forms[player.id].name" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Nom complet (ex : LeBron James)</label>
+          <input v-model="forms[player.id].name" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div class="col-span-2">
-          <label class="mb-1 block text-xs font-medium text-gray-700">Équipe</label>
-          <select v-model="forms[player.id].team_id" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <label class="mb-1 block text-xs font-medium text-text">Équipe</label>
+          <select v-model="forms[player.id].team_id" class="w-full rounded-lg border border-border px-3 py-2 text-sm">
             <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
           </select>
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">Pick draft</label>
-          <input v-model="forms[player.id].draft_pick" type="number" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">Pick draft</label>
+          <input v-model="forms[player.id].draft_pick" type="number" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">PER</label>
-          <input v-model="forms[player.id].per" type="number" step="0.1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">PER</label>
+          <input v-model="forms[player.id].per" type="number" step="0.1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-xs font-medium text-gray-700">MPG</label>
-          <input v-model="forms[player.id].mpg" type="number" step="0.1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <label class="mb-1 block text-xs font-medium text-text">MPG</label>
+          <input v-model="forms[player.id].mpg" type="number" step="0.1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
       </div>
 
       <div class="flex gap-2">
         <button
           type="button"
-          class="flex-1 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          class="flex-1 rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
           :disabled="savingId === player.id || deletingId === player.id"
           @click="save(player)"
         >
@@ -241,14 +241,14 @@ onMounted(async () => {
         </button>
         <button
           type="button"
-          class="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+          class="rounded-lg border border-danger text-sm font-medium text-danger-text px-3 py-2 disabled:opacity-50"
           :disabled="savingId === player.id || deletingId === player.id"
           @click="deletePlayer(player)"
         >
           {{ deletingId === player.id ? 'Suppression…' : 'Supprimer' }}
         </button>
       </div>
-      <p v-if="savedId === player.id" class="text-xs text-emerald-700">Enregistré.</p>
+      <p v-if="savedId === player.id" class="text-xs text-success">Enregistré.</p>
     </div>
   </section>
 </template>

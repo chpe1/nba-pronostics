@@ -1,1 +1,213 @@
 @import "tailwindcss";
+
+/* ---------------------------------------------------------------------
+ * Polices auto-hébergées (docs/design-v1.md §6). Fichiers dans
+ * public/fonts/, aucune dépendance à un CDN de polices. Archivo et
+ * JetBrains Mono sont toutes deux des polices variables : un seul fichier
+ * par sous-ensemble de caractères couvre toute la plage de graisse (et,
+ * pour Archivo, de largeur) -- inutile de déclarer un @font-face par
+ * graisse. Sous-ensembles latin + latin-ext : suffisants pour le
+ * français, voir plan-design-lot1.md.
+ * ------------------------------------------------------------------- */
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 75% 125%;
+  font-display: swap;
+  src: url("/fonts/Archivo-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 75% 125%;
+  font-display: swap;
+  src: url("/fonts/Archivo-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/JetBrainsMono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/JetBrainsMono-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* =====================================================================
+ * Tokens de couleur -- axe MODE (clair / sombre), docs/design-v1.md §5.
+ * Valeurs brutes en variables CSS classiques (pas de préfixe "color-" :
+ * ce sont les vraies valeurs, pas encore les clés Tailwind). Sombre sur
+ * :root (défaut, cohérent avec "sombre par défaut" avant même que le
+ * bouton de bascule (Point 3) ait pu lire localStorage). Clair
+ * re-déclare exactement les mêmes noms sous [data-theme="light"].
+ * Valeurs reprises à l'identique du document de référence -- mesurées
+ * en contraste, ne pas les réajuster ici.
+ * =================================================================== */
+
+:root {
+  /* Sombre -- "Orange parquet" (défaut), §5.2 */
+  --canvas: #0e1015;
+  --surface: #1a1d26;
+  --surface-sunken: #0e1015;
+  --border: #262a35;
+  --text: #f5f5f7;
+  --text-secondary: #9ca3af;
+  --text-disabled: #808896;
+
+  /* Accent -- §5.2 + §5.5 (orange parquet actif).
+     --accent-fill : aplat/remplissage (jauge, fonds pleins, icônes) --
+     identique dans les deux modes pour l'orange (§5.3).
+     --accent-text : seule valeur sûre pour porter du TEXTE -- en
+     sombre, --accent-fill est déjà sûr en texte (6,00:1), donc les deux
+     coïncident ; ce n'est plus vrai en clair (piège §5.3 ci-dessous).
+     --accent-tint : "accent clair" -- en sombre, une teinte plus
+     claire encore utilisable en texte (9,98:1).
+     --accent-on : texte posé PAR-DESSUS un aplat d'accent (ex. un
+     bouton plein bg-accent) -- rôle distinct d'--accent-text (qui sert
+     à écrire EN accent sur une surface neutre). Measuré 6,79:1 sur
+     #f97316 (le blanc n'y donne que 2,80:1, inutilisable). Pas
+     re-déclaré sous [data-theme="light"] plus bas : --accent-fill ne
+     change pas de mode (§5.3), donc ce texte non plus. */
+  --accent-fill: #f97316;
+  --accent-text: #f97316;
+  --accent-tint: #fdba74;
+  --accent-on: #0e1015;
+
+  /* Sémantique -- fixes vis-à-vis de l'accent, variables selon le mode (§5.4) */
+  --success: #22c55e;
+  --warning: #fbbf24;
+  --danger: #ef4444; /* aplats/remplissages non textuels uniquement */
+  --danger-text: #f87171; /* texte -- #ef4444 est sous 4,5:1 sur carte, voir §2.3 */
+  --neutral: #9ca3af;
+}
+
+[data-theme="light"] {
+  /* Clair, dérivé -- §5.3 */
+  --canvas: #f4f5f7;
+  --surface: #ffffff;
+  --surface-sunken: #e8eaef;
+  --border: #d7dae2;
+  --text: #14161c;
+  --text-secondary: #545b6b;
+  --text-disabled: #666d7b;
+
+  /* Piège §5.3 : en clair, l'accent a deux valeurs distinctes.
+     --accent-fill (#f97316) ne donne que 2,80:1 sur blanc et ne doit
+     JAMAIS porter de texte -- seul --accent-text (#c2410c) le peut.
+     --accent-tint change aussi de rôle : ce n'est plus un texte plus
+     clair mais un fond teinté non textuel (#ffedd5). */
+  --accent-fill: #f97316;
+  --accent-text: #c2410c;
+  --accent-tint: #ffedd5;
+
+  --success: #166534;
+  --warning: #8f5e06;
+  --danger: #b91c1c;
+  --danger-text: #b91c1c; /* une seule valeur mesurée en clair, sert aux deux usages */
+  --neutral: #545b6b;
+}
+
+/* =====================================================================
+ * Axe ACCENT -- thèmes alternatifs, §5.5. Présents en variables,
+ * AUCUN sélecteur dans l'interface : s'activent uniquement en posant
+ * data-accent="..." sur <html> (aucun code de ce lot ne le fait).
+ * Orange parquet reste l'accent actif par défaut (valeurs ci-dessus).
+ *
+ * Seul l'orange a une valeur --accent-text (mode clair) et --accent-on
+ * mesurées et sûres (§5.3, §5.5). Les trois alternatives ci-dessous ne
+ * redéfinissent donc que --accent-fill/--accent-tint : elles n'ont
+ * jamais besoin d'être combinées au mode clair ni de porter du texte
+ * par-dessus pour l'instant (§5.5, note -- le violet électrique
+ * mesuré à 4,49:1 avec #0e1015, sous le seuil, la valeur ne se
+ * transpose PAS automatiquement d'un accent à l'autre). Mesurer leurs
+ * propres --accent-text/--accent-on avant toute activation réelle.
+ * =================================================================== */
+
+[data-accent="violet"] {
+  --accent-fill: #8b5cf6;
+  --accent-tint: #c4b5fd;
+}
+
+[data-accent="mint"] {
+  --accent-fill: #00e5a0;
+  --accent-tint: #7df5cd;
+}
+
+[data-accent="blue"] {
+  --accent-fill: #3b82f6;
+  --accent-tint: #93c5fd;
+}
+
+/* =====================================================================
+ * Variantes personnalisées sur attribut -- mécanisme vérifié dans
+ * frontend/node_modules/tailwindcss/dist/lib.js (@custom-variant nom
+ * (sélecteur)) avant d'être utilisé, voir plan-design-lot1.md.
+ * Sert d'échappatoire ponctuelle pour un cas que le système de tokens
+ * (ci-dessus) ne couvrirait pas ; la bascule de mode (Point 3) pose
+ * toujours explicitement data-theme="dark" OU "light" sur <html>,
+ * jamais d'attribut absent, pour que ces deux variantes matchent
+ * réellement dans les deux états.
+ * =================================================================== */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
+/* =====================================================================
+ * Tokens Tailwind -- §7. "inline" fait pointer chaque clé vers la
+ * variable CSS par son NOM (pas sa valeur figée à la compilation) :
+ * une classe utilitaire générée (ex. bg-surface) suit donc le
+ * changement de [data-theme]/[data-accent] à l'exécution, sans
+ * recompilation. Comportement vérifié dans dist/lib.js avant usage,
+ * voir plan-design-lot1.md.
+ * =================================================================== */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-disabled: var(--text-disabled);
+
+  --color-accent: var(--accent-fill);
+  --color-accent-text: var(--accent-text);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-on: var(--accent-on);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-neutral: var(--neutral);
+
+  /* Typographie -- §6. Remplace les tokens par défaut de Tailwind :
+     toute la coquille (preflight compris) utilise donc déjà Archivo
+     par défaut, sans classe à poser sur <body>. */
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+/* Chiffres tabulaires (§6, §12) : `tabular-nums` est une utilité Tailwind
+   4.3 native (font-variant-numeric), rien à déclarer ici -- vérifié
+   dans dist/lib.js. À poser dans le balisage (lots 2/3) sur toute
+   valeur susceptible de changer (notes, écarts, scores, compteurs). */
