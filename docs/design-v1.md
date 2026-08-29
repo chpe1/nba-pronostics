@@ -139,6 +139,7 @@ Deux axes **indépendants**, tous deux en variables CSS :
 | Fond | `#0E1015` | — |
 | Surface élevée (carte) | `#1A1D26` | — |
 | Surface enfoncée (piste de jauge) | `#0E1015` | — |
+| Surface **encadré informatif** (sur une carte) | `#232733` | texte principal 13,68:1 / texte secondaire 5,87:1 / texte désactivé 4,17:1 |
 | Bordure | `#262A35` | — |
 | Accent principal | `#F97316` | 6,00:1 |
 | Accent clair | `#FDBA74` | 9,98:1 |
@@ -156,6 +157,7 @@ Dérivé, mesuré contre le fond `#F4F5F7` et la surface de carte `#FFFFFF`.
 | Fond | `#F4F5F7` | — |
 | Surface élevée (carte) | `#FFFFFF` | — |
 | Surface enfoncée (piste de jauge) | `#E8EAEF` | — |
+| Surface **encadré informatif** (sur une carte) | `#F1F2F6` | texte principal 16,16:1 / texte secondaire 6,08:1 / texte désactivé 4,65:1 |
 | Bordure | `#D7DAE2` | — |
 | Accent **texte** | `#C2410C` | 5,18:1 |
 | Accent **aplat** (jauge, remplissage) | `#F97316` | non textuel |
@@ -175,6 +177,24 @@ Dérivé, mesuré contre le fond `#F4F5F7` et la surface de carte `#FFFFFF`.
 > couleurs), inutilisable. Le texte sombre `#0E1015` y donne `6,79:1`, largement suffisant.
 > **Cette valeur est identique dans les deux modes** : l'aplat d'accent lui-même (`#F97316`) ne
 > change pas de mode (§5.3 ci-dessus), donc le texte qui doit rester lisible dessus non plus.
+
+> **Surface enfoncée vs encadré informatif — deux besoins opposés, un seul token les confondait
+> (2026-08-29).** La "surface enfoncée" (`#0E1015` en sombre) est faite pour un élément **creusé**
+> dans le fond — la piste d'une jauge, qui doit visuellement s'enfoncer. Elle vaut exactement
+> `--canvas` en mode sombre : posée comme fond d'un encadré informatif **sur une carte**
+> (`CsvUploadForm.vue`, `CsvTemplatesCard.vue`), elle se confond entièrement avec le fond de page
+> et rend l'encadré invisible — repéré en recette. Ce sont deux rôles différents qui n'auraient
+> jamais dû partager la même valeur. La "surface encadré informatif" ci-dessus existe pour ce
+> second besoin ; **`--surface-sunken` reste réservé aux éléments creusés sur le fond (piste de
+> jauge) et ne doit jamais servir de fond à un encadré posé sur une carte.**
+>
+> **En sombre, le texte désactivé est interdit sur l'encadré informatif** : `4,17:1`, sous le
+> seuil de `4,5:1` (§12). Utiliser le texte secondaire à la place pour toute mention atténuée à
+> l'intérieur d'un tel encadré. En clair, les trois niveaux de texte (`4,65:1` au pire) passent
+> sans exception.
+>
+> Ce rôle n'est pas encore appliqué dans le code à ce stade — implémentation prévue au Lot 3
+> (§15), en même temps que la correction des encadrés concrets qui l'ont révélé.
 
 ### 5.4 Couleurs sémantiques
 
@@ -637,28 +657,47 @@ recette manuelle est le seul filet.
 
 ### Constats de recette (2026-08-29) à traiter au lot 3
 
-Remontés lors de la recette du Lot 1, consignés ici pour ne pas se perdre — **rien n'est
-implémenté à ce stade**, ce sont des constats, pas des décisions de design déjà prises.
+Remontés lors de la recette du Lot 1, à 360 px réels, connecté en admin, dans les deux modes.
+Consignés ici pour ne pas se perdre — **rien n'est implémenté à ce stade**, ce sont des constats
+chiffrés, pas des décisions de design déjà prises.
 
-- **`AdminImportsView` — tableau d'historique qui déborde horizontalement à 360 px.** Il lui faut
-  un traitement mobile explicite : défilement horizontal contenu au tableau lui-même (pas à toute
-  la page), ou passage en liste de cartes sous un certain seuil de largeur.
-- **Encadrés d'information indiscernables du fond en mode sombre** (`CsvUploadForm.vue` : encart
-  "Choisissez un fichier..." ; `CsvTemplatesCard.vue` et similaires). Cause : `--surface-sunken`
-  vaut exactement `--canvas` en sombre (§5.2 : les deux valent `#0E1015`), donc un encart utilisant
-  `bg-surface-sunken` sur le fond de page se confond entièrement avec lui. **Il manque un rôle
-  distinct pour un encadré informatif** (un fond légèrement visible même en sombre) — token à
-  définir et mesurer au Lot 3, volontairement pas inventé maintenant.
-- **`AdminGamesView` — le bouton "Enregistrer" n'est pas l'action mise en avant.** Actuellement un
-  aplat neutre clair (`bg-text`/`text-canvas`, traitement "inversé" générique repris du Lot 1),
-  alors que c'est l'action principale de l'écran. Maintenant qu'`--accent-on` existe (mesuré,
-  voir §5.2/§5.3), **les actions principales du back-office devraient passer en aplat d'accent**
-  (`bg-accent text-accent-on`) plutôt qu'en aplat neutre inversé — à généraliser à tous les
-  boutons "Enregistrer"/actions principales équivalents des 8 écrans admin, pas seulement celui-ci.
-- **Constat général : l'espace admin manque de couleur.** §11 pose que l'accent y sert "aux
-  actions et aux alertes", mais dans l'état actuel (Lots 1 seul appliqué) l'accent n'y apparaît
-  quasiment jamais — la reprise du Lot 1 était mécanique (Point 7), pas un vrai travail de densité
-  colorée. À retravailler au Lot 3 en même temps que la palette dense du back-office.
+**a) Débordement horizontal — `AdminImportsView`, seul débordement du projet.** Le tableau
+d'historique fait `653px` de large dans un conteneur de `310px`, et son parent
+(`div.rounded-xl.border.bg-surface.p-4`) est en `overflow: visible` — la page entière atteint
+`686px` de large à un viewport de `360px`. Correction attendue : `overflow-x-auto` sur le
+conteneur du tableau (défilement contenu à lui seul), ou passage en liste de cartes sous un
+certain seuil de largeur.
+
+**b) Cibles tactiles sous 44 px (§12), mesurées à 360 px :**
+
+| Écran | Éléments sous 44 px |
+|---|---|
+| `AdminPreviousSeasonStatsView` | 1166 |
+| `AdminPlayersView` | 184 |
+| `AdminTeamsView` | 31 |
+| `AdminSettingsView` | 12 |
+
+Les trois premiers sont des tableaux éditables avec un bouton par ligne, d'où les volumes. En
+cause : boutons d'action à `36–38px`, `<select>` à `34px`, et surtout les déclencheurs
+d'info-bulle à `16px` de haut — pointables à la souris, pas au doigt. **C'est le cas le plus
+sévère**, à traiter en priorité au Lot 3. Le lien de titre (`24px`) est **hors périmètre** : c'est
+une identité de marque, pas une cible d'action (voir Point B, corrigé).
+
+**c) Encadrés d'information indiscernables du fond en mode sombre** (`CsvUploadForm.vue` : encart
+"Choisissez un fichier..." ; `CsvTemplatesCard.vue` et similaires). Cause identifiée et token
+défini — voir le nouveau rôle "Surface encadré informatif" en §5.2/§5.3. Application au Lot 3.
+
+**d) `AdminGamesView` — le bouton "Enregistrer" n'est pas l'action mise en avant.** Actuellement un
+aplat neutre clair (`bg-text`/`text-canvas`, traitement "inversé" générique repris du Lot 1), alors
+que c'est l'action principale de l'écran. Maintenant qu'`--accent-on` existe (mesuré, voir
+§5.2/§5.3), **les actions principales du back-office devraient passer en aplat d'accent**
+(`bg-accent text-accent-on`) plutôt qu'en aplat neutre inversé — à généraliser à tous les boutons
+"Enregistrer"/actions principales équivalents des 8 écrans admin, pas seulement celui-ci.
+
+**e) Constat général : l'espace admin manque de couleur.** §11 pose que l'accent y sert "aux
+actions et aux alertes", mais dans l'état actuel (Lot 1 seul appliqué) l'accent n'y apparaît
+quasiment jamais — la reprise du Lot 1 était mécanique (Point 7), pas un vrai travail de densité
+colorée. À retravailler au Lot 3 en même temps que la palette dense du back-office.
 
 **Avant le lot 2**, produire l'inventaire écrit des règles d'affichage conditionnelles de
 `GameCard.vue` (badge « À venir », indicateurs calendaires, absents, incertains, bilan V-D) et de
