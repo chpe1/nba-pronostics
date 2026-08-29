@@ -62,6 +62,19 @@ def _finished_game(db_session, team: Team, opponent: Team, game_date: date) -> G
     return game
 
 
+def _scheduled_game(db_session, team: Team, opponent: Team, game_date: date) -> Game:
+    game = Game(
+        season=SEASON,
+        game_date=datetime.combine(game_date, datetime.min.time()),
+        home_team_id=team.id,
+        away_team_id=opponent.id,
+        status=GameStatus.SCHEDULED,
+    )
+    db_session.add(game)
+    db_session.flush()
+    return game
+
+
 # --- compute_note_de_base -------------------------------------------------
 
 
@@ -273,6 +286,70 @@ def test_calendar_penalty_none_when_well_rested(db_session):
     assert result["is_back_to_back"] is False
     assert result["is_three_in_four"] is False
     assert result["penalty"] == 0.0
+
+
+# --- compute_calendar_flags (statut B2B/3-en-4 pour l'affichage public) ----
+
+
+def test_calendar_flags_back_to_back(db_session):
+    team = _team()
+    opponent = _team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([team, opponent])
+    db_session.flush()
+
+    game_date = date(2026, 1, 10)
+    _finished_game(db_session, team, opponent, game_date - timedelta(days=1))
+
+    result = calc.compute_calendar_flags(db_session, team, game_date)
+    assert result == {"is_back_to_back": True, "is_three_in_four": False}
+
+
+def test_calendar_flags_both_true_simultaneously(db_session):
+    """Un 3-en-4 inclut presque toujours un B2B la veille -- pas un choix
+    binaire entre les deux, une équipe peut être vraie sur les deux à la fois."""
+    team = _team()
+    opponent = _team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([team, opponent])
+    db_session.flush()
+
+    game_date = date(2026, 1, 10)
+    _finished_game(db_session, team, opponent, game_date - timedelta(days=1))
+    _finished_game(db_session, team, opponent, game_date - timedelta(days=3))
+
+    result = calc.compute_calendar_flags(db_session, team, game_date)
+    assert result == {"is_back_to_back": True, "is_three_in_four": True}
+
+
+def test_calendar_flags_none_when_well_rested(db_session):
+    team = _team()
+    db_session.add(team)
+    db_session.flush()
+
+    result = calc.compute_calendar_flags(db_session, team, date(2026, 1, 10))
+    assert result == {"is_back_to_back": False, "is_three_in_four": False}
+
+
+def test_calendar_flags_work_for_scheduled_games_unlike_penalty(db_session):
+    """Différence clé avec compute_calendar_penalty : le calendrier d'une
+    saison est connu à l'avance, donc un match SCHEDULED (pas encore joué)
+    compte quand même -- sinon un match futur montrerait toujours "aucun B2B"
+    à tort, simplement parce que les matchs précédents n'ont pas encore eu
+    lieu."""
+    team = _team()
+    opponent = _team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([team, opponent])
+    db_session.flush()
+
+    game_date = date(2026, 1, 10)
+    _scheduled_game(db_session, team, opponent, game_date - timedelta(days=1))
+
+    flags_result = calc.compute_calendar_flags(db_session, team, game_date)
+    assert flags_result["is_back_to_back"] is True
+
+    # compute_calendar_penalty, lui, ne voit rien (filtre FINISHED) -- limite
+    # connue et volontairement non corrigée dans le cadre de cette fonctionnalité.
+    penalty_result = calc.compute_calendar_penalty(db_session, team, game_date, _settings())
+    assert penalty_result["is_back_to_back"] is False
 
 
 # --- compute_draft_bonus ----------------------------------------------------

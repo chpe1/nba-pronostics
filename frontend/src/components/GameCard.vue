@@ -35,6 +35,26 @@ function formatRecord(record) {
   }
   return `${record.wins}V-${record.losses}D sur les ${record.games_considered} derniers`
 }
+
+// Statut calendaire (home_calendar_status/away_calendar_status) : purement
+// calendaire, jamais masqué même pour un match "À venir" -- le calendrier de
+// la saison est connu à l'avance, contrairement au résultat du pronostic.
+function calendarLabels(status) {
+  if (!status) return []
+  const labels = []
+  if (status.is_back_to_back) labels.push('B2B')
+  if (status.is_three_in_four) labels.push('3-en-4')
+  return labels
+}
+const homeCalendarLabels = computed(() => calendarLabels(props.game.home_calendar_status))
+const awayCalendarLabels = computed(() => calendarLabels(props.game.away_calendar_status))
+
+// Absents/incertains : dans breakdown, donc déjà masqués en bloc avec le
+// reste du résultat pour un match "À venir" (breakdown vaut null).
+const homeAbsentPlayers = computed(() => prediction.value?.breakdown?.home?.absent_players ?? [])
+const homeQuestionablePlayers = computed(() => prediction.value?.breakdown?.home?.questionable_players ?? [])
+const awayAbsentPlayers = computed(() => prediction.value?.breakdown?.away?.absent_players ?? [])
+const awayQuestionablePlayers = computed(() => prediction.value?.breakdown?.away?.questionable_players ?? [])
 </script>
 
 <template>
@@ -50,8 +70,23 @@ function formatRecord(record) {
     <div class="space-y-2">
       <div class="flex items-center justify-between" :class="{ 'font-semibold text-gray-900': isAwayWinner }">
         <div>
-          <div>{{ game.away_team_name }}</div>
+          <div class="flex items-center gap-1">
+            <span>{{ game.away_team_name }}</span>
+            <span
+              v-for="label in awayCalendarLabels"
+              :key="label"
+              class="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700"
+            >
+              {{ label }}
+            </span>
+          </div>
           <div class="text-xs font-normal text-gray-500">{{ formatRecord(game.away_team_recent_record) }}</div>
+          <div v-if="isRevealed && awayAbsentPlayers.length" class="text-xs font-normal text-red-600">
+            Absents : {{ awayAbsentPlayers.map((p) => p.name).join(', ') }}
+          </div>
+          <div v-if="isRevealed && awayQuestionablePlayers.length" class="text-xs font-normal text-amber-600">
+            Incertains : {{ awayQuestionablePlayers.map((p) => p.name).join(', ') }}
+          </div>
         </div>
         <span v-if="isRevealed" class="tabular-nums">{{ prediction.away_team_note.toFixed(2) }}</span>
       </div>
@@ -60,8 +95,23 @@ function formatRecord(record) {
 
       <div class="flex items-center justify-between" :class="{ 'font-semibold text-gray-900': isHomeWinner }">
         <div>
-          <div>{{ game.home_team_name }}</div>
+          <div class="flex items-center gap-1">
+            <span>{{ game.home_team_name }}</span>
+            <span
+              v-for="label in homeCalendarLabels"
+              :key="label"
+              class="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700"
+            >
+              {{ label }}
+            </span>
+          </div>
           <div class="text-xs font-normal text-gray-500">{{ formatRecord(game.home_team_recent_record) }}</div>
+          <div v-if="isRevealed && homeAbsentPlayers.length" class="text-xs font-normal text-red-600">
+            Absents : {{ homeAbsentPlayers.map((p) => p.name).join(', ') }}
+          </div>
+          <div v-if="isRevealed && homeQuestionablePlayers.length" class="text-xs font-normal text-amber-600">
+            Incertains : {{ homeQuestionablePlayers.map((p) => p.name).join(', ') }}
+          </div>
         </div>
         <span v-if="isRevealed" class="tabular-nums">{{ prediction.home_team_note.toFixed(2) }}</span>
       </div>

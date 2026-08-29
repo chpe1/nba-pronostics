@@ -192,6 +192,114 @@ def test_by_team_never_masks_regardless_of_date(client, db_session, auth_headers
     assert "is_upcoming" not in body[0]["prediction"]  # PredictionRead, pas TodayPredictionRead
 
 
+# --- Statut calendaire (B2B/3-en-4) : jamais masqué, même à J+10 -----------
+
+
+def test_today_predictions_exposes_calendar_status_even_when_upcoming(client, db_session):
+    """Le calendrier de la saison est connu à l'avance -- contrairement au
+    résultat du pronostic, ce statut reste exposé même pour un match masqué."""
+    home, away = _teams(db_session)
+    third = Team(
+        name="Miami Heat", abbreviation="MIA",
+        win_pct_home=0.5, win_pct_away=0.5, win_pct_home_prev_season=0.5, win_pct_away_prev_season=0.5,
+    )
+    db_session.add(third)
+    db_session.flush()
+    today = current_nba_date()
+    far_future = today + timedelta(days=10)
+    # Seule home joue la veille du match masqué (contre une 3e équipe) -> B2B
+    # pour home uniquement, malgré un statut SCHEDULED (pas encore joué).
+    _game(db_session, home, third, far_future - timedelta(days=1))
+    _game_with_prediction(db_session, home, away, far_future)
+
+    response = client.get("/api/predictions/today", params={"date": far_future.isoformat()})
+    body = response.json()[0]
+
+    assert body["prediction"]["is_upcoming"] is True  # le résultat, lui, reste masqué
+    assert body["home_calendar_status"] == {"is_back_to_back": True, "is_three_in_four": False}
+    assert body["away_calendar_status"] == {"is_back_to_back": False, "is_three_in_four": False}
+
+
+def test_today_predictions_calendar_status_both_true_simultaneously(client, db_session):
+    home, away = _teams(db_session)
+    today = current_nba_date()
+    far_future = today + timedelta(days=10)
+    _game(db_session, home, away, far_future - timedelta(days=1))
+    _game(db_session, home, away, far_future - timedelta(days=3))
+    _game_with_prediction(db_session, home, away, far_future)
+
+    response = client.get("/api/predictions/today", params={"date": far_future.isoformat()})
+    body = response.json()[0]
+
+    assert body["home_calendar_status"] == {"is_back_to_back": True, "is_three_in_four": True}
+
+
+def test_today_predictions_exposes_calendar_status_even_without_any_prediction(client, db_session):
+    """Purement calendaire -- disponible même si aucune Prediction n'a
+    encore été calculée pour ce match."""
+    home, away = _teams(db_session)
+    today = current_nba_date()
+    _game(db_session, home, away, today - timedelta(days=1))
+    _game(db_session, home, away, today)
+
+    response = client.get("/api/predictions/today", params={"date": today.isoformat()})
+    body = response.json()[0]
+
+    assert body["prediction"] is None
+    assert body["home_calendar_status"]["is_back_to_back"] is True
+
+
+# --- Joueurs absents/incertains : masqués comme le reste du breakdown ------
+
+
+def _breakdown_with_players() -> dict:
+    return {
+        "home": {
+            "final_note": 70.0,
+            "absent_players": [{"name": "Home Star", "per": 24.0, "reason": "Ankle"}],
+            "questionable_players": [{"name": "Home Bench", "per": 10.0, "reason": "Knee"}],
+        },
+        "away": {
+            "final_note": 50.0,
+            "absent_players": [],
+            "questionable_players": [],
+        },
+    }
+
+
+def test_today_predictions_masks_absent_and_questionable_players_when_upcoming(client, db_session):
+    home, away = _teams(db_session)
+    today = current_nba_date()
+    far_future = today + timedelta(days=10)
+    game, prediction = _game_with_prediction(db_session, home, away, far_future)
+    prediction.breakdown = _breakdown_with_players()
+    db_session.commit()
+
+    response = client.get("/api/predictions/today", params={"date": far_future.isoformat()})
+    body = response.json()[0]["prediction"]
+
+    assert body["is_upcoming"] is True
+    assert body["breakdown"] is None  # donc absent_players/questionable_players n'y sont pas non plus
+
+
+def test_today_predictions_exposes_absent_and_questionable_players_when_visible(client, db_session):
+    home, away = _teams(db_session)
+    today = current_nba_date()
+    near_future = today + timedelta(days=2)
+    game, prediction = _game_with_prediction(db_session, home, away, near_future)
+    prediction.breakdown = _breakdown_with_players()
+    db_session.commit()
+
+    response = client.get("/api/predictions/today", params={"date": near_future.isoformat()})
+    body = response.json()[0]["prediction"]
+
+    assert body["is_upcoming"] is False
+    assert body["breakdown"]["home"]["absent_players"] == [{"name": "Home Star", "per": 24.0, "reason": "Ankle"}]
+    assert body["breakdown"]["home"]["questionable_players"] == [
+        {"name": "Home Bench", "per": 10.0, "reason": "Knee"}
+    ]
+
+
 def test_recalculate_requires_authentication(client):
     assert client.post("/api/predictions/recalculate").status_code == 401
 

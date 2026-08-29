@@ -228,6 +228,33 @@ def _team_games_before(db: Session, team: Team, before_date: date, since_date: d
     )
 
 
+def compute_calendar_flags(db: Session, team: Team, game_date: date) -> dict:
+    """Statut B2B/3-en-4 PUREMENT calendaire, jamais dépendant de Settings --
+    contrairement à compute_calendar_penalty, ne filtre PAS sur
+    Game.status == FINISHED : le calendrier d'une saison est connu à
+    l'avance, un match futur peut donc être un vrai back-to-back/3-en-4 même
+    si les matchs qui le précèdent n'ont pas encore été joués. Utilisée pour
+    l'affichage public (GameCard.vue, jamais masqué même pour un match
+    anticipé) -- PAS pour le calcul du malus lui-même, qui reste
+    volontairement inchangé (voir CLAUDE.md pour la limite connue de
+    compute_calendar_penalty sur un recalcul lointain)."""
+    recent_games = (
+        db.query(Game)
+        .filter(
+            Game.game_date >= game_date - timedelta(days=THREE_IN_FOUR_WINDOW_DAYS),
+            Game.game_date < game_date,
+            or_(Game.home_team_id == team.id, Game.away_team_id == team.id),
+        )
+        .all()
+    )
+    recent_dates = {g.game_date.date() if hasattr(g.game_date, "date") else g.game_date for g in recent_games}
+
+    return {
+        "is_back_to_back": (game_date - timedelta(days=1)) in recent_dates,
+        "is_three_in_four": len(recent_dates) >= THREE_IN_FOUR_GAME_COUNT,
+    }
+
+
 def compute_calendar_penalty(db: Session, team: Team, game_date: date, settings: Settings) -> dict:
     """Retourne le détail (is_back_to_back, is_three_in_four, penalty) : si
     les deux conditions sont vraies, on applique le malus le plus sévère des

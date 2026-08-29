@@ -49,6 +49,16 @@ class TodayPredictionRead(BaseModel):
     computed_at: datetime
 
 
+class CalendarStatusRead(BaseModel):
+    """Statut B2B/3-en-4 purement calendaire (voir
+    pronostic_calculator.py::compute_calendar_flags) -- jamais masqué, même
+    pour un match anticipé (is_upcoming) : le calendrier de la saison est
+    connu à l'avance, contrairement au résultat du pronostic lui-même."""
+
+    is_back_to_back: bool
+    is_three_in_four: bool
+
+
 class GameWithPredictionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -64,6 +74,8 @@ class GameWithPredictionRead(BaseModel):
     status: GameStatus
     home_team_recent_record: RecentRecordRead
     away_team_recent_record: RecentRecordRead
+    home_calendar_status: CalendarStatusRead
+    away_calendar_status: CalendarStatusRead
     prediction: TodayPredictionRead | None = None
 
 

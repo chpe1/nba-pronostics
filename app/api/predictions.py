@@ -10,6 +10,7 @@ from app.core.security import get_current_admin
 from app.database import get_db
 from app.models import Game, Prediction, Settings
 from app.schemas.prediction import (
+    CalendarStatusRead,
     GameWithPredictionRead,
     MatchupSimulationRead,
     MatchupSimulationRequest,
@@ -19,7 +20,13 @@ from app.schemas.prediction import (
     TodayPredictionRead,
 )
 from app.services.nba_calendar import current_nba_date
-from app.services.pronostic_calculator import breakdown_to_dict, compute_matchup, compute_recent_record, save_prediction
+from app.services.pronostic_calculator import (
+    breakdown_to_dict,
+    compute_calendar_flags,
+    compute_matchup,
+    compute_recent_record,
+    save_prediction,
+)
 
 router = APIRouter(prefix="/api/predictions", tags=["predictions"])
 
@@ -104,6 +111,8 @@ def get_today_predictions(
         game_date = game.game_date.date() if hasattr(game.game_date, "date") else game.game_date
         home_record = compute_recent_record(db, game.home_team, before_date=game_date)
         away_record = compute_recent_record(db, game.away_team, before_date=game_date)
+        home_calendar = compute_calendar_flags(db, game.home_team, game_date)
+        away_calendar = compute_calendar_flags(db, game.away_team, game_date)
         results.append(
             GameWithPredictionRead(
                 id=game.id,
@@ -126,6 +135,8 @@ def get_today_predictions(
                     losses=away_record.losses,
                     games_considered=away_record.games_considered,
                 ),
+                home_calendar_status=CalendarStatusRead(**home_calendar),
+                away_calendar_status=CalendarStatusRead(**away_calendar),
                 prediction=(
                     _to_today_prediction_read(predictions_by_game_id[game.id], game)
                     if game.id in predictions_by_game_id
