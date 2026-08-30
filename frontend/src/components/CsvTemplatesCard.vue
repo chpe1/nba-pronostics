@@ -48,11 +48,18 @@ async function download(key) {
       {{ errorMessage }}
     </p>
 
+    <!-- max-w-[220px] posé sur le BOUTON, pas sur cette colonne (flex-col, align-items:stretch
+         par défaut) : si le plafond était sur la colonne, la note héritait de la même largeur que
+         le bouton quel que soit l'espace réellement disponible dans la rangée -- repéré en recette
+         (note repliée sur ~1/3 de la carte sur grand écran, sans raison). En le posant sur le
+         bouton seul, la colonne se redimensionne sur le plus large de ses deux enfants : les 4
+         modèles sans note gardent le même rendu (bouton à 220px, rien d'autre à l'intérieur), et
+         la note du 5e utilise la largeur qu'il lui faut, jusqu'à l'espace disponible. -->
     <div class="flex flex-wrap items-start gap-2">
-      <div v-for="template in TEMPLATES" :key="template.key" class="flex max-w-[220px] flex-col gap-1">
+      <div v-for="template in TEMPLATES" :key="template.key" class="flex flex-col gap-1">
         <button
           type="button"
-          class="rounded-lg border border-border px-3 py-2 text-xs font-medium text-text disabled:opacity-50"
+          class="max-w-[220px] rounded-lg border border-border px-3 py-2 text-xs font-medium text-text disabled:opacity-50"
           :disabled="downloadingKey === template.key"
           @click="download(template.key)"
         >
