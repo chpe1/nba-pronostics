@@ -26,11 +26,14 @@ dist/
 .vite/
 
 # Fichiers de travail Claude Code (conservés localement, non publiés sur le repo)
-CLAUDE.md
-plan-etape*.md
-cahier-des-charges-moteur-pronostics-nba.md
-etapes-roles-projet-nba.md
 screenshots/
+
+# Documents de travail et de conception (dépôt public, 2026-08-30) : seul
+# README.md (racine ou frontend/) reste versionné, tout le reste est local.
+# Remplace les règles ponctuelles précédentes (CLAUDE.md, plan-etape*.md,
+# cahier-des-charges-...md, etapes-roles-...md), désormais couvertes ici.
+*.md
+!README.md
 
 # Éditeurs / OS
 .vscode/
