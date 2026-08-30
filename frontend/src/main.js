@@ -12,6 +12,16 @@ app.use(createPinia())
 app.use(router)
 
 const authStore = useAuthStore()
-configureApiClient({ getToken: () => authStore.token })
+configureApiClient({
+  getToken: () => authStore.token,
+  // 401 sur une requête qui portait un jeton = session expirée/invalide
+  // (jamais un échec de connexion, voir apiClient.js) -- vide le jeton et
+  // redirige vers /login avec un motif dédié, distinct des identifiants
+  // invalides/du verrou anti-bruteforce (voir LoginView.vue).
+  onUnauthorized: () => {
+    authStore.logout()
+    router.push({ name: 'login', query: { reason: 'expired' } })
+  },
+})
 
 app.mount('#app')

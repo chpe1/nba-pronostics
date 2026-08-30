@@ -1,15 +1,19 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ApiError } from '@/services/apiClient'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const username = ref('')
 const password = ref('')
-const errorMessage = ref('')
+// Distinct des identifiants invalides/du verrou anti-bruteforce ci-dessous --
+// affiché seulement à l'arrivée sur cette page suite à un 401 en session
+// (voir main.js::onUnauthorized), jamais suite à une tentative de connexion.
+const errorMessage = ref(route.query.reason === 'expired' ? 'Session expirée, veuillez vous reconnecter.' : '')
 const isSubmitting = ref(false)
 
 async function handleSubmit() {

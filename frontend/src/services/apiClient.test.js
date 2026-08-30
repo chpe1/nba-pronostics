@@ -13,7 +13,7 @@ function mockFetchOnce({ ok, status, statusText = '', json }) {
 describe('apiFetch', () => {
   afterEach(() => {
     vi.restoreAllMocks()
-    configureApiClient({ getToken: () => null })
+    configureApiClient({ getToken: () => null, onUnauthorized: () => {} })
   })
 
   it('adds the Authorization header when a token is present in the store', async () => {
@@ -53,6 +53,26 @@ describe('apiFetch', () => {
       status: 500,
       message: 'Internal Server Error',
     })
+  })
+
+  it('calls onUnauthorized on a 401 that carried a token (session expired)', async () => {
+    const onUnauthorized = vi.fn()
+    configureApiClient({ getToken: () => 'fake-jwt-token', onUnauthorized })
+    mockFetchOnce({ ok: false, status: 401, statusText: 'Unauthorized', json: { detail: 'Token invalide ou expiré' } })
+
+    await expect(apiFetch('/api/imports/history')).rejects.toBeInstanceOf(ApiError)
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call onUnauthorized on a 401 with no token (a failed login, not an expired session)', async () => {
+    const onUnauthorized = vi.fn()
+    configureApiClient({ getToken: () => null, onUnauthorized })
+    mockFetchOnce({ ok: false, status: 401, statusText: 'Unauthorized', json: { detail: 'Identifiants invalides' } })
+
+    await expect(
+      apiFetch('/api/auth/login', { method: 'POST', body: { username: 'admin', password: 'wrong' } }),
+    ).rejects.toBeInstanceOf(ApiError)
+    expect(onUnauthorized).not.toHaveBeenCalled()
   })
 
   it('sends a JSON body and Content-Type header for non-form requests', async () => {
