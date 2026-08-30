@@ -95,6 +95,70 @@ def test_today_predictions_includes_existing_prediction(client, db_session):
     assert body[0]["prediction"]["predicted_winner_team_id"] == home.id
 
 
+def test_today_predictions_includes_reliability_thresholds_from_settings(client, db_session):
+    """docs/design-v1.md §14.1-A : les seuils sont des constantes globales
+    dupliquées sur chaque élément de la liste, jamais recalculées -- lues
+    depuis l'unique ligne Settings, pas une valeur propre au match."""
+    db_session.add(Settings(reliability_threshold_low=12.5, reliability_threshold_high=42.5))
+    db_session.commit()
+
+    home, away = _teams(db_session)
+    third = Team(
+        name="Miami Heat",
+        abbreviation="MIA",
+        win_pct_home=0.5,
+        win_pct_away=0.5,
+        win_pct_home_prev_season=0.5,
+        win_pct_away_prev_season=0.5,
+    )
+    db_session.add(third)
+    db_session.flush()
+    game_date = current_nba_date()
+    _game(db_session, home, away, game_date)
+    _game(db_session, home, third, game_date)  # deuxième match du même jour, paire d'équipes différente
+
+    response = client.get("/api/predictions/today", params={"date": game_date.isoformat()})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 2
+    for game in body:
+        assert game["reliability_threshold_low"] == 12.5
+        assert game["reliability_threshold_high"] == 42.5
+
+
+def test_today_predictions_exposes_scores_only_for_finished_games(client, db_session):
+    """docs/design-v1.md §10.3 : la carte détecte une journée passée via
+    `status`, jamais via la seule présence d'un score -- ce test couvre les
+    deux extrémités (terminé avec score / programmé sans score)."""
+    home, away = _teams(db_session)
+    yesterday = current_nba_date() - timedelta(days=1)
+    finished = _game(db_session, home, away, yesterday)
+    finished.status = GameStatus.FINISHED
+    finished.home_score = 102
+    finished.away_score = 97
+    db_session.flush()
+
+    response = client.get("/api/predictions/today", params={"date": yesterday.isoformat()})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["status"] == "finished"
+    assert body[0]["home_score"] == 102
+    assert body[0]["away_score"] == 97
+
+
+def test_today_predictions_scores_are_null_for_an_unplayed_game(client, db_session):
+    home, away = _teams(db_session)
+    game_date = current_nba_date()
+    _game(db_session, home, away, game_date)  # status SCHEDULED par défaut, aucun score
+
+    response = client.get("/api/predictions/today", params={"date": game_date.isoformat()})
+    body = response.json()
+    assert body[0]["status"] == "scheduled"
+    assert body[0]["home_score"] is None
+    assert body[0]["away_score"] is None
+
+
 # --- Masquage des pronostics trop anticipés (GET /today uniquement) --------
 
 

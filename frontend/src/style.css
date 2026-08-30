@@ -147,6 +147,39 @@
 }
 
 /* =====================================================================
+ * Fond/texte explicites sur les contrôles natifs adressables -- correction
+ * de socle au même titre que color-scheme/accent-color (§12), validée par
+ * essai réel avant d'être posée ici (voir plan-design-lot2.md, Correction 6).
+ *
+ * Cause : le preflight Tailwind pose `background-color: transparent` sur
+ * select (entre autres) -- correct pour le SELECT fermé, qui doit laisser
+ * voir la carte derrière lui, mais <option> n'a alors AUCUN fond à porter
+ * une fois le menu ouvert (fenêtre dessinée par le système, hors de la
+ * page). Le texte reste clair (hérité), d'où le clair-sur-clair en sombre :
+ * confirmé en injectant cette règle en direct dans les deux modes avant de
+ * l'écrire ici, pas par déduction seule.
+ *
+ * Portée volontairement globale (select/option, pas une classe par site
+ * d'usage) : c'est un défaut de structure du preflight, pas d'un
+ * <select> en particulier -- couvre tout futur <select> sans qu'on ait à
+ * y repenser. Aucun !important : ces règles sont hors de tout @layer
+ * Tailwind (@import "tailwindcss" ne couvre que ce qu'il importe, pas le
+ * reste de ce fichier), donc déjà prioritaires sur le preflight (@layer
+ * base) par la seule sémantique des couches CSS -- pas besoin de forcer.
+ *
+ * <optgroup> partage exactement la même règle de preflight (même sélecteur
+ * que select) et le même mécanisme de rendu système -- mais n'est utilisé
+ * nulle part dans ce projet à ce jour (grep exhaustif) : non corrigé ici,
+ * volontairement, pour ne pas corriger au-delà de ce qui est constaté. Si
+ * un <optgroup> est introduit un jour, il lui faudra la même règle.
+ * =================================================================== */
+select,
+option {
+  background-color: var(--surface);
+  color: var(--text);
+}
+
+/* =====================================================================
  * Axe ACCENT -- thèmes alternatifs, §5.5. Présents en variables,
  * AUCUN sélecteur dans l'interface : s'activent uniquement en posant
  * data-accent="..." sur <html> (aucun code de ce lot ne le fait).
@@ -229,3 +262,23 @@
    4.3 native (font-variant-numeric), rien à déclarer ici -- vérifié
    dans dist/lib.js. À poser dans le balisage (lots 2/3) sur toute
    valeur susceptible de changer (notes, écarts, scores, compteurs). */
+
+/* Titres, tricodes, noms d'équipes (§6) -- graisse 700, largeur ~118%,
+   interlettrage -0.01em. Pas une utilité Tailwind native (pas de support
+   font-stretch par défaut) : @utility vérifié au Lot 1 (dist/lib.js). */
+@utility font-title {
+  font-weight: 700;
+  font-stretch: 118%;
+  letter-spacing: -0.01em;
+}
+
+/* Masque la barre de défilement d'un conteneur à défilement horizontal SANS
+   en supprimer le défilement (§8.4, DateStrip.vue) -- geste tactile et
+   défilement à la molette restent pleinement fonctionnels, seul le rendu de
+   la barre elle-même disparaît. Pas d'utilité Tailwind native pour ça. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

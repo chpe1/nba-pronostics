@@ -1,8 +1,11 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
 import { useAuthStore } from '@/stores/auth'
 import GameCard from '@/components/GameCard.vue'
+import DateStrip from '@/components/DateStrip.vue'
+import ContextBanner from '@/components/ContextBanner.vue'
+import { maxRenderedPastilleCount } from '@/utils/pastilles'
 
 const authStore = useAuthStore()
 
@@ -40,15 +43,26 @@ async function recalculate() {
   }
 }
 
+// Hauteur des pastilles réservée sur la VUE courante, pas sur le plafond
+// théorique de 3 (docs/design-v1.md §10.3) : tant que l'effectif de la saison
+// courante n'est importé pour aucune équipe, ce maximum vaut 0 et la zone
+// disparaît entièrement sur les 100+ prochains jours plutôt que de réserver
+// un vide inutile sur chaque carte.
+const reservedPastilleCount = computed(() => maxRenderedPastilleCount(games.value))
+
 onMounted(loadGames)
 </script>
 
 <template>
-  <section class="mx-auto max-w-2xl px-4 py-6">
-    <div class="mb-4 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-text">Matchs</h1>
+  <section class="px-4 py-6">
+    <h1 class="mb-4 text-xl font-semibold text-text">Matchs</h1>
+
+    <DateStrip v-model="selectedDate" class="mb-4" @update:model-value="loadGames" />
+
+    <ContextBanner v-if="!isLoading" :games="games" />
+
+    <div v-if="authStore.isAuthenticated" class="mb-4">
       <button
-        v-if="authStore.isAuthenticated"
         type="button"
         class="rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
         :disabled="isRecalculating"
@@ -58,17 +72,6 @@ onMounted(loadGames)
       </button>
     </div>
 
-    <div class="mb-4 flex items-center gap-2">
-      <label for="dashboard-date-picker" class="text-sm font-medium text-text">Date</label>
-      <input
-        id="dashboard-date-picker"
-        v-model="selectedDate"
-        type="date"
-        class="rounded-lg border border-border px-3 py-2 text-sm"
-        @change="loadGames"
-      />
-    </div>
-
     <p v-if="errorMessage" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">
       {{ errorMessage }}
     </p>
@@ -76,8 +79,11 @@ onMounted(loadGames)
     <p v-if="isLoading" class="text-sm text-text-secondary">Chargement…</p>
     <p v-else-if="games.length === 0" class="text-sm text-text-secondary">Aucun match ce jour-là.</p>
 
-    <div v-else class="space-y-3">
-      <GameCard v-for="game in games" :key="game.id" :game="game" />
+    <!-- Grille ordinateur (§8.4) : 3 colonnes à partir de 1280 px (xl), seuil
+         où la coquille elle-même s'élargit (Point 1) -- une seule colonne en
+         dessous, aucun tri client (l'ordre vient de l'API tel quel). -->
+    <div v-else class="grid grid-cols-1 gap-3 xl:grid-cols-3">
+      <GameCard v-for="game in games" :key="game.id" :game="game" :reserved-pastille-count="reservedPastilleCount" />
     </div>
   </section>
 </template>

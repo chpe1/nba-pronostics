@@ -60,6 +60,23 @@ class CalendarStatusRead(BaseModel):
 
 
 class GameWithPredictionRead(BaseModel):
+    """`reliability_threshold_low`/`reliability_threshold_high` sont des
+    CONSTANTES GLOBALES de la réponse -- lues une fois depuis l'unique ligne
+    `Settings` et recopiées à l'identique sur chaque élément de la liste
+    renvoyée par GET /today. Elles ne varient jamais d'un match à l'autre au
+    sein d'une même réponse : la duplication porte sur le fil JSON (pour ne
+    pas changer la forme de liste nue de cette route, voir
+    docs/design-v1.md §14.1-A), jamais sur la source, qui reste `Settings`
+    seule.
+
+    `home_score`/`away_score` sont recopiés tels quels depuis `Game` (déjà
+    exposés et modifiables via AdminGamesView -- rien de neuf, juste mis à
+    disposition ici en lecture seule). `None` pour un match non terminé.
+    Ne pas déduire un match "passé" de leur seule présence : un match
+    `FINISHED` peut en théorie exister sans score renseigné (saisie
+    manuelle incomplète) -- se fier à `status`, jamais à `home_score`/
+    `away_score`, pour détecter cet état côté frontend."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -72,10 +89,14 @@ class GameWithPredictionRead(BaseModel):
     away_team_name: str
     away_team_abbreviation: str
     status: GameStatus
+    home_score: int | None
+    away_score: int | None
     home_team_recent_record: RecentRecordRead
     away_team_recent_record: RecentRecordRead
     home_calendar_status: CalendarStatusRead
     away_calendar_status: CalendarStatusRead
+    reliability_threshold_low: float
+    reliability_threshold_high: float
     prediction: TodayPredictionRead | None = None
 
 

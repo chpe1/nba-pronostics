@@ -202,10 +202,16 @@ Fixes vis-à-vis de l'axe d'accent, variables selon le mode (voir §2.2).
 
 | Rôle | Sombre | Clair |
 |---|---|---|
-| Réussite, série positive, confiance élevée | `#22C55E` | `#166534` |
+| Réussite, série positive | `#22C55E` | `#166534` |
 | Incertitude, fatigue, calendrier resserré | `#FBBF24` | `#8F5E06` |
 | Échec, absence majeure, risque | `#F87171` (texte) / `#EF4444` (aplat) | `#B91C1C` |
 | Neutre, trop serré | `#9CA3AF` | `#545B6B` |
+
+> **Correction (Lot 2, 2026-08-30)** : "confiance élevée" retiré de la ligne "Réussite" ci-dessus —
+> contradisait §10.2, qui assigne la fiabilité **forte** à l'**accent**, pas au succès/vert. Les
+> deux sections se référaient au même niveau avec deux couleurs différentes ; §10.2 fait autorité
+> pour la fiabilité (c'est sa raison d'être), cette ligne ne couvre donc plus que la réussite et la
+> série positive au sens propre (aucune des deux n'a de brique de calcul aujourd'hui, voir §14.2).
 
 ### 5.5 Thèmes d'accent alternatifs
 
@@ -340,6 +346,39 @@ Du haut vers le bas :
 2. **Sélecteur de date** — existant, à retravailler visuellement. Le brief propose une bande de dates à
    défilement horizontal avec accrochage ; c'est compatible avec le comportement actuel (la date choisie
    alimente `GET /api/predictions/today?date=...`) tant qu'on ne change pas ce qui est envoyé à l'API.
+
+   **Deux widgets, deux métiers — décision du 2026-08-30, à ne pas rouvrir en croyant simplifier.**
+   Une première version (bande seule, fenêtre de 22 jours) a révélé un problème de fond plutôt
+   qu'un simple réglage de largeur : la bande *parcourt* bien les jours proches, mais *saute* mal
+   loin dans le calendrier (atteindre J+14 au doigt demande une dizaine de balayages, et un
+   libellé de mois n'y change rien). Elle a en outre fait disparaître, sans que ce soit signalé sur
+   le moment, une capacité réelle de l'ancien `<input type="date">` : atteindre n'importe quelle
+   date du calendrier 2026-2027 (déjà entièrement en base) en deux clics via son calendrier
+   mensuel natif.
+   - **La bande sert exclusivement à parcourir** les jours proches de la date consultée. Fenêtre
+     resserrée à **`-7`/`+3` jours** autour d'elle, calée sur le seuil de révélation
+     (`PREDICTION_REVEAL_THRESHOLD_DAYS = 2`, `app/api/predictions.py`) et non sur une valeur
+     ronde : `is_upcoming = days_ahead > 2` signifie que **J+2 est encore révélé, J+3 est le
+     premier jour masqué** — la fenêtre s'arrête donc juste après cette frontière pour qu'elle
+     soit visible dans la bande plutôt qu'implicite.
+   - **Un champ de date natif, à côté de la bande, sert exclusivement à sauter** à une date
+     quelconque — il repositionne la bande sur la date choisie. Ce n'est pas une fonctionnalité
+     nouvelle : c'est la restitution de la capacité déjà perdue.
+   - **Les jours de la bande au-delà du seuil de révélation sont marqués**, pour que le masquage
+     se voie avant le clic plutôt qu'après (cohérent avec la posture du §3 : dire quand on ne sait
+     pas). Deux règles pour ce marquage : il ne doit **jamais** ressembler à un état désactivé
+     (contour, pas un assombrissement/`opacity` — ces jours restent pleinement cliquables et
+     mènent à un état légitime, pas une impasse) ; et il ne doit **jamais** reposer sur la seule
+     couleur (§12) — chaque jour marqué porte une description accessible explicite pour un lecteur
+     d'écran, distincte de son simple numéro de jour.
+     **Condition supplémentaire, corrigée en recette (2026-08-30)** : ce marquage ne s'affiche que
+     lorsque la fenêtre de la bande contient **à la fois** des jours révélés/passés et des jours
+     masqués — c'est-à-dire quand la frontière est effectivement présente dans la bande. Avant
+     l'ouverture de la saison, tous les jours proposés sont uniformément masqués : marquer les 11
+     jours de la même façon n'indique alors rien de plus qu'une bande entièrement neutre ne dirait
+     déjà, et deviendrait l'état visuel permanent du produit pendant plusieurs semaines pour aucun
+     bénéfice. Quand tous les jours sont du même côté du seuil, aucun jour n'est marqué — c'est le
+     bandeau contextuel (§9.1) qui porte déjà cette information dans ce cas.
 3. **Bandeau contextuel** — voir §9
 4. **Bouton de recalcul admin** — existant, visible uniquement connecté, agit sur la date consultée.
    Absent du brief d'origine : **à conserver impérativement**.
@@ -376,15 +415,54 @@ erreur de saisie.
 Même emplacement, même forme, **quatre états** selon la date consultée. Le brief d'origine n'en prévoit
 que trois ; le quatrième est imposé par un comportement déjà en place.
 
-### 9.1 Pronostic non révélé — *état absent du brief, obligatoire ici*
+### 9.1 Aucun pronostic à mettre en vitrine — *état absent du brief, obligatoire ici*
 
-Au-delà de `PREDICTION_REVEAL_THRESHOLD_DAYS` (2 jours) dans le futur par rapport à la vraie date du
-jour, l'API renvoie délibérément `None` pour le vainqueur, l'écart, la fiabilité et les notes. Une
-vitrine qui met en avant « le match au plus grand écart » n'a donc **rien à afficher**.
+Une vitrine qui met en avant « le match au plus grand écart » (§9.2) n'a **rien à afficher** dès
+que la journée ne compte aucun pronostic révélé. **Deux raisons distinctes** y mènent (voir §10.3,
+qui les distingue déjà pour la carte de match) — même traitement visuel neutre, sans accent, mais
+un message différent selon le cas :
 
-Ce n'est pas un cas marginal : le calendrier complet 2026-2027 est déjà en base, donc toute navigation
-un peu en avant tombe dedans. Le bandeau annonce le nombre de matchs programmés et indique que les
-pronostics seront révélés à l'approche de la date. Traitement neutre, sans accent.
+- **Pronostics jamais calculés** (`prediction === null` pour tous les matchs du jour) — le plus
+  souvent parce que l'effectif de la saison courante n'est pas encore importé. **État dominant
+  jusqu'à mi-septembre** (§12) : le bandeau doit le dire explicitement plutôt que rester vague —
+  ex. "Aucun pronostic calculé — l'effectif de la saison courante doit être importé, puis un
+  recalcul lancé". **Piège corrigé en recette (2026-08-30)** : une première formulation ("effectif
+  en cours de chargement") évoquait à tort une attente passagère de quelques instants, alors que
+  c'est un état stable de plusieurs semaines — dire "en cours de chargement" pour un import qui
+  n'aura pas lieu avant mi-septembre est aussi trompeur que de ne rien dire du tout.
+
+  **Seconde phrase ajoutée, secondaire, expliquant QUAND (2026-08-30).** La première phrase dit ce
+  qu'il faut faire (importer l'effectif) mais pas quand ce sera possible — sans ce repère, cet
+  écran sera ce que l'utilisateur voit à chaque ouverture de l'application jusqu'à mi-septembre, et
+  il a l'air cassé alors qu'il est simplement en attente d'un événement extérieur connu et
+  prévisible. **Un état d'attente connue doit se distinguer visuellement d'un état d'erreur, sinon
+  l'utilisateur cherche une panne qui n'existe pas.** Cette seconde phrase reste dans le bandeau
+  uniquement (jamais sur la carte, voir la correction ci-dessus sur la duplication du message), en
+  traitement visuel secondaire — un complément d'information, pas une alerte, donc en retrait de la
+  première phrase plutôt qu'au même niveau. Elle ne calcule ni ne cite aucune date précise : la
+  contrainte vient du calendrier NBA (les rosters ne se stabilisent qu'après les coupes d'effectif
+  de présaison), pas du projet, et n'est pas déterminable par le code — seul un repère saisonnier
+  ("mi-septembre") est donné, jamais un compte à rebours qui suggérerait une précision inexistante.
+- **Pronostics calculés mais masqués** (`prediction.is_upcoming === true`) — au-delà de
+  `PREDICTION_REVEAL_THRESHOLD_DAYS` (2 jours) dans le futur par rapport à la vraie date du jour,
+  l'API renvoie délibérément `None` pour le vainqueur, l'écart, la fiabilité et les notes. Le
+  bandeau annonce ici le nombre de matchs programmés et indique que les pronostics seront révélés
+  à l'approche de la date. **Ce n'est pas un cas marginal** : le calendrier complet 2026-2027 est
+  déjà en base, donc toute navigation un peu en avant tombe dedans.
+
+Une journée peut mélanger les deux raisons selon les matchs (effectif importé pour l'un, pas pour
+l'autre) — dans ce cas, traiter la journée comme "aucun pronostic révélé" au sens large (le bandeau
+ne montre rien de toute façon) mais préférer le message "aucun pronostic calculé" dès qu'au moins
+un match de la journée en relève, puisque c'est l'information la plus actionnable pour
+l'utilisateur à ce stade de la saison.
+
+**Le message explicatif complet n'appartient qu'au bandeau, jamais à la carte — corrigé en recette
+(2026-08-30).** Une première version répétait la phrase complète ("l'effectif de la saison
+courante doit être importé...") à la fois dans le bandeau et sur *chaque* carte de la journée : sur
+un jour de 12 matchs, la même phrase apparaissait 13 fois à l'écran. La cause est **globale** (elle
+concerne la journée entière, pas un match en particulier) : elle n'a donc besoin d'être écrite
+qu'une fois, dans le bandeau, qui la porte déjà. La carte se contente d'un marqueur court (voir
+§10.3) — c'est le bandeau, pas la carte, qui explique *pourquoi*.
 
 ### 9.2 À venir / aujourd'hui — vitrine
 
@@ -435,6 +513,24 @@ fait perdre aucune information.
 que de vraies données de saison seront disponibles. L'échelle de la jauge doit suivre ce recalibrage
 automatiquement, sans qu'on ait à y penser. Voir la question ouverte §14.1-A.
 
+**« Remplace ou absorbe » appliqué au pied de la lettre (Lot 2, 2026-08-30).** L'écart entre les
+deux notes *porte* la fiabilité (première phrase de cette section) : la jauge divergente et
+l'ancien `ReliabilityGauge.vue` encodaient donc la même information deux fois dans la même carte —
+la redondance déjà écartée pour la forme récente (§10.5), appliquée ici à l'identique. Une carte de
+la liste du Dashboard ne porte plus qu'**un seul objet de mesure**, la jauge divergente.
+
+Le niveau de confiance (§10.2) n'est pas perdu pour autant : sa pastille de mention (Ligne 1 de la
+carte, §10.3) survit et reste le seul porteur visuel du niveau nommé (couleur + libellé
+"Confiance élevée"/"modérée"/"Trop serré"). Ce qui disparaît, c'est uniquement le fichier
+`ReliabilityGauge.vue` en tant que **composant séparé** — son rôle (le mapping couleur/libellé,
+`constants/reliability.js::RELIABILITY_TREATMENT`) est conservé et directement intégré à
+`GameCard.vue`, pas dupliqué dans un second composant nommé "Gauge" à côté du vrai gauge.
+
+**Vérifié avant suppression** : `ReliabilityGauge.vue` n'était consommé que par `GameCard.vue`
+(grep exhaustif de `frontend/src`) -- ni la page Diagnostic équipes (`MatchupResultCard.vue` a
+toujours eu sa propre pastille "Fiabilité X" inline, jamais ce composant), ni aucun autre écran.
+Suppression sans effet de bord ailleurs.
+
 ### 10.2 Niveaux de confiance
 
 Les trois niveaux du brief se branchent **exactement** sur les trois niveaux de fiabilité déjà calibrés.
@@ -477,12 +573,67 @@ Environ 100 px de haut, quatre informations maximum.
 - Ligne 4 — jauge divergente
 - Ligne 5 — écart chiffré, en texte secondaire
 
+**Hauteur réservée pour les pastilles, calée sur le maximum réel de la vue courante — pas sur le
+plafond théorique de 3 (Lot 2, corrigé le 2026-08-30).** §8.4 exige une hauteur de carte identique
+pour que les jauges d'une même ligne (grille ordinateur) s'alignent. Égaliser la hauteur *externe*
+des cartes n'y suffit pas : le nombre de pastilles (§10.4) varie d'une équipe à l'autre, et tout ce
+qui suit dans la carte (bilan récent, jauge, écart) se décale d'autant si leur zone n'a pas une
+hauteur fixe.
+
+Une première version réservait systématiquement la hauteur du cas maximum théorique (trois
+pastilles). **Erreur constatée en recette** : tant que l'effectif de la saison courante n'est
+importé pour aucune équipe (l'état dominant du produit pendant plusieurs semaines, §12), *aucun*
+match n'a jamais de pastille — la carte entière gonflait alors de ~100 px à ~360 px pour réserver
+un vide qui ne servait jamais à rien.
+
+**Règle retenue** : la zone de pastilles réserve une hauteur calée sur le nombre maximum de
+pastilles **réellement présentes parmi les cartes de la vue courante** (la journée consultée), pas
+sur un plafond théorique fixe.
+- Si aucune carte de la vue n'a de pastille, la zone disparaît entièrement (pas même un vide
+  résiduel).
+- Si la carte la plus fournie de la vue en compte deux, **toutes** les zones de pastilles (y
+  compris celles des équipes sans aucun fait) réservent la hauteur de deux.
+- Le plafond absolu de trois pastilles par équipe (§10.4, avec pastille de reste au-delà) reste
+  inchangé : c'est une règle de *contenu*, distincte de cette règle de *hauteur réservée*, qui
+  reste elle-même bornée au maximum observé (jamais plus de trois).
+
+L'objectif reste le même qu'à l'origine — l'alignement des jauges d'une même ligne — mais sans
+gonfler artificiellement des cartes qui n'ont, dans les faits, jamais de pastille à afficher.
+
 **Journée passée** — Score final à la place de l'heure, notes conservées, jauge figée. Le marqueur de
 réussite ou d'échec du brief est reporté (§14) : rien ne calcule aujourd'hui si un pronostic s'est
 vérifié.
 
-**Pronostic non révélé** — Badge « À venir », notes et jauge absentes. Comportement déjà en place, à
-conserver.
+**Deux états vides distincts, découverts au diagnostic du Lot 2 — ce document les confondait
+jusque-là.** `GameWithPredictionRead.prediction` peut être absent de deux façons différentes, qui
+n'appellent pas le même traitement :
+
+- **Pronostic jamais calculé** (`prediction === null` tout court) — aucun recalcul n'a encore eu
+  lieu pour ce match, le plus souvent parce que l'effectif de la saison courante n'est pas encore
+  importé pour l'une des deux équipes. **C'est l'état vide dominant tant que cet import n'a pas eu
+  lieu — concrètement jusqu'à mi-septembre** (voir §12, "États vides à traiter explicitement").
+- **Pronostic calculé mais masqué** (`prediction.is_upcoming === true`) — un pronostic existe bel
+  et bien en base, mais le match est trop loin dans le futur pour être révélé
+  (`PREDICTION_REVEAL_THRESHOLD_DAYS`, voir §9.1). **Comportement déjà en place, à conserver tel
+  quel** : badge « À venir », notes et jauge absentes.
+
+Le bandeau contextuel (§9) doit lui aussi distinguer ces deux états — §9.1, tel qu'écrit
+initialement, ne décrit que le second.
+
+**Marqueur court sur la carte, message complet réservé au bandeau — corrigé en recette
+(2026-08-30).** La première formulation demandait à la carte d'expliquer *pourquoi* il n'y a pas de
+pronostic (effectif pas encore chargé), reprenant mot pour mot le texte du bandeau (§9.1). Sur une
+journée de plusieurs matchs, la même phrase complète apparaissait donc autant de fois que de cartes
+en plus du bandeau — une répétition de plusieurs dizaines de mots identiques à l'écran, sans aucune
+information supplémentaire apportée par la répétition. La cause étant **globale à la journée**, pas
+propre au match de cette carte précise, elle n'a besoin d'être écrite qu'une fois : dans le
+bandeau. **La carte porte désormais un marqueur court** ("Pronostic indisponible"), sans réexpliquer
+la raison — le bandeau, toujours visible au-dessus de la liste, la porte déjà.
+
+Conséquence sur la hauteur de la carte dans cet état : **les ~100 px du début de cette section
+décrivent l'état nominal** (notes + jauge + pastilles), pas cet état sans aucun de ces éléments. Une
+carte "jamais calculé" est délibérément plus courte -- il n'y a rien à y montrer de plus qu'un
+tricode par équipe et le marqueur court.
 
 ### 10.4 Pastilles de contexte
 
@@ -492,6 +643,21 @@ c'est plus fort et moins contestable.
 - Hauteur ~22 px, coins arrondis, fond légèrement teinté, texte 12 px
 - **Trois maximum par équipe**
 - Couleurs sémantiques, jamais l'accent
+
+**Correction (Lot 2, 2026-08-30) — le plafond de trois ne doit jamais faire disparaître un fait
+sans le signaler.** Une première implémentation tronquait silencieusement au-delà de trois faits
+(priorité absent > incertain > calendaire) : une équipe à cinq joueurs absents affichait alors
+exactement la même carte qu'une équipe à trois, sans aucune trace des deux manquants — précisément
+dans le cas qui compte le plus, un écart important où l'utilisateur veut savoir combien de monde
+manque à l'équipe favorite. **Le §3 de ce document pose que l'interface assume de dire quand elle
+ne sait pas ; elle ne peut pas, à l'inverse, masquer sans le signaler ce qu'elle sait bel et bien.**
+
+Règle retenue : le plafond visuel de trois pastilles est conservé, mais seules **deux** portent un
+fait quand il y en a plus de trois au total — la troisième position devient alors une **pastille de
+reste**, neutre (jamais une couleur sémantique, ce n'en est pas une), qui annonce le volume masqué
+(ex. « +3 ») plutôt que de le taire. La priorité de sélection des deux faits montrés reste
+absent > incertain > calendaire, inchangée. **La pastille de reste porte une description explicite
+pour un lecteur d'écran** — « +3 » seul, hors contexte visuel, ne dit rien à l'oreille.
 
 Alimentation réelle, sans aucun développement :
 
@@ -509,11 +675,45 @@ chantier les met en forme, il ne les crée pas.
 
 ### 10.5 Forme récente
 
-Cinq carrés de 8 à 10 px, arrondis, verts ou rouges, du plus ancien au plus récent, sans texte.
-Alimenté par le bilan V-D récent déjà exposé (`home_team_recent_record`).
+**Texte seul, pas de carrés** (revu au Lot 2, voir diagnostic `plan-design-lot2.md`). Le brief
+d'origine prévoyait cinq carrés colorés, du plus ancien au plus récent — écarté pour trois raisons
+qui se renforcent :
 
-**Accompagné d'un libellé accessible** : cinq carrés colorés sans texte portent l'information par la
-seule couleur, ce que la §12 interdit. Un attribut de description lisible par lecteur d'écran suffit.
+1. **Donnée indisponible.** `compute_recent_record` (`app/services/pronostic_calculator.py`) ne
+   renvoie qu'un agrégat (`wins`, `losses`, `games_considered`), jamais la séquence chronologique
+   des résultats individuels. Des carrés "du plus ancien au plus récent" prétendraient à un ordre
+   qu'on ne connaît pas — un affichage qui semble précis sans l'être, exactement ce que le §3
+   interdit ("l'interface assume de dire quand elle ne sait pas").
+2. **La spécification elle-même était incohérente.** La fenêtre du bilan (`RECENT_RECORD_WINDOW`)
+   vaut 7, pas 5 — "5V-2D sur les 7 derniers" est un exemple réel où le nombre de matchs considérés
+   dépasse déjà le nombre de carrés prévus. Les cinq carrés étaient faux sur le principe, pas
+   seulement irréalisables techniquement.
+3. **Redondance visuelle avec l'élément signature.** La carte porte déjà une barre horizontale
+   centrale, la jauge divergente (§10.1) — l'élément que ce chantier met le plus en avant. Une
+   seconde barre juste à côté (la forme récente) dilue ce qu'on cherche justement à faire ressortir.
+
+Le bilan V-D reste affiché **en texte** ("5V-2D sur les 7 derniers"), déjà exact et déjà présent
+dans `GameCard.vue` avant ce lot — aucune perte d'information, seulement le renoncement à une
+visualisation qui aurait suggéré une précision inexistante.
+
+> Les cinq carrés ordonnés du brief d'origine sont déplacés en **§14.2** (reporté) : ils
+> demanderaient que `compute_recent_record` renvoie la séquence chronologique des résultats, pas
+> seulement leurs totaux — une vraie modification backend, hors périmètre de ce chantier visuel.
+
+**La ligne disparaît entièrement quand il n'y a rien à dire — corrigé en recette (2026-08-30).**
+Une équipe sans aucun match `FINISHED` dans la fenêtre (`games_considered === 0`, ce qui concerne
+les 30 équipes en permanence tant que la saison n'a pas commencé) affichait "Aucun match terminé
+récemment" — une phrase sans valeur informative qui, répétée sous chaque tricode de chaque carte,
+occupait visuellement autant de place que le nom de l'équipe lui-même. **Quand une équipe n'a
+aucun match terminé dans la fenêtre, la ligne ne s'affiche pas du tout** plutôt que d'afficher un
+texte qui ne dit rien.
+
+**Distinction à ne pas manquer, du même genre que celle de `is_upcoming` (§10.3)** :
+`games_considered === 0` ("aucun match terminé, rien à mesurer") et un bilan `0V-0D sur les N
+derniers` avec `games_considered > 0` ("N matchs terminés dans la fenêtre, mais aucun n'a compté
+comme victoire ou défaite pour cette équipe") sont deux cas différents. Le second est rare mais
+réel et reste une information à part entière — seul `games_considered === 0` doit faire disparaître
+la ligne, jamais un bilan à zéro victoire déduit après coup.
 
 ### 10.6 Identité d'équipe
 
@@ -565,6 +765,20 @@ celui du projet. Les écrans réels sont :
   - Journée sans match
   - Date au-delà du seuil de révélation
   - Audit d'intégrité sans anomalie
+- **Les contrôles natifs adressables ont besoin d'un fond explicite — l'héritage seul ne suffit
+  pas (corrigé au Lot 2, 2026-08-30, validé par essai réel avant d'être écrit ici).** Le preflight
+  Tailwind pose `background-color: transparent` sur plusieurs contrôles natifs (`select` compris)
+  — correct pour l'élément fermé, qui doit laisser voir la carte derrière lui, mais **`<option>`,
+  rendu dans une fenêtre dessinée par le système hors de la page, n'a alors aucun fond à porter**.
+  Sa couleur de texte reste claire (héritée de la coquille), d'où un texte clair sur fond resté
+  clair en mode sombre — `color-scheme`/`accent-color` (voir plus haut) ne suffisent pas à eux
+  seuls quand l'élément est directement adressable en CSS (ce qui est le cas d'`<option>`,
+  contrairement au calendrier d'un `<input type="date">`, entièrement opaque à toute règle CSS).
+  Corrigé une seule fois, à portée globale (`select, option { background-color: var(--surface);
+  color: var(--text); }`, `frontend/src/style.css`), pas classe par classe : un défaut de
+  structure du preflight, pas d'un `<select>` en particulier. `<optgroup>` partage exactement la
+  même règle de preflight et le même mécanisme de rendu système, mais n'est utilisé nulle part
+  dans ce projet à ce jour — non corrigé, volontairement, en attendant un usage réel.
 
 ---
 
@@ -594,7 +808,7 @@ transition liste → match plein écran du brief n'a pas d'objet dans cette V1 (
 
 | # | Question | Statut |
 |---|---|---|
-| A | **Le seuil de fiabilité haute doit-il être exposé au frontend public ?** L'échelle de la jauge (§10.1) en dépend. Voir ci-dessous. | à trancher |
+| A | **Le seuil de fiabilité haute doit-il être exposé au frontend public ?** L'échelle de la jauge (§10.1) en dépend. Voir ci-dessous. | **résolu (Lot 2)** — oui, voie 2 retenue. Forme exacte ci-dessous. |
 | B | `Team.current_streak` est-il réellement alimenté ? `CLAUDE.md` indique qu'il n'entre dans aucun calcul — s'il est vide, la pastille « série en cours » disparaît de la V1. | **résolu** — non, nulle part (grep exhaustif de `app/`, aucune occurrence hors modèle/schéma). Vaut `0` pour les 30 équipes réelles en base. Pastille retirée de la V1, voir §10.4/§14.2. |
 | C | `InfoTooltip.vue` se déclenche-t-il au survol seul ? Détermine l'ampleur de la correction tactile (§11). | **résolu** — non, déjà tactile (`@click`/`@blur`, aucun `@mouseenter`/`@mouseleave`). Rien à corriger, retiré de la liste du Lot 3 (§15). |
 | D | `GET /api/predictions/today` renvoie-t-il un niveau de fiabilité nommé, ou seulement une valeur numérique ? Détermine si le frontend classe lui-même ou reçoit le niveau. | **résolu** — nommé (`ReliabilityLevel`, enum `str` : `"faible"`/`"moyenne"`/`"forte"`). Le frontend reçoit déjà le niveau, voir §10.2. |
@@ -616,6 +830,36 @@ transition liste → match plein écran du brief n'a pas d'objet dans cette V1 (
 ailleurs dans ce projet. Il n'y a aucun enjeu de confidentialité — ces seuils sont des paramètres
 d'affichage, pas un secret, et le niveau de fiabilité qu'ils produisent est déjà public.
 
+**Forme exacte retenue (Lot 2, 2026-08-30).** `GET /api/predictions/today` renvoie une **liste nue**
+(`list[GameWithPredictionRead]`), pas un objet enveloppant — l'envelopper pour y loger les deux
+seuils une seule fois aurait cassé la dizaine de tests backend existants qui indexent directement
+la réponse, ainsi que le contrat déjà consommé par `DashboardView.vue`, pour un lot qui ne devait
+changer qu'une seule chose fonctionnellement. Les deux champs
+(`reliability_threshold_low`/`reliability_threshold_high`) sont donc **dupliqués sur chaque élément
+de la liste**, identiques sur tous les matchs d'une même réponse.
+
+La duplication porte sur le **fil** (la réponse HTTP), jamais sur la **source** : `Settings` reste
+l'unique origine des deux valeurs, lue une fois par requête et recopiée sur chaque élément — pas de
+risque de désynchronisation, ce qui était tout l'enjeu de cette décision. Pour éviter qu'un lecteur
+du JSON ne croie à tort que ces champs varient d'un match à l'autre, ils sont documentés
+explicitement dans le schéma Pydantic (`GameWithPredictionRead` docstring/description de champ)
+comme des **constantes globales de la réponse**, identiques sur chaque élément, jamais une valeur
+propre au match.
+
+**Extension du même principe — `home_score`/`away_score` (Point 5, même journée).** L'état
+"journée passée" de la carte de match (§10.3) a besoin du score final, qui existe déjà dans
+`Game` et est déjà exposé/modifiable via `AdminGamesView` — mais absent de
+`GameWithPredictionRead`. **Ce n'est pas une deuxième modification fonctionnelle** : contrairement
+aux seuils de fiabilité (une politique d'affichage nouvelle sur une donnée déjà calculée), il ne
+s'agit ici que de mettre à disposition, en lecture seule, une donnée que le système possède,
+remplit et affiche déjà ailleurs — aucune capacité nouvelle. Même patron que les seuils : aucune
+écriture, aucune migration, aucun calcul. Champs ajoutés directement sur `GameWithPredictionRead`
+(pas dupliqués comme les seuils : `home_score`/`away_score` sont déjà propres à chaque match, rien
+à recopier). **Détection de l'état "passé" par `status`, jamais par la présence d'un score** : un
+match `FINISHED` sans score renseigné (saisie manuelle incomplète) reste théoriquement possible,
+la seule présence de `home_score`/`away_score` ne suffit donc pas à conclure qu'un match est
+terminé.
+
 ### 14.2 Reporté — nécessite du développement fonctionnel
 
 À valider par l'utilisateur avant d'entrer dans une liste de travaux à venir. Rien ici n'est engagé.
@@ -634,6 +878,7 @@ d'affichage, pas un secret, et le niveau de fiabilité qu'ils produisent est dé
 | 10 | News par flux RSS | Chantier fonctionnel à part entière. |
 | 11 | PWA (manifest, service worker) | Étape 8, avec le déploiement. |
 | 12 | Pastille « 5 victoires de suite » (§10.4) | `Team.current_streak` n'est alimenté nulle part (ni import CSV, ni formulaire admin en pratique, ni calcul) et vaut `0` pour les 30 équipes réelles (§14.1-B, résolu le 2026-08-29). Rien à afficher tant que rien ne l'alimente. **À rouvrir en cours de saison**, une fois de vrais matchs joués et une vraie source qui mette à jour cette colonne. |
+| 13 | Forme récente en carrés ordonnés (§10.5, brief d'origine) | Retiré au Lot 2 (2026-08-30) au profit du texte seul — voir §10.5 pour le raisonnement complet. Nécessiterait que `compute_recent_record` (`app/services/pronostic_calculator.py`) renvoie la séquence chronologique des résultats individuels, pas seulement `wins`/`losses`/`games_considered` agrégés. Modification backend, hors périmètre d'un chantier visuel. |
 
 ---
 

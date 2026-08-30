@@ -98,6 +98,7 @@ def get_today_predictions(
     """Route publique (dashboard) : liste les matchs de la date donnée
     (aujourd'hui par défaut) avec leur pronostic déjà calculé, s'il existe.
     Ne déclenche aucun calcul (voir POST /recalculate pour ça)."""
+    settings = _get_or_create_settings(db)
     games = _games_for_date(db, date_param)
     game_ids = [g.id for g in games]
     predictions_by_game_id = (
@@ -125,6 +126,8 @@ def get_today_predictions(
                 away_team_name=game.away_team.name,
                 away_team_abbreviation=game.away_team.abbreviation,
                 status=game.status,
+                home_score=game.home_score,
+                away_score=game.away_score,
                 home_team_recent_record=RecentRecordRead(
                     wins=home_record.wins,
                     losses=home_record.losses,
@@ -137,6 +140,8 @@ def get_today_predictions(
                 ),
                 home_calendar_status=CalendarStatusRead(**home_calendar),
                 away_calendar_status=CalendarStatusRead(**away_calendar),
+                reliability_threshold_low=settings.reliability_threshold_low,
+                reliability_threshold_high=settings.reliability_threshold_high,
                 prediction=(
                     _to_today_prediction_read(predictions_by_game_id[game.id], game)
                     if game.id in predictions_by_game_id
