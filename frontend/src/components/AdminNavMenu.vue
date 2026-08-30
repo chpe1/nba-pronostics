@@ -14,10 +14,24 @@ const ADMIN_LINKS = [
   { name: 'admin-settings', label: "Réglages généraux de l'algorithme" },
 ]
 
+// Largeur du panneau (w-64 ci-dessous, 16rem) -- dupliquée ici car nécessaire au calcul
+// d'ancrage ; à resynchroniser si la classe change.
+const MENU_WIDTH_PX = 256
+
 const isOpen = ref(false)
 const menuRef = ref(null)
 const triggerRef = ref(null)
+// Ancrage à droite par défaut (état normal, ≥475px -- voir docs/design-v1.md §15 pour le calcul
+// de ce seuil). Recalculé une seule fois à l'ouverture, jamais en continu (voir onResize).
+const anchorRight = ref(true)
 const route = useRoute()
+
+function fitsRight(triggerRect) {
+  return triggerRect.right - MENU_WIDTH_PX >= 0
+}
+function fitsLeft(triggerRect) {
+  return triggerRect.left + MENU_WIDTH_PX <= window.innerWidth
+}
 
 function onKeydown(event) {
   if (event.key === 'Escape') {
@@ -32,10 +46,27 @@ function onClickOutside(event) {
   }
 }
 
+// Un menu ouvert pendant un redimensionnement/une rotation d'écran est dans un état douteux --
+// l'ancrage calculé à l'ouverture ne correspond plus forcément à rien une fois la mise en page
+// recalculée. On ferme plutôt que de recalculer en continu (même patron que le changement de
+// route ci-dessous), et on rouvre correctement si besoin.
+function onResize() {
+  close()
+}
+
 function open() {
   isOpen.value = true
+  // Bascule d'ancrage : teste les DEUX bords avant de choisir (jamais un seul -- un test à sens
+  // unique finit par se faire prendre par le cas qu'il n'a jamais vérifié). Ancrage à droite
+  // conservé par défaut (comportement actuel, déjà correct ≥475px) sauf s'il déborderait à gauche
+  // ET que l'ancrage à gauche, lui, tiendrait. Si aucun des deux ne tient (fenêtre plus étroite
+  // que le panneau lui-même), le choix ici n'a plus d'importance : `max-w-[calc(100vw-2rem)]` sur
+  // le panneau (voir le template) rétrécit le panneau pour qu'il tienne quel que soit l'ancrage.
+  const triggerRect = triggerRef.value?.getBoundingClientRect()
+  anchorRight.value = !triggerRect || fitsRight(triggerRect) || !fitsLeft(triggerRect)
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('click', onClickOutside)
+  window.addEventListener('resize', onResize)
 }
 
 function close() {
@@ -43,6 +74,7 @@ function close() {
   isOpen.value = false
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', onClickOutside)
+  window.removeEventListener('resize', onResize)
 }
 
 function toggle() {
@@ -57,6 +89,7 @@ watch(() => route.fullPath, close)
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', onClickOutside)
+  window.removeEventListener('resize', onResize)
 })
 </script>
 
@@ -77,7 +110,8 @@ onBeforeUnmount(() => {
       v-if="isOpen"
       ref="menuRef"
       role="menu"
-      class="absolute right-0 z-10 mt-1 w-64 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
+      class="absolute z-10 mt-1 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
+      :class="anchorRight ? 'right-0' : 'left-0'"
     >
       <RouterLink
         v-for="link in ADMIN_LINKS"
