@@ -86,6 +86,14 @@
   --canvas: #0e1015;
   --surface: #1a1d26;
   --surface-sunken: #0e1015;
+  /* Encadré informatif SUR une carte (§5.2/§5.3) -- rôle distinct de
+     --surface-sunken, qui reste réservé aux éléments creusés dans le fond
+     (piste de jauge) : posé comme fond d'un encadré, --surface-sunken se
+     confond avec le fond de page et rend l'encadré invisible (bug réel,
+     CsvUploadForm.vue, corrigé au Lot 3). Texte désactivé interdit dessus
+     en sombre (4,17:1, sous le seuil de 4,5:1 du §12) -- utiliser
+     --text-secondary à la place pour toute mention atténuée à l'intérieur. */
+  --surface-info: #232733;
   --border: #262a35;
   --text: #f5f5f7;
   --text-secondary: #9ca3af;
@@ -125,6 +133,7 @@
   --canvas: #f4f5f7;
   --surface: #ffffff;
   --surface-sunken: #e8eaef;
+  --surface-info: #f1f2f6;
   --border: #d7dae2;
   --text: #14161c;
   --text-secondary: #545b6b;
@@ -177,6 +186,72 @@ select,
 option {
   background-color: var(--surface);
   color: var(--text);
+}
+
+/* =====================================================================
+ * Contour de focus clavier -- même schéma que le fond des <option>
+ * ci-dessus : une capacité native (le contour de focus par défaut du
+ * navigateur) absente au rendu, sans avoir été explicitement redéclarée --
+ * troisième occurrence de ce schéma après color-scheme/accent-color et le
+ * fond des <option> (tous deux plus haut). Constaté sur InfoTooltip.vue
+ * (2026-08-30, `outline-style: none` mesuré en navigateur réel).
+ *
+ * Nuance par rapport au fond des <option> : ici, aucune ligne identifiable
+ * du preflight Tailwind ni de ce projet ne pose "outline: none" --
+ * vérifié (preflight.css, 398 lignes, ne contient qu'une restauration
+ * pour Firefox : `:-moz-focusring { outline: auto }`, jamais une
+ * suppression). Le mécanisme exact reste donc non prouvé (probablement un
+ * effet de bord du reset d'apparence natif des contrôles par le
+ * preflight, pas une ligne unique à pointer). L'EFFET, en revanche, est
+ * le même que pour les <option> : une capacité native standard disparaît
+ * au rendu sans qu'aucune règle explicite ne le justifie -- elle ne doit
+ * donc jamais être supposée présente, y compris quand aucune cause
+ * précise n'est trouvée. Prochaine fois qu'un comportement natif attendu
+ * ne se manifeste pas (curseur, sélection de texte, focus, placeholder...),
+ * chercher ce schéma avant de le re-découvrir par hasard.
+ *
+ * Portée globale à tous les éléments interactifs natifs du projet (aucun
+ * élément personnalisé avec tabindex n'existe -- grep vérifié) : §12 exige
+ * un contour visible "partout", pas une correction par composant.
+ *
+ * :focus-visible uniquement (jamais :focus seul) : invisible au clic
+ * souris, visible à la navigation clavier. Le contour entoure toujours la
+ * boîte PROPRE de l'élément, jamais une zone tactile étendue (ex. le
+ * pseudo-élément ::after de 44px d'InfoTooltip.vue -- outline suit la
+ * boîte réelle de l'élément, jamais son contenu généré).
+ *
+ * Token --accent-text, pas --accent-fill : --accent-fill ne donne que
+ * 2,80:1 sur fond blanc (piège déjà noté en §5.3), sous le seuil de 3:1
+ * exigé pour un indicateur non textuel (WCAG 1.4.11). --accent-text a
+ * déjà ses deux valeurs mesurées et sûres dans les deux modes (sombre
+ * 6,00:1, clair 5,18:1).
+ *
+ * Collision avec DateStrip.vue (seul autre usage de la propriété outline
+ * du projet) : ses jours "au-delà du seuil de révélation" portent un
+ * contour pointillé PERMANENT (classes Tailwind outline-dashed/..., donc
+ * dans @layer utilities). Cette règle est volontairement posée HORS de
+ * tout @layer, comme le fond des <option> ci-dessus : une règle non
+ * calquée gagne toujours sur une règle en couche, quelle que soit la
+ * spécificité -- le contour de focus remplace donc entièrement le
+ * pointillé pendant la navigation clavier, et le pointillé réapparaît
+ * normalement dès la perte du focus. Comportement voulu (l'indication de
+ * focus prime temporairement sur un marquage décoratif), pas un bug.
+ * =================================================================== */
+a,
+button,
+input,
+select,
+textarea {
+  outline: none;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
 }
 
 /* =====================================================================
@@ -235,6 +310,7 @@ option {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
   --color-surface-sunken: var(--surface-sunken);
+  --color-surface-info: var(--surface-info);
   --color-border: var(--border);
   --color-text: var(--text);
   --color-text-secondary: var(--text-secondary);

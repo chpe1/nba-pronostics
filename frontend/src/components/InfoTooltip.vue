@@ -14,9 +14,12 @@ const isOpen = ref(false)
 
 <template>
   <span class="relative inline-flex">
+    <!-- Zone tactile 44px via ::after (position:relative requis pour l'ancrer sur ce
+         bouton, pas sur le span englobant) -- icône visible reste à 16px (§12, §15).
+         Contour de focus clavier : règle globale dans style.css, pas de classe ici. -->
     <button
       type="button"
-      class="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-surface-sunken text-[10px] font-semibold leading-none text-text-secondary hover:bg-border"
+      class="relative ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-surface-sunken text-[10px] font-semibold leading-none text-text-secondary after:absolute after:-inset-[14px] after:content-[''] hover:bg-border"
       :aria-label="text"
       @click="isOpen = !isOpen"
       @blur="isOpen = false"

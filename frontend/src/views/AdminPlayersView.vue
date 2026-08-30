@@ -137,7 +137,7 @@ onMounted(async () => {
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-text">Joueurs</h1>
+    <h1 class="text-xl font-semibold text-accent-text">Joueurs</h1>
     <p class="text-sm text-text-secondary">
       Ajouter ou corriger un joueur à la main (rookie drafté, correction ponctuelle). Un
       PER/MPG saisi ici est un simple placeholder : le prochain import CSV Advanced du
@@ -155,7 +155,7 @@ onMounted(async () => {
         </div>
         <div class="col-span-2">
           <label class="mb-1 block text-xs font-medium text-text">Équipe</label>
-          <select v-model="newPlayer.team_id" class="w-full rounded-lg border border-border px-3 py-2 text-sm">
+          <select v-model="newPlayer.team_id" class="min-h-11 w-full rounded-lg border border-border px-3 py-2 text-sm">
             <option value="" disabled>Sélectionner une équipe</option>
             <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
           </select>
@@ -175,7 +175,7 @@ onMounted(async () => {
       </div>
       <button
         type="button"
-        class="w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
+        class="min-h-11 w-full rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
         :disabled="isCreating"
         @click="createPlayer"
       >
@@ -189,7 +189,7 @@ onMounted(async () => {
       <select
         id="team-filter"
         v-model="selectedTeamId"
-        class="rounded-lg border border-border px-3 py-2 text-sm"
+        class="min-h-11 rounded-lg border border-border px-3 py-2 text-sm"
         @change="loadPlayers"
       >
         <option value="">Toutes les équipes</option>
@@ -212,7 +212,7 @@ onMounted(async () => {
         </div>
         <div class="col-span-2">
           <label class="mb-1 block text-xs font-medium text-text">Équipe</label>
-          <select v-model="forms[player.id].team_id" class="w-full rounded-lg border border-border px-3 py-2 text-sm">
+          <select v-model="forms[player.id].team_id" class="min-h-11 w-full rounded-lg border border-border px-3 py-2 text-sm">
             <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
           </select>
         </div>
@@ -233,7 +233,7 @@ onMounted(async () => {
       <div class="flex gap-2">
         <button
           type="button"
-          class="flex-1 rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
+          class="min-h-11 flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
           :disabled="savingId === player.id || deletingId === player.id"
           @click="save(player)"
         >
@@ -241,7 +241,7 @@ onMounted(async () => {
         </button>
         <button
           type="button"
-          class="rounded-lg border border-danger text-sm font-medium text-danger-text px-3 py-2 disabled:opacity-50"
+          class="min-h-11 rounded-lg border border-danger text-sm font-medium text-danger-text px-3 py-2 disabled:opacity-50"
           :disabled="savingId === player.id || deletingId === player.id"
           @click="deletePlayer(player)"
         >

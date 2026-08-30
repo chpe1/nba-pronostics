@@ -43,7 +43,7 @@ onMounted(loadCounts)
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-text">Base de données</h1>
+    <h1 class="text-xl font-semibold text-accent-text">Base de données</h1>
 
     <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
 
@@ -62,7 +62,7 @@ onMounted(loadCounts)
         <h2 class="text-sm font-semibold text-text">Audit d'intégrité du calendrier</h2>
         <button
           type="button"
-          class="rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
+          class="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
           :disabled="isAuditing"
           @click="runAudit"
         >

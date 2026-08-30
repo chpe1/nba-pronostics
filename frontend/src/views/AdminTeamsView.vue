@@ -81,7 +81,7 @@ onMounted(loadTeams)
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-text">Équipes</h1>
+    <h1 class="text-xl font-semibold text-accent-text">Équipes</h1>
     <p class="text-sm text-text-secondary">
       Corriger une équipe à la main (ex : win_pct erroné après un mauvais import). Un ajustement ici
       reste un simple placeholder : le prochain import CSV concerné l'écrase normalement, sans
@@ -128,9 +128,10 @@ onMounted(loadTeams)
       </div>
 
       <div class="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
-        Les champs ci-dessous (conférence, division, série en cours) ne sont utilisés par aucun
-        calcul de l'algorithme aujourd'hui — purement informatifs, les modifier n'influence aucun
-        pronostic.
+        Les champs ci-dessous (conférence, division, série en cours) sont vides pour les 30
+        équipes : aucun import ne les alimente, aucun calcul de l'algorithme ne les lit, et rien
+        ne les affiche en dehors de ce formulaire. Les remplir n'a donc aucun effet visible
+        aujourd'hui.
       </div>
       <div class="grid grid-cols-3 gap-3">
         <div>
@@ -149,7 +150,7 @@ onMounted(loadTeams)
 
       <button
         type="button"
-        class="w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
+        class="min-h-11 w-full rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
         :disabled="savingId === team.id"
         @click="save(team)"
       >

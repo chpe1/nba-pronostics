@@ -123,7 +123,9 @@ onMounted(() => {
       à partir de ses colonnes — pas besoin de le préciser, dépose simplement le fichier tel quel.
     </p>
 
-    <p class="mb-3 rounded-lg bg-surface-sunken px-3 py-2 text-xs text-text-secondary">
+    <!-- Encadré qui EXPLIQUE (docs/design-v1.md §11.1) : rôle "encadré informatif" (§5.2/§5.3),
+         jamais l'ambre -- ce texte n'avertit de rien, il décrit le déroulé en 2 étapes. -->
+    <p class="mb-3 rounded-lg bg-surface-info px-3 py-2 text-xs text-text-secondary">
       Choisissez un fichier puis cliquez sur <strong>Aperçu</strong> — le type sera détecté
       automatiquement. Si tout est valide, cliquez sur <strong>Confirmer l'import</strong>.
     </p>
@@ -181,7 +183,7 @@ onMounted(() => {
       <button
         v-if="preview"
         type="button"
-        class="rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
+        class="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
         :disabled="isLoading"
         @click="upload(false)"
       >
@@ -194,9 +196,11 @@ onMounted(() => {
     </p>
 
     <div v-if="preview" class="mt-4 text-sm">
+      <!-- Encadré qui AVERTIT (docs/design-v1.md §11.1) : risque réel de mauvaise sélection avant
+           un import qui écrase des données -- même traitement ambre que AdminTeamsView.vue. -->
       <p
         v-if="preview.resolved_team_name"
-        class="mb-2 rounded-lg bg-surface-sunken px-3 py-2 font-medium text-text"
+        class="mb-2 rounded-lg bg-warning/10 px-3 py-2 font-medium text-warning"
       >
         ⚠️ Équipe résolue pour cet import : <strong>{{ preview.resolved_team_name }} ({{ preview.resolved_team_abbreviation }})</strong>
         — vérifie que c'est la bonne avant de confirmer (le fichier ne contient aucune info d'équipe à croiser).
