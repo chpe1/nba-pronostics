@@ -48,14 +48,16 @@ async function download(key) {
       {{ errorMessage }}
     </p>
 
-    <!-- max-w-[220px] posé sur le BOUTON, pas sur cette colonne (flex-col, align-items:stretch
-         par défaut) : si le plafond était sur la colonne, la note héritait de la même largeur que
-         le bouton quel que soit l'espace réellement disponible dans la rangée -- repéré en recette
-         (note repliée sur ~1/3 de la carte sur grand écran, sans raison). En le posant sur le
-         bouton seul, la colonne se redimensionne sur le plus large de ses deux enfants : les 4
-         modèles sans note gardent le même rendu (bouton à 220px, rien d'autre à l'intérieur), et
-         la note du 5e utilise la largeur qu'il lui faut, jusqu'à l'espace disponible. -->
-    <div class="flex flex-wrap items-start gap-2">
+    <!-- Une ligne par modèle (flex-col, pas flex-wrap) -- pas un plafond de largeur sur la note
+         (voir le commentaire retiré ci-dessous, conservé dans l'historique Git) : plafonner la
+         note recréait juste un autre plafond arbitraire. Le vrai problème était le DÉCOUPAGE EN
+         RANGÉES lui-même -- avec flex-wrap, une colonne notablement plus large que ses voisines
+         (poussée par la largeur naturelle de la note) occupe presque toute sa rangée et repousse
+         les colonnes suivantes (Draft, Calendrier) sur la ligne d'après, sans rapport avec le
+         modèle qu'elles décrivent -- repéré en recette. En listant un modèle par ligne, aucune
+         colonne ne peut plus jamais en pousser une autre : le bouton garde son plafond de 220px
+         (max-w-[220px] sur le bouton, inchangé), la note reste libre de toute contrainte. -->
+    <div class="flex flex-col items-start gap-2">
       <div v-for="template in TEMPLATES" :key="template.key" class="flex flex-col gap-1">
         <button
           type="button"
