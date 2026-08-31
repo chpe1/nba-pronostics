@@ -214,7 +214,6 @@ const awayPastilles = computed(() =>
         :away-note="prediction.away_team_note"
         :home-team-abbreviation="game.home_team_abbreviation"
         :away-team-abbreviation="game.away_team_abbreviation"
-        :reliability="prediction.reliability"
         :threshold-high="game.reliability_threshold_high"
       />
     </div>

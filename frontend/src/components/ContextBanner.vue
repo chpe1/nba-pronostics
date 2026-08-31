@@ -73,7 +73,6 @@ const upcomingCount = computed(() => props.games.filter((g) => g.prediction?.is_
       :away-note="showcaseGame.prediction.away_team_note"
       :home-team-abbreviation="showcaseGame.home_team_abbreviation"
       :away-team-abbreviation="showcaseGame.away_team_abbreviation"
-      :reliability="showcaseGame.prediction.reliability"
       :threshold-high="showcaseGame.reliability_threshold_high"
     />
     <div class="flex items-center justify-between font-title text-accent-on/60">
