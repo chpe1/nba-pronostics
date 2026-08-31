@@ -26,7 +26,7 @@ from sqlalchemy.engine import make_url  # noqa: E402
 from app.database import SQLALCHEMY_DATABASE_URL, SessionLocal  # noqa: E402
 from app.models import Game, InjuryStatus, Player, Prediction, Team  # noqa: E402
 from app.services.nba_calendar import current_nba_date  # noqa: E402
-from tests.simulation_data import build_league, create_full_slate  # noqa: E402
+from tests.simulation_data import build_league, create_scheduled_game  # noqa: E402
 
 # Dupliqué du fallback de app/database.py (SQLALCHEMY_DATABASE_URL) -- on ne peut
 # pas l'importer de là puisque cette variable reflète déjà la config EFFECTIVE
@@ -95,6 +95,43 @@ def apply_sample_injuries(league) -> None:
     league.rosters["CHI"].bench_player.injury_reason = "GLeague-Two-Way"
 
 
+def create_dashboard_demo_slate(db, league) -> list[Game]:
+    """Programme du jour pensé pour rendre le Dashboard observable dans ses trois
+    niveaux de fiabilité ET avec un match totalement neutre -- contrairement à
+    tests.simulation_data.create_full_slate (6 confrontations, chaque équipe
+    jouant deux fois, pensées pour un garde-fou "aucun spread aberrant", pas pour
+    la variété visuelle). Ne touche pas à create_full_slate ni au reste de
+    tests/simulation_data.py -- réutilise juste create_scheduled_game.
+
+    Vérifié empiriquement (pas seulement calculé à la main) avant d'écrire ces
+    commentaires -- voir le compte-rendu de cette étape :
+    - DET @ CHA  : les deux SEULES équipes sans aucune blessure ni drapeau
+      calendaire à TARGET_DATE (apply_sample_injuries ne les touche pas,
+      setup_calendar_history ne place leur dernier match antérieur qu'hors de la
+      fenêtre des 3 jours) -- AUCUNE pastille de contexte des deux côtés.
+    - CHI @ MIA  : les deux équipes les plus proches en niveau (note de base à
+      quelques points l'une de l'autre) -- écart final sous le seuil bas
+      (fiabilité "faible"), la bande jamais couverte par create_full_slate.
+    - BOS @ DEN  : deux équipes fortes proches l'une de l'autre -- écart
+      "moyenne", chacune avec sa propre pastille d'absence (star Out / titulaire
+      Doubtful, posées par apply_sample_injuries).
+    - BOS @ DET  : BOS (fort) contre DET (faible) -- écart "forte", la bande la
+      plus simple à obtenir mais qui aurait disparu sans ce 4e match une fois les
+      confrontations en double de create_full_slate abandonnées. BOS et DET sont
+      donc les deux seules équipes du programme à jouer deux fois -- un artefact
+      assumé de données simulées, jamais un vrai calendrier."""
+    pairings = [
+        ("DET", "CHA"),
+        ("CHI", "MIA"),
+        ("BOS", "DEN"),
+        ("BOS", "DET"),
+    ]
+    return [
+        create_scheduled_game(db, league.teams[home], league.teams[away], game_date=league.target_date)
+        for home, away in pairings
+    ]
+
+
 def main() -> None:
     ensure_not_real_database(SQLALCHEMY_DATABASE_URL)
 
@@ -120,13 +157,18 @@ def main() -> None:
 
         league = build_league(db, target_date=current_nba_date())
         apply_sample_injuries(league)
-        games = create_full_slate(db, league)
+        games = create_dashboard_demo_slate(db, league)
         db.commit()
 
         player_count = sum(len(r.others) + (1 if r.rookie else 0) for r in league.rosters.values())
         print(f"Calendrier simulé créé pour le {league.target_date.isoformat()} :")
         print(f"  - {len(league.teams)} équipes, {player_count} joueurs")
         print(f"  - {len(games)} matchs programmés")
+        print("    DET @ CHA (fiabilité moyenne, AUCUNE pastille de contexte des deux côtés)")
+        print("    CHI @ MIA (fiabilité faible -- écart serré)")
+        print("    BOS @ DEN (fiabilité moyenne, pastilles d'absence des deux côtés)")
+        print("    BOS @ DET (fiabilité forte -- BOS et DET jouent deux fois aujourd'hui,")
+        print("               artefact assumé des données simulées)")
         print(f"  - équipe en back-to-back : {league.back_to_back_team}")
         print(f"  - équipe en 3-matchs-en-4-nuits : {league.three_in_four_team}")
         print(f"  - équipe reposée : {league.rested_team}")
