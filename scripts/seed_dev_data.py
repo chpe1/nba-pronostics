@@ -7,19 +7,66 @@ calendrier sur la date du jour (plutôt que la date fixe utilisée pour les
 tests de calibrage) pour que le Dashboard affiche directement les matchs.
 
 Usage :
-    python scripts/seed_dev_data.py
-    python scripts/seed_dev_data.py --reset   # si déjà lancé une fois
+    DATABASE_URL=sqlite:///./nba_pronostics_dev.db python scripts/seed_dev_data.py
+    DATABASE_URL=sqlite:///./nba_pronostics_dev.db python scripts/seed_dev_data.py --reset
+
+DATABASE_URL est OBLIGATOIRE et doit pointer vers une base autre que la vraie
+(nba_pronostics.db) -- voir ensure_not_real_database() ci-dessous. Ce script
+REMPLACE Team/Player/Game/Prediction : jamais contre la vraie base.
 """
 import argparse
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.database import SessionLocal  # noqa: E402
+from sqlalchemy.engine import make_url  # noqa: E402
+
+from app.database import SQLALCHEMY_DATABASE_URL, SessionLocal  # noqa: E402
 from app.models import Game, InjuryStatus, Player, Prediction, Team  # noqa: E402
 from app.services.nba_calendar import current_nba_date  # noqa: E402
 from tests.simulation_data import build_league, create_full_slate  # noqa: E402
+
+# Dupliqué du fallback de app/database.py (SQLALCHEMY_DATABASE_URL) -- on ne peut
+# pas l'importer de là puisque cette variable reflète déjà la config EFFECTIVE
+# (DATABASE_URL appliquée ou non), pas la valeur par défaut en soi. À
+# resynchroniser si ce fallback change un jour dans app/database.py.
+REAL_DATABASE_URL = "sqlite:///./nba_pronostics.db"
+
+
+def resolve_sqlite_path(url: str) -> Path | None:
+    """Chemin de fichier RÉSOLU d'une URL sqlite, ou None si elle ne désigne
+    pas un fichier réel (:memory:, backend non-sqlite). Passe par
+    sqlalchemy.engine.make_url plutôt qu'un découpage de chaîne à la main --
+    gère nativement les variantes relatives/absolues, slashes Windows compris."""
+    parsed = make_url(url)
+    if parsed.get_backend_name() != "sqlite" or not parsed.database or parsed.database == ":memory:":
+        return None
+    return Path(parsed.database).resolve()
+
+
+def ensure_not_real_database(configured_url: str) -> None:
+    """Refuse l'exécution si `configured_url` (DATABASE_URL appliquée, ou son
+    absence) résout vers le MÊME FICHIER que la vraie base -- comparaison sur
+    les chemins résolus, pas les chaînes brutes : 'sqlite:///./nba_pronostics.db'
+    et un chemin absolu vers ce même fichier doivent être reconnus comme
+    identiques. os.path.normcase() en plus de resolve() : Windows est
+    insensible à la casse, .resolve() seul ne la normalise pas."""
+    configured = resolve_sqlite_path(configured_url)
+    real = resolve_sqlite_path(REAL_DATABASE_URL)
+    if configured is None or real is None:
+        return  # pas de fichier réel identifiable (:memory:...) -- rien à protéger ici
+    if os.path.normcase(str(configured)) == os.path.normcase(str(real)):
+        raise SystemExit(
+            "Refus d'exécution : la base ciblée est la VRAIE base "
+            f"({real}).\n"
+            "Elle contient le calendrier 2026-2027, le classement N-1, 582 joueurs "
+            "et la draft 2026 -- ce script REMPLACE Team/Player/Game/Prediction, "
+            "jamais contre cette base.\n\n"
+            "Relancez avec une base de développement séparée, par exemple :\n"
+            "  DATABASE_URL=sqlite:///./nba_pronostics_dev.db python scripts/seed_dev_data.py"
+        )
 
 
 def reset_existing_data(db) -> None:
@@ -49,6 +96,8 @@ def apply_sample_injuries(league) -> None:
 
 
 def main() -> None:
+    ensure_not_real_database(SQLALCHEMY_DATABASE_URL)
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--reset",
