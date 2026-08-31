@@ -221,7 +221,7 @@ const awayPastilles = computed(() =>
 
     <div class="mt-3 border-t border-border pt-2 text-sm">
       <template v-if="isRevealed">
-        <span class="text-text-secondary">Écart projeté :</span>
+        <span class="text-text-secondary">Écart projeté : </span>
         <span class="font-mono tabular-nums font-medium text-text">{{ Math.abs(prediction.spread).toFixed(2) }}</span>
       </template>
       <span v-else-if="isUpcoming" class="text-text-disabled">

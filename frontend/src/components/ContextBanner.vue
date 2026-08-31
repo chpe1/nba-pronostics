@@ -23,6 +23,33 @@ const showcaseGame = computed(() => {
   )
 })
 
+// §9.2 : LE PRONOSTIC occupe la position dominante -- pas systématiquement l'équipe extérieure.
+// Jusqu'ici le bandeau affichait toujours away puis home (comme GameCard.vue), une convention de
+// lecture qui n'a de sens QUE parce que GameCard indique le favori par la couleur/le poids du
+// texte, jamais par la position -- ici, la position EST le message ("mets en avant LE
+// PRONOSTIC"), donc la reprendre telle quelle mettait en avant l'équipe battue à chaque fois que
+// le favori était l'équipe extérieure (repéré en recette, 2026-08-31). Les deux notes portaient
+// aussi la même couleur (text-accent-on hérité du fond, aucune distinction) -- contraire à §10.3
+// ("celle du favori à l'accent, l'autre atténuée"), corrigé dans le même mouvement ci-dessous.
+const winner = computed(() => {
+  if (!showcaseGame.value) return null
+  const g = showcaseGame.value
+  const isHome = g.prediction.predicted_winner_team_id === g.home_team_id
+  return {
+    abbreviation: isHome ? g.home_team_abbreviation : g.away_team_abbreviation,
+    note: isHome ? g.prediction.home_team_note : g.prediction.away_team_note,
+  }
+})
+const loser = computed(() => {
+  if (!showcaseGame.value) return null
+  const g = showcaseGame.value
+  const isHome = g.prediction.predicted_winner_team_id === g.home_team_id
+  return {
+    abbreviation: isHome ? g.away_team_abbreviation : g.home_team_abbreviation,
+    note: isHome ? g.prediction.away_team_note : g.prediction.home_team_note,
+  }
+})
+
 // Non révélé (§9.1) : deux raisons distinctes, mais un même traitement visuel
 // neutre -- priorité au message "aucun pronostic calculé" dès qu'au moins un
 // match de la journée en relève (§9.1, décision consignée). Corrigé le
@@ -37,8 +64,8 @@ const upcomingCount = computed(() => props.games.filter((g) => g.prediction?.is_
   <div v-if="showcaseGame" class="mb-4 space-y-3 rounded-xl bg-accent-tint p-4 text-accent-on">
     <p class="text-xs font-medium">Pronostic du jour</p>
     <div class="flex items-center justify-between font-title">
-      <span>{{ showcaseGame.away_team_abbreviation }}</span>
-      <span class="font-mono tabular-nums">{{ showcaseGame.prediction.away_team_note.toFixed(2) }}</span>
+      <span>{{ winner.abbreviation }}</span>
+      <span class="font-mono tabular-nums">{{ winner.note.toFixed(2) }}</span>
     </div>
     <DivergentGauge
       compact
@@ -49,9 +76,9 @@ const upcomingCount = computed(() => props.games.filter((g) => g.prediction?.is_
       :reliability="showcaseGame.prediction.reliability"
       :threshold-high="showcaseGame.reliability_threshold_high"
     />
-    <div class="flex items-center justify-between font-title">
-      <span>{{ showcaseGame.home_team_abbreviation }}</span>
-      <span class="font-mono tabular-nums">{{ showcaseGame.prediction.home_team_note.toFixed(2) }}</span>
+    <div class="flex items-center justify-between font-title text-accent-on/60">
+      <span>{{ loser.abbreviation }}</span>
+      <span class="font-mono tabular-nums">{{ loser.note.toFixed(2) }}</span>
     </div>
   </div>
 

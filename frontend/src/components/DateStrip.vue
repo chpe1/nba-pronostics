@@ -100,6 +100,14 @@ function setItemRef(iso, el) {
 
 function scrollToSelected(behavior = 'smooth') {
   itemRefs.value[props.modelValue]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior })
+  // Resynchronisation explicite, pas seulement l'évènement 'scroll' passif ci-dessous : vérifié en
+  // navigateur (2026-08-31, ≥1280px) que quand les 11 jours tiennent déjà entièrement dans le
+  // conteneur, scrollIntoView() ne bouge rien et ne déclenche donc AUCUN évènement 'scroll' --
+  // visibleIso restait alors bloqué indéfiniment sur son ancienne valeur, désynchronisé du jour
+  // réellement au centre visuel (cause du libellé de mois faux, repéré en recette). Pour le cas
+  // 'smooth' où un vrai défilement a lieu, cet appel immédiat donne une valeur provisoire qui sera
+  // affinée par les évènements 'scroll' réels de l'animation, sans régression.
+  updateVisibleFromScroll()
 }
 
 watch(() => props.modelValue, () => nextTick(() => scrollToSelected()))
@@ -122,7 +130,26 @@ function updateVisibleFromScroll() {
   const container = stripRef.value
   if (!container) return
   const containerRect = container.getBoundingClientRect()
-  const centerX = containerRect.left + containerRect.width / 2
+  // Le conteneur (flex, display de bloc) s'étire à la largeur de SON PARENT même quand les 11
+  // jours ne la remplissent pas (constaté en navigateur, >=1280px : la carte est bien plus large
+  // que les 11 boutons, empaquetés à gauche par le flex par défaut) -- centrer sur la largeur du
+  // conteneur placerait alors le "centre" loin à droite des boutons, et la recherche du plus
+  // proche retombait toujours sur le DERNIER jour affiché, jamais le jour réellement au centre
+  // visuel (cause du libellé de mois faux/incohérent constaté en recette). `scrollWidth` ne sert
+  // pas à distinguer les deux cas : pour un conteneur dont le contenu ne déborde pas, il vaut la
+  // largeur du conteneur lui-même (vérifié en navigateur), pas celle du contenu réel -- mesuré ici
+  // directement sur les boutons rendus (premier/dernier jour de la fenêtre courante).
+  const isos = dates.value
+  const firstEl = itemRefs.value[isos[0]]
+  const lastEl = itemRefs.value[isos[isos.length - 1]]
+  let centerX = containerRect.left + containerRect.width / 2
+  if (firstEl && lastEl) {
+    const contentLeft = firstEl.getBoundingClientRect().left
+    const contentRight = lastEl.getBoundingClientRect().right
+    if (contentRight - contentLeft <= containerRect.width) {
+      centerX = contentLeft + (contentRight - contentLeft) / 2
+    }
+  }
   let closestIso = null
   let closestDistance = Infinity
   for (const iso of dates.value) {
