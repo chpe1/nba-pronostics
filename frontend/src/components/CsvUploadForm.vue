@@ -183,7 +183,7 @@ onMounted(() => {
       <button
         v-if="preview"
         type="button"
-        class="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        class="min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
         :disabled="isLoading"
         @click="upload(false)"
       >

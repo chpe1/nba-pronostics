@@ -62,7 +62,7 @@ onMounted(loadCounts)
         <h2 class="text-sm font-semibold text-text">Audit d'intégrité du calendrier</h2>
         <button
           type="button"
-          class="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+          class="min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
           :disabled="isAuditing"
           @click="runAudit"
         >
