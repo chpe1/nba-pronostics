@@ -81,7 +81,7 @@ onMounted(loadTeams)
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-accent-text">Équipes</h1>
+    <h1 class="text-xl font-semibold text-text">Équipes</h1>
     <p class="text-sm text-text-secondary">
       Corriger une équipe à la main (ex : win_pct erroné après un mauvais import). Un ajustement ici
       reste un simple placeholder : le prochain import CSV concerné l'écrase normalement, sans
@@ -150,7 +150,7 @@ onMounted(loadTeams)
 
       <button
         type="button"
-        class="min-h-11 w-full rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        class="min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
         :disabled="savingId === team.id"
         @click="save(team)"
       >

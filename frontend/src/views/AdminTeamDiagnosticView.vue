@@ -111,7 +111,7 @@ onMounted(loadTeams)
 
 <template>
   <section class="mx-auto max-w-3xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-accent-text">Diagnostic équipes</h1>
+    <h1 class="text-xl font-semibold text-text">Diagnostic équipes</h1>
     <p class="text-sm text-text-secondary">
       Décomposition détaillée des pronostics déjà calculés pour une équipe, et simulateur ponctuel
       pour tester d'autres réglages sans rien enregistrer.
@@ -205,7 +205,7 @@ onMounted(loadTeams)
 
         <button
           type="button"
-          class="w-full rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+          class="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
           :disabled="isSimulating"
           @click="simulate"
         >

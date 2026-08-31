@@ -43,7 +43,7 @@ onMounted(loadCounts)
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-accent-text">Base de données</h1>
+    <h1 class="text-xl font-semibold text-text">Base de données</h1>
 
     <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
 

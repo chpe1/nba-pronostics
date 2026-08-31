@@ -64,7 +64,7 @@ onMounted(loadSettings)
 
 <template>
   <section class="mx-auto max-w-md space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-accent-text">Réglages généraux de l'algorithme</h1>
+    <h1 class="text-xl font-semibold text-text">Réglages généraux de l'algorithme</h1>
 
     <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
     <p v-if="successMessage" class="rounded-lg bg-success/10 px-3 py-2 text-sm text-success">
@@ -173,7 +173,7 @@ onMounted(loadSettings)
 
       <button
         type="button"
-        class="w-full rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        class="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
         :disabled="isSaving"
         @click="save"
       >

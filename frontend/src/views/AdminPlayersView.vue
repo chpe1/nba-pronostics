@@ -137,7 +137,7 @@ onMounted(async () => {
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
-    <h1 class="text-xl font-semibold text-accent-text">Joueurs</h1>
+    <h1 class="text-xl font-semibold text-text">Joueurs</h1>
     <p class="text-sm text-text-secondary">
       Ajouter ou corriger un joueur à la main (rookie drafté, correction ponctuelle). Un
       PER/MPG saisi ici est un simple placeholder : le prochain import CSV Advanced du
@@ -175,7 +175,7 @@ onMounted(async () => {
       </div>
       <button
         type="button"
-        class="min-h-11 w-full rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        class="min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
         :disabled="isCreating"
         @click="createPlayer"
       >
@@ -233,7 +233,7 @@ onMounted(async () => {
       <div class="flex gap-2">
         <button
           type="button"
-          class="min-h-11 flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+          class="min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
           :disabled="savingId === player.id || deletingId === player.id"
           @click="save(player)"
         >
