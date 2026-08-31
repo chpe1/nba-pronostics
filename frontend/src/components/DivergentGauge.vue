@@ -56,7 +56,12 @@ const ariaLabel = computed(() => {
     role="img"
     :aria-label="ariaLabel"
   >
-    <div class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border" aria-hidden="true" />
+    <!-- Repère central : bg-text-secondary, jamais bg-border -- mesuré et vérifié en navigateur
+         (2026-08-31) que --border sur --surface-sunken donne ~1,3:1, très sous le seuil de 3:1
+         requis pour un élément non textuel (WCAG 1.4.11), donc invisible en pratique malgré une
+         géométrie de jauge par ailleurs correcte (offset/transform vérifiés justes séparément).
+         --text-secondary y donne ~7,5:1 dans les deux modes. -->
+    <div class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-text-secondary" aria-hidden="true" />
     <div
       class="absolute inset-y-0 left-1/2 w-1/2 origin-left rounded-r-full transition-transform duration-[600ms] ease-out motion-reduce:transition-none"
       :class="treatment.barFill"
