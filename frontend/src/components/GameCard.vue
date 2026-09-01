@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import DivergentGauge from './DivergentGauge.vue'
 import { reliabilityTreatment } from '@/constants/reliability'
 import { calendarLabels } from '@/utils/pastilles'
+import { teamRailColor } from '@/utils/teamColors'
+import { useThemeStore } from '@/stores/theme'
 
 const props = defineProps({
   game: {
@@ -24,6 +26,16 @@ const gameTime = computed(() =>
 )
 
 const prediction = computed(() => props.game.prediction)
+
+// Filet de couleur d'équipe (docs/design-v1.md §5.7) : troisième axe,
+// indépendant du mode clair/sombre et de l'accent -- calculé pour rester
+// visible sur bg-surface dans le mode courant (teamRailColor lit
+// useThemeStore, jamais data-theme lu directement ici). null pour toute
+// équipe hors du périmètre des 6 de la base de développement -- pas de
+// filet affiché dans ce cas (voir utils/teamColors.js).
+const themeStore = useThemeStore()
+const homeRailColor = computed(() => teamRailColor(props.game.home_team_abbreviation, themeStore.theme))
+const awayRailColor = computed(() => teamRailColor(props.game.away_team_abbreviation, themeStore.theme))
 
 // Trois états distincts (docs/design-v1.md §10.3, découverts au diagnostic du
 // Lot 2 -- le document confondait les deux premiers jusque-là) :
@@ -151,11 +163,19 @@ const awayPastilles = computed(() =>
     <div class="space-y-2">
       <div class="flex items-center justify-between">
         <div>
-          <div
-            class="font-title"
-            :class="isRevealed ? (isAwayWinner ? 'text-text' : 'text-text-secondary') : 'text-text'"
-          >
-            {{ game.away_team_abbreviation }}
+          <div class="flex items-stretch gap-1.5">
+            <span
+              v-if="awayRailColor"
+              class="w-[3px] rounded-full"
+              :style="{ backgroundColor: awayRailColor }"
+              aria-hidden="true"
+            />
+            <div
+              class="font-title"
+              :class="isRevealed ? (isAwayWinner ? 'text-text' : 'text-text-secondary') : 'text-text'"
+            >
+              {{ game.away_team_abbreviation }}
+            </div>
           </div>
           <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
             <span
@@ -181,11 +201,19 @@ const awayPastilles = computed(() =>
 
       <div class="flex items-center justify-between">
         <div>
-          <div
-            class="font-title"
-            :class="isRevealed ? (isHomeWinner ? 'text-text' : 'text-text-secondary') : 'text-text'"
-          >
-            {{ game.home_team_abbreviation }}
+          <div class="flex items-stretch gap-1.5">
+            <span
+              v-if="homeRailColor"
+              class="w-[3px] rounded-full"
+              :style="{ backgroundColor: homeRailColor }"
+              aria-hidden="true"
+            />
+            <div
+              class="font-title"
+              :class="isRevealed ? (isHomeWinner ? 'text-text' : 'text-text-secondary') : 'text-text'"
+            >
+              {{ game.home_team_abbreviation }}
+            </div>
           </div>
           <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
             <span
