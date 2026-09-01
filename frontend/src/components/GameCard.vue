@@ -66,6 +66,15 @@ const isAwayWinner = computed(
 
 const treatment = computed(() => (isRevealed.value ? reliabilityTreatment(prediction.value.reliability) : null))
 
+// §10.2 : "faible" retire tout accent de la carte -- pas un 3e code couleur
+// de la barre (elle n'en porte déjà aucun, voir DivergentGauge.vue), mais
+// une ABSENCE d'accent partout où "forte"/"moyenne" en poseraient un (note
+// du favori, jauge). Régression corrigée le 2026-09-01 : le retrait de
+// barFill (jauge toujours bg-accent, décision distincte -- la barre ne doit
+// jamais coder élevée/modérée) avait par erreur aussi supprimé ce retrait
+// pour "faible", qui n'est pas la même règle.
+const showsAccent = computed(() => isRevealed.value && prediction.value.reliability !== 'faible')
+
 // La ligne disparaît entièrement (retourne null, pas un texte creux) quand
 // l'équipe n'a aucun match FINISHED dans la fenêtre -- c'est l'état permanent
 // des 30 équipes tant que la saison n'a pas commencé (corrigé en recette,
@@ -192,7 +201,7 @@ const awayPastilles = computed(() =>
             {{ formatRecord(game.away_team_recent_record) }}
           </div>
         </div>
-        <span v-if="isRevealed" class="font-mono tabular-nums" :class="isAwayWinner ? 'text-accent-text' : 'text-text-secondary'">
+        <span v-if="isRevealed" class="font-mono tabular-nums" :class="showsAccent && isAwayWinner ? 'text-accent-text' : 'text-text-secondary'">
           {{ prediction.away_team_note.toFixed(2) }}
         </span>
       </div>
@@ -230,7 +239,7 @@ const awayPastilles = computed(() =>
             {{ formatRecord(game.home_team_recent_record) }}
           </div>
         </div>
-        <span v-if="isRevealed" class="font-mono tabular-nums" :class="isHomeWinner ? 'text-accent-text' : 'text-text-secondary'">
+        <span v-if="isRevealed" class="font-mono tabular-nums" :class="showsAccent && isHomeWinner ? 'text-accent-text' : 'text-text-secondary'">
           {{ prediction.home_team_note.toFixed(2) }}
         </span>
       </div>
@@ -243,6 +252,7 @@ const awayPastilles = computed(() =>
         :home-team-abbreviation="game.home_team_abbreviation"
         :away-team-abbreviation="game.away_team_abbreviation"
         :threshold-high="game.reliability_threshold_high"
+        :muted="!showsAccent"
       />
     </div>
 

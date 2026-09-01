@@ -11,6 +11,13 @@ const props = defineProps({
   // "Jauge réduite" du bandeau vitrine (§9.2) -- même mécanique, juste plus
   // fine, pas un second composant.
   compact: { type: Boolean, default: false },
+  // §10.2 : "faible" retire tout accent de la carte -- PAS un 3e code
+  // couleur de la barre (elle n'encode déjà pas élevée/modérée, voir plus
+  // bas), un simple binaire décidé par l'appelant (GameCard.vue), qui seul
+  // connaît le niveau de fiabilité. Défaut false : le bandeau vitrine
+  // (ContextBanner.vue) ne passe pas ce prop et garde son traitement propre
+  // (§9.2, décision distincte, non concernée par cette règle).
+  muted: { type: Boolean, default: false },
 })
 
 // spread : positif = domicile favori (même convention que le backend, voir
@@ -53,24 +60,29 @@ const ariaLabel = computed(() => {
     role="img"
     :aria-label="ariaLabel"
   >
-    <!-- Toujours bg-accent, quel que soit le niveau de fiabilité (retour en arrière assumé,
-         2026-08-31, voir docs/design-v1.md §10.1) : la barre porte l'écart entre les deux notes et
-         désigne le favori (par sa position, jamais par sa couleur -- les deux côtés ont toujours
-         partagé la même couleur), pas le niveau de confiance -- déjà annoncé par la pastille de
-         mention (GameCard.vue, RELIABILITY_TREATMENT.pillClass). Coder les deux sur la jauge
-         doublait l'information sans jamais dire qui est favori par la couleur. -->
+    <!-- bg-accent OU bg-neutral selon `muted`, jamais un 3e code couleur (2026-08-31,
+         docs/design-v1.md §10.1/§10.2) : la barre ne distingue TOUJOURS PAS élevée de modérée
+         (les deux restent bg-accent, comme au 2026-08-31 -- désigne le favori par sa position,
+         jamais par sa couleur, déjà annoncé par la pastille de mention, GameCard.vue). `muted`
+         n'ajoute pas un niveau : il retire l'accent en bloc pour "faible" (§10.2, "aucun accent,
+         gris neutre"), exactement comme la note du favori dans GameCard.vue -- un binaire
+         "accent ou pas", pas une 3e couleur. Régression du 2026-09-01 : bg-accent était resté
+         inconditionnel après le retrait de barFill, annulant le refus de recommander de §10.2. -->
     <div
-      class="absolute inset-y-0 left-1/2 w-1/2 origin-left rounded-r-full bg-accent transition-transform duration-[600ms] ease-out motion-reduce:transition-none"
+      class="absolute inset-y-0 left-1/2 w-1/2 origin-left rounded-r-full transition-transform duration-[600ms] ease-out motion-reduce:transition-none"
+      :class="muted ? 'bg-neutral' : 'bg-accent'"
       :style="{ transform: `scaleX(${rightScale})` }"
       aria-hidden="true"
     />
     <div
-      class="absolute inset-y-0 right-1/2 w-1/2 origin-right rounded-l-full bg-accent transition-transform duration-[600ms] ease-out motion-reduce:transition-none"
+      class="absolute inset-y-0 right-1/2 w-1/2 origin-right rounded-l-full transition-transform duration-[600ms] ease-out motion-reduce:transition-none"
+      :class="muted ? 'bg-neutral' : 'bg-accent'"
       :style="{ transform: `scaleX(${leftScale})` }"
       aria-hidden="true"
     />
-    <!-- Repère central : trois défauts cumulés, chacun mesuré en navigateur avant correction --
-         un token à bon contraste sur le papier ne suffit pas si le pixel réel ne le porte jamais.
+    <!-- Repère central : trois défauts cumulés initialement (2026-08-31), chacun mesuré en
+         navigateur avant correction -- un token à bon contraste sur le papier ne suffit pas si le
+         pixel réel ne le porte jamais.
          1. Peint APRÈS les deux barres (pas avant) : le côté favori a TOUJOURS son bord intérieur
             exactement au centre par construction -- peint avant elle, le repère se faisait
             recouvrir pile à cet endroit, quelle que soit sa couleur.
@@ -80,12 +92,25 @@ const ariaLabel = computed(() => {
             n'affiche la vraie couleur du token (vérifié par lecture directe des pixels rendus :
             deux tons intermédiaires ternes, jamais rgb(156,163,175)). 2px laisse une chance réelle
             qu'au moins un pixel plein porte la couleur choisie.
-         3. bg-text, jamais bg-text-secondary : --neutral (remplissage de la barre au niveau
-            "faible") et --text-secondary sont la MÊME valeur hexacodée (#9CA3AF, vérifié dans
-            style.css) -- un repère de cette couleur est invisible par définition sur ce
-            remplissage précis, pas seulement mal contrasté. --text (quasi blanc/quasi noir selon
-            le mode) reste distinct des trois remplissages possibles (accent/warning/neutral) ET du
-            fond, dans les deux modes. -->
-    <div class="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-text" aria-hidden="true" />
+         3. bg-text, jamais bg-text-secondary : --neutral et --text-secondary sont la MÊME valeur
+            hexacodée (#9CA3AF, vérifié dans style.css) -- un repère de cette couleur serait
+            invisible par définition sur un remplissage neutre, pas seulement mal contrasté.
+
+         4e défaut, distinct des trois premiers, trouvé le 2026-09-01 en réintroduisant `muted`
+         (§10.2) : --text reste bien DIFFÉRENT de --neutral dans les deux modes (le piège nommé au
+         point 3 ne se reproduit pas), mais leurs LUMINANCES sont trop proches pour satisfaire
+         3:1 (WCAG 1.4.11) une fois le remplissage neutre réellement mesuré au pixel --
+         2,33:1 en sombre, 2,66:1 en clair, sous le seuil dans les DEUX modes. "Différent" ne
+         voulait pas dire "assez contrasté" -- une distinction que le point 3 n'avait pas eu à
+         faire tant que le remplissage restait à l'accent (là, --text donne largement plus de 3:1
+         dans les deux modes, vérifié). D'où un repère CONDITIONNEL comme les barres elles-mêmes :
+         bg-text contre le remplissage à l'accent (inchangé, déjà mesuré conforme), bg-surface
+         contre le remplissage neutre (mesuré 6,6:1 sombre / 6,8:1 clair) -- jamais une 3e couleur
+         qui coderait un niveau, seulement celle qui reste lisible sur le fond réellement présent. -->
+    <div
+      class="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2"
+      :class="muted ? 'bg-surface' : 'bg-text'"
+      aria-hidden="true"
+    />
   </div>
 </template>
