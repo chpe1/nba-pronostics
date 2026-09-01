@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import DivergentGauge from './DivergentGauge.vue'
+import { reliabilityTreatment } from '@/constants/reliability'
 
 // Bandeau contextuel (docs/design-v1.md §9). Quatre états dans le document,
 // deux implémentés ici (vitrine / non révélé) -- passé (§9.3) réutilise le
@@ -50,6 +51,16 @@ const loser = computed(() => {
   }
 })
 
+// Mention de confiance (§9.2) : même libellé/vocabulaire que la pastille des
+// cartes (GameCard.vue) -- réutilise le même mapping (reliabilityTreatment),
+// n'en crée pas un second. Ne change ni la sélection du match (toujours le
+// plus grand écart) ni sa mise en avant : un match "Trop serré" reste
+// affiché tel quel, juste étiqueté franchement -- comme une carte le fait
+// déjà pour ce niveau (elle ne masque pas non plus le gagnant pronostiqué).
+const mention = computed(() =>
+  showcaseGame.value ? reliabilityTreatment(showcaseGame.value.prediction.reliability).mention : null,
+)
+
 // Non révélé (§9.1) : deux raisons distinctes, mais un même traitement visuel
 // neutre -- priorité au message "aucun pronostic calculé" dès qu'au moins un
 // match de la journée en relève (§9.1, décision consignée). Corrigé le
@@ -62,7 +73,21 @@ const upcomingCount = computed(() => props.games.filter((g) => g.prediction?.is_
 
 <template>
   <div v-if="showcaseGame" class="mb-4 space-y-3 rounded-xl bg-accent-tint p-4 text-accent-on">
-    <p class="text-xs font-medium">Pronostic du jour</p>
+    <div class="flex items-center justify-between">
+      <p class="text-xs font-medium">Pronostic du jour</p>
+      <!-- Traitement uniforme (pas de couleur par niveau) : bg-accent-tint est déjà l'aplat
+           d'accent du bandeau (§5.3, "l'orange est piégeux" en clair) -- y superposer les
+           pastilles colorées des cartes (bg-warning/15, bg-neutral/15...) exposerait un rendu
+           jamais mesuré sur ce fond précis. accent-on/accent-tint sont les deux seules valeurs
+           mesurées et sûres dans les DEUX modes sur ce fond précis (voir docs/design-v1.md
+           §9.2) : le même contraste sert donc aux trois niveaux, seul le libellé (mention)
+           distingue "Confiance élevée"/"Confiance modérée"/"Trop serré" -- l'information ne
+           repose jamais sur la seule couleur (§12), elle n'a ici tout simplement pas de couleur
+           du tout à départager. -->
+      <span class="rounded-full bg-accent-on/15 px-2 py-0.5 text-[11px] font-medium text-accent-on">
+        {{ mention }}
+      </span>
+    </div>
     <div class="flex items-center justify-between font-title">
       <span>{{ winner.abbreviation }}</span>
       <span class="font-mono tabular-nums">{{ winner.note.toFixed(2) }}</span>
