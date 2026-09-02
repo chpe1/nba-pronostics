@@ -212,12 +212,6 @@ const awayPastilles = computed(() =>
         </span>
       </div>
 
-      <!-- Alignée sur la largeur du badge (w-10, pas le reste de la ligne) --
-           ancrée à un repère fixe de la mise en page plutôt que centrée sur
-           toute la largeur de la carte (signalé en recette comme "flottant
-           sans alignement", §10.3). -->
-      <div class="w-10 text-center text-xs text-text-disabled">@</div>
-
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div
@@ -229,11 +223,24 @@ const awayPastilles = computed(() =>
             {{ game.home_team_abbreviation }}
           </div>
           <div>
-            <div
-              class="font-title"
-              :class="isRevealed ? (isHomeWinner ? 'text-text' : 'text-text-secondary') : 'text-text'"
-            >
-              {{ game.home_team_abbreviation }}
+            <div class="flex items-baseline gap-1.5">
+              <div
+                class="font-title"
+                :class="isRevealed ? (isHomeWinner ? 'text-text' : 'text-text-secondary') : 'text-text'"
+              >
+                {{ game.home_team_abbreviation }}
+              </div>
+              <!-- Remplace le "@" isolé (§10.3, signalé en recette comme
+                   orphelin, flottant sur sa propre ligne) : dit l'information
+                   ("qui reçoit") en toutes lettres, sans dépendre de la
+                   convention NBA extérieur-puis-domicile ni de la seule
+                   position. Une seule mention suffit -- sa présence sur cette
+                   ligne signale déjà que l'autre équipe est l'extérieure.
+                   text-disabled mesuré à 4,71:1 (sombre) / 5,20:1 (clair)
+                   contre bg-surface : conforme, pas d'escalade vers
+                   text-secondary nécessaire (voir §5.2 pour le cas différent
+                   où text-disabled est interdit, sur --surface-info). -->
+              <span class="text-[10px] font-normal uppercase tracking-wide text-text-disabled">Domicile</span>
             </div>
             <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
               <span
