@@ -20,8 +20,10 @@ function badgeFromRawColor(rawHex, backgroundHex) {
 }
 
 // Couleurs du monogramme des deux équipes d'un match (docs/design-v1.md
-// §5.7/§10.3) : {fill, text} par équipe, ou null si l'équipe est hors du
-// périmètre des 6 de la base de développement (TEAM_COLORS).
+// §5.7/§10.3) : {fill, text} par équipe, ou null si l'abréviation ne
+// correspond à aucune entrée de TEAM_COLORS (garde-fou générique, les 30
+// équipes NBA y figurent depuis le 2026-09-02 -- ne devrait plus se
+// déclencher en usage normal).
 //
 // Les deux équipes sont résolues ENSEMBLE (pas deux appels indépendants
 // par équipe) car la couleur de l'équipe EXTÉRIEURE dépend de celle du

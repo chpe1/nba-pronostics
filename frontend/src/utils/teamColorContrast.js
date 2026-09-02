@@ -19,13 +19,20 @@ import {
 export const MIN_BADGE_FILL_CONTRAST = 3
 export const MIN_BADGE_TEXT_CONTRAST = 4.5
 
-// Les deux seules couleurs de texte candidates pour "s'asseoir" sur un fond
-// de badge -- littéralement les tokens --text des deux modes (quasi blanc
-// sombre, quasi noir clair), jamais un blanc/noir pur inventé pour
-// l'occasion : ce sont déjà les deux extrêmes que l'app utilise et a
-// mesurés ailleurs (style.css §5.2/§5.3).
-const NEAR_WHITE_TEXT = '#F5F5F7'
-const NEAR_BLACK_TEXT = '#14161C'
+// Blanc et noir PURS, pas les tokens --text de l'app (quasi blanc
+// `#F5F5F7`/quasi noir `#14161C`) -- corrigé le 2026-09-02, à l'extension à
+// 30 équipes. La preuve "un des deux choix atteint toujours 4,5:1" (voir
+// pickBadgeTextColor ci-dessous) ne vaut que pour des extrêmes à L=0/L=1
+// exacts : avec les tokens de l'app (L≈0,008/L≈0,914, pas 0/1), un
+// intervalle de clarté [0,164 ; 0,211] n'est couvert par AUCUN des deux --
+// découvert empiriquement sur 7 équipes (ATL, MEM, OKC, ORL, PHI, POR, WAS)
+// dont au moins une couleur y tombait, ratio mesuré 4,17-4,38, sous 4,5:1.
+// Le blanc/noir purs sont la seule paire qui ferme mathématiquement cet
+// écart pour n'importe quelle teinte de fond -- une exception délibérée à
+// la convention "jamais de blanc/noir pur inventé" (qui vaut pour tout le
+// reste de l'app, où --text suffit) : ici, la preuve mathématique l'exige.
+const TEXT_ON_BADGE_LIGHT = '#FFFFFF'
+const TEXT_ON_BADGE_DARK = '#000000'
 
 function maxChromaInGamut(L, chromaCeiling, hue) {
   let lo = 0
@@ -82,18 +89,20 @@ export function adjustForContrast(hex, backgroundHex, minContrast = MIN_BADGE_FI
   return candidate
 }
 
-// Couleur du tricode À L'INTÉRIEUR du badge : le blanc ou le noir "de
-// l'app" (jamais une 3e teinte, jamais une couleur qui coderait autre
-// chose), celui des deux qui contraste le plus contre le fond du badge.
-// Mathématiquement, pour tout fond, l'un des deux extrêmes atteint 4,5:1
-// (les deux formules de contraste WCAG contre blanc et contre noir se
-// croisent avant leurs seuils respectifs -- vérifié : aucun fond ne peut
-// faire échouer les deux à la fois) ; le ratio est quand même retourné et
-// vérifié par test, jamais supposé.
+// Couleur du tricode À L'INTÉRIEUR du badge : blanc ou noir purs (jamais
+// une 3e teinte, jamais une couleur qui coderait autre chose), celui des
+// deux qui contraste le plus contre le fond du badge. Mathématiquement,
+// pour tout fond, l'un des deux atteint 4,5:1 : contre le noir pur (L=0),
+// le seuil est franchi dès que la luminance du fond dépasse 0,175 ; contre
+// le blanc pur (L=1), dès qu'elle descend sous 0,183 -- ces deux plages se
+// chevauchent (0,175 < 0,183), aucune luminance de fond ne peut donc faire
+// échouer les deux à la fois. Ne vaut QUE pour des extrêmes à 0/1 exacts
+// (voir plus haut) ; le ratio est quand même retourné et vérifié par test
+// sur les 30 équipes, jamais supposé.
 export function pickBadgeTextColor(fillHex) {
-  const contrastWithWhite = contrastRatio(fillHex, NEAR_WHITE_TEXT)
-  const contrastWithBlack = contrastRatio(fillHex, NEAR_BLACK_TEXT)
+  const contrastWithWhite = contrastRatio(fillHex, TEXT_ON_BADGE_LIGHT)
+  const contrastWithBlack = contrastRatio(fillHex, TEXT_ON_BADGE_DARK)
   return contrastWithWhite >= contrastWithBlack
-    ? { color: NEAR_WHITE_TEXT, ratio: contrastWithWhite }
-    : { color: NEAR_BLACK_TEXT, ratio: contrastWithBlack }
+    ? { color: TEXT_ON_BADGE_LIGHT, ratio: contrastWithWhite }
+    : { color: TEXT_ON_BADGE_DARK, ratio: contrastWithBlack }
 }

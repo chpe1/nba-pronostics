@@ -47,8 +47,11 @@ describe('resolveTeamBadges', () => {
     expect(away.fill.toUpperCase()).toBe('#007A33')
   })
 
-  it('renvoie null pour une équipe hors du périmètre des 6, sans lever d’erreur', () => {
-    const { home, away } = resolveTeamBadges('LAL', 'BOS', 'dark')
+  it('renvoie null pour une abréviation inconnue de TEAM_COLORS, sans lever d’erreur', () => {
+    // 'ZZZ' : aucune équipe NBA, ne peut jamais exister dans TEAM_COLORS
+    // (30 équipes désormais couvertes, contrairement à LAL utilisé ici
+    // avant l'extension du 2026-09-02).
+    const { home, away } = resolveTeamBadges('ZZZ', 'BOS', 'dark')
     expect(home).toBeNull()
     expect(away).not.toBeNull()
   })

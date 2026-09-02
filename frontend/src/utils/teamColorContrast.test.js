@@ -81,7 +81,7 @@ describe('adjustForContrast (OKLCH, teinte constante)', () => {
 })
 
 describe('pickBadgeTextColor', () => {
-  it('choisit toujours une couleur qui atteint 4,5:1, pour tout fond de badge (les 6 équipes, primaire et secondaire, deux modes)', () => {
+  it('choisit toujours une couleur qui atteint 4,5:1, pour tout fond de badge (les 30 équipes, primaire et secondaire, deux modes)', () => {
     for (const { primary, secondary } of Object.values(TEAM_COLORS)) {
       for (const raw of [primary, secondary]) {
         for (const background of [SURFACE_DARK, SURFACE_LIGHT]) {
@@ -93,8 +93,22 @@ describe('pickBadgeTextColor', () => {
     }
   })
 
-  it('prend le blanc sur un fond sombre, le noir sur un fond clair (cas simples)', () => {
-    expect(pickBadgeTextColor('#000000').color).toBe('#F5F5F7')
-    expect(pickBadgeTextColor('#FFFFFF').color).toBe('#14161C')
+  it('prend le blanc pur sur un fond sombre, le noir pur sur un fond clair (cas simples)', () => {
+    expect(pickBadgeTextColor('#000000').color).toBe('#FFFFFF')
+    expect(pickBadgeTextColor('#FFFFFF').color).toBe('#000000')
+  })
+
+  // Régression du 2026-09-02 (extension à 30 équipes) : les tokens --text
+  // de l'app (quasi blanc/quasi noir, pas 0/1 exacts) laissaient un
+  // intervalle de luminance de fond ([0,164 ; 0,211]) sans AUCUN choix
+  // valide -- découvert sur 7 équipes réelles (ATL, MEM, OKC, ORL, PHI,
+  // POR, WAS), jamais sur les 6 de la base de développement (coïncidence,
+  // aucune de leurs couleurs n'y tombait). Corrigé en blanc/noir purs,
+  // seule paire dont la preuve mathématique ne dépend d'aucune teinte de
+  // fond particulière.
+  it('atteint 4,5:1 même pour une luminance de fond dans l’ancien intervalle sans solution (ATL, réel)', () => {
+    const fill = adjustForContrast('#E03A3E', SURFACE_DARK) // inchangée : déjà conforme à 3:1 brute
+    const { ratio } = pickBadgeTextColor(fill)
+    expect(ratio).toBeGreaterThanOrEqual(MIN_BADGE_TEXT_CONTRAST)
   })
 })
