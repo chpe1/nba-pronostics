@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import DivergentGauge from './DivergentGauge.vue'
 import { reliabilityTreatment } from '@/constants/reliability'
 import { calendarLabels } from '@/utils/pastilles'
-import { teamRailColor } from '@/utils/teamColors'
+import { resolveTeamBadges } from '@/utils/teamColors'
 import { useThemeStore } from '@/stores/theme'
 
 const props = defineProps({
@@ -27,15 +27,19 @@ const gameTime = computed(() =>
 
 const prediction = computed(() => props.game.prediction)
 
-// Filet de couleur d'équipe (docs/design-v1.md §5.7) : troisième axe,
-// indépendant du mode clair/sombre et de l'accent -- calculé pour rester
-// visible sur bg-surface dans le mode courant (teamRailColor lit
-// useThemeStore, jamais data-theme lu directement ici). null pour toute
-// équipe hors du périmètre des 6 de la base de développement -- pas de
-// filet affiché dans ce cas (voir utils/teamColors.js).
+// Monogramme d'équipe (docs/design-v1.md §5.7/§10.3) : troisième axe,
+// indépendant du mode clair/sombre et de l'accent -- remplace le filet de
+// 3px écarté en recette (2026-09-02, trop fin et collé au tricode, lu comme
+// une ponctuation plutôt qu'un signal d'identité). resolveTeamBadges lit
+// useThemeStore (jamais data-theme lu directement ici) et résout les DEUX
+// équipes ensemble : la couleur de l'extérieure dépend de celle du
+// domicile (bascule sur sa secondaire en cas de collision perceptuelle,
+// utils/teamColorCollision.js). null pour toute équipe hors du périmètre
+// des 6 de la base de développement -- pas de badge affiché dans ce cas.
 const themeStore = useThemeStore()
-const homeRailColor = computed(() => teamRailColor(props.game.home_team_abbreviation, themeStore.theme))
-const awayRailColor = computed(() => teamRailColor(props.game.away_team_abbreviation, themeStore.theme))
+const badges = computed(() =>
+  resolveTeamBadges(props.game.home_team_abbreviation, props.game.away_team_abbreviation, themeStore.theme),
+)
 
 // Trois états distincts (docs/design-v1.md §10.3, découverts au diagnostic du
 // Lot 2 -- le document confondait les deux premiers jusque-là) :
@@ -171,34 +175,36 @@ const awayPastilles = computed(() =>
 
     <div class="space-y-2">
       <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-stretch gap-1.5">
-            <span
-              v-if="awayRailColor"
-              class="w-[3px] rounded-full"
-              :style="{ backgroundColor: awayRailColor }"
-              aria-hidden="true"
-            />
+        <div class="flex items-center gap-2">
+          <div
+            v-if="badges.away"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xs font-title"
+            :style="{ backgroundColor: badges.away.fill, color: badges.away.text }"
+            aria-hidden="true"
+          >
+            {{ game.away_team_abbreviation }}
+          </div>
+          <div>
             <div
               class="font-title"
               :class="isRevealed ? (isAwayWinner ? 'text-text' : 'text-text-secondary') : 'text-text'"
             >
               {{ game.away_team_abbreviation }}
             </div>
-          </div>
-          <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
-            <span
-              v-for="p in awayPastilles"
-              :key="p.key"
-              class="rounded px-1.5 py-0.5 text-[10px] font-medium"
-              :class="p.cls"
-              :aria-label="p.ariaLabel"
-            >
-              {{ p.text }}
-            </span>
-          </div>
-          <div v-if="formatRecord(game.away_team_recent_record)" class="text-xs font-normal text-text-secondary">
-            {{ formatRecord(game.away_team_recent_record) }}
+            <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
+              <span
+                v-for="p in awayPastilles"
+                :key="p.key"
+                class="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                :class="p.cls"
+                :aria-label="p.ariaLabel"
+              >
+                {{ p.text }}
+              </span>
+            </div>
+            <div v-if="formatRecord(game.away_team_recent_record)" class="text-xs font-normal text-text-secondary">
+              {{ formatRecord(game.away_team_recent_record) }}
+            </div>
           </div>
         </div>
         <span v-if="isRevealed" class="font-mono tabular-nums" :class="showsAccent && isAwayWinner ? 'text-accent-text' : 'text-text-secondary'">
@@ -206,37 +212,43 @@ const awayPastilles = computed(() =>
         </span>
       </div>
 
-      <div class="text-center text-xs text-text-disabled">@</div>
+      <!-- Alignée sur la largeur du badge (w-10, pas le reste de la ligne) --
+           ancrée à un repère fixe de la mise en page plutôt que centrée sur
+           toute la largeur de la carte (signalé en recette comme "flottant
+           sans alignement", §10.3). -->
+      <div class="w-10 text-center text-xs text-text-disabled">@</div>
 
       <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-stretch gap-1.5">
-            <span
-              v-if="homeRailColor"
-              class="w-[3px] rounded-full"
-              :style="{ backgroundColor: homeRailColor }"
-              aria-hidden="true"
-            />
+        <div class="flex items-center gap-2">
+          <div
+            v-if="badges.home"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-xs font-title"
+            :style="{ backgroundColor: badges.home.fill, color: badges.home.text }"
+            aria-hidden="true"
+          >
+            {{ game.home_team_abbreviation }}
+          </div>
+          <div>
             <div
               class="font-title"
               :class="isRevealed ? (isHomeWinner ? 'text-text' : 'text-text-secondary') : 'text-text'"
             >
               {{ game.home_team_abbreviation }}
             </div>
-          </div>
-          <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
-            <span
-              v-for="p in homePastilles"
-              :key="p.key"
-              class="rounded px-1.5 py-0.5 text-[10px] font-medium"
-              :class="p.cls"
-              :aria-label="p.ariaLabel"
-            >
-              {{ p.text }}
-            </span>
-          </div>
-          <div v-if="formatRecord(game.home_team_recent_record)" class="text-xs font-normal text-text-secondary">
-            {{ formatRecord(game.home_team_recent_record) }}
+            <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
+              <span
+                v-for="p in homePastilles"
+                :key="p.key"
+                class="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                :class="p.cls"
+                :aria-label="p.ariaLabel"
+              >
+                {{ p.text }}
+              </span>
+            </div>
+            <div v-if="formatRecord(game.home_team_recent_record)" class="text-xs font-normal text-text-secondary">
+              {{ formatRecord(game.home_team_recent_record) }}
+            </div>
           </div>
         </div>
         <span v-if="isRevealed" class="font-mono tabular-nums" :class="showsAccent && isHomeWinner ? 'text-accent-text' : 'text-text-secondary'">

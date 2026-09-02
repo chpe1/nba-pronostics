@@ -1,114 +1,99 @@
-// Règle de contraste du filet de couleur d'équipe (docs/design-v1.md §5.7).
+// Règles de contraste du monogramme d'équipe (docs/design-v1.md §5.7, §10.3).
 //
-// Seuil retenu : 3:1, WCAG 1.4.11 "Non-text Contrast" -- le filet est un
-// indicateur GRAPHIQUE (aucun texte dessus), pas un texte : le seuil de
-// 4,5:1 (§12, texte normal) ne s'applique pas ici. Même seuil déjà retenu
-// dans ce projet pour un indicateur non textuel équivalent (le contour de
-// focus clavier, voir style.css) -- cohérence délibérée, pas une
-// coïncidence.
-export const MIN_RAIL_CONTRAST = 3
+// Deux seuils, pour deux rôles différents sur le même badge :
+// - le FOND du badge doit rester visible comme forme colorée sur la carte
+//   (bg-surface) -- indicateur graphique, WCAG 1.4.11, seuil 3:1 (déjà
+//   retenu pour le filet, inchangé en passant au badge).
+// - le TRICODE écrit DANS le badge est du texte normal -- §12/WCAG 1.4.3,
+//   seuil 4,5:1, contre le fond du badge lui-même (pas contre la carte).
+import {
+  contrastRatio,
+  hexToOklab,
+  isInSrgbGamut,
+  oklabToHex,
+  oklabToOklch,
+  oklchToOklab,
+  relativeLuminance,
+} from './colorSpace'
 
-function hexToRgb(hex) {
-  const clean = hex.replace('#', '')
-  return {
-    r: parseInt(clean.slice(0, 2), 16),
-    g: parseInt(clean.slice(2, 4), 16),
-    b: parseInt(clean.slice(4, 6), 16),
+export const MIN_BADGE_FILL_CONTRAST = 3
+export const MIN_BADGE_TEXT_CONTRAST = 4.5
+
+// Les deux seules couleurs de texte candidates pour "s'asseoir" sur un fond
+// de badge -- littéralement les tokens --text des deux modes (quasi blanc
+// sombre, quasi noir clair), jamais un blanc/noir pur inventé pour
+// l'occasion : ce sont déjà les deux extrêmes que l'app utilise et a
+// mesurés ailleurs (style.css §5.2/§5.3).
+const NEAR_WHITE_TEXT = '#F5F5F7'
+const NEAR_BLACK_TEXT = '#14161C'
+
+function maxChromaInGamut(L, chromaCeiling, hue) {
+  let lo = 0
+  let hi = chromaCeiling
+  for (let i = 0; i < 30; i += 1) {
+    const mid = (lo + hi) / 2
+    if (isInSrgbGamut(oklchToOklab({ L, C: mid, H: hue }))) {
+      lo = mid
+    } else {
+      hi = mid
+    }
   }
+  return lo
 }
 
-function rgbToHex({ r, g, b }) {
-  const toHex = (c) =>
-    Math.round(Math.min(255, Math.max(0, c)))
-      .toString(16)
-      .padStart(2, '0')
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
-}
-
-// Luminance relative WCAG -- même formule que celle appliquée manuellement
-// pendant le diagnostic pixel par pixel de la jauge divergente
-// (docs/design-v1.md §10.1), désormais encodée une fois pour toutes ici.
-function relativeLuminance({ r, g, b }) {
-  const lin = (c) => {
-    const s = c / 255
-    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-  }
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-}
-
-export function contrastRatio(hexA, hexB) {
-  const lA = relativeLuminance(hexToRgb(hexA))
-  const lB = relativeLuminance(hexToRgb(hexB))
-  const lighter = Math.max(lA, lB)
-  const darker = Math.min(lA, lB)
-  return (lighter + 0.05) / (darker + 0.05)
-}
-
-function rgbToHsl({ r, g, b }) {
-  const rn = r / 255
-  const gn = g / 255
-  const bn = b / 255
-  const max = Math.max(rn, gn, bn)
-  const min = Math.min(rn, gn, bn)
-  const l = (max + min) / 2
-  if (max === min) return { h: 0, s: 0, l }
-  const d = max - min
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-  let h
-  if (max === rn) h = (gn - bn) / d + (gn < bn ? 6 : 0)
-  else if (max === gn) h = (bn - rn) / d + 2
-  else h = (rn - gn) / d + 4
-  return { h: h / 6, s, l }
-}
-
-function hue2rgb(p, q, t) {
-  let tt = t
-  if (tt < 0) tt += 1
-  if (tt > 1) tt -= 1
-  if (tt < 1 / 6) return p + (q - p) * 6 * tt
-  if (tt < 1 / 2) return q
-  if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6
-  return p
-}
-
-function hslToRgb({ h, s, l }) {
-  if (s === 0) {
-    const v = l * 255
-    return { r: v, g: v, b: v }
-  }
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-  const p = 2 * l - q
-  return {
-    r: hue2rgb(p, q, h + 1 / 3) * 255,
-    g: hue2rgb(p, q, h) * 255,
-    b: hue2rgb(p, q, h - 1 / 3) * 255,
-  }
-}
-
-// Ajuste UNIQUEMENT la luminosité (teinte H et saturation S inchangées --
-// la couleur reste reconnaissable comme celle de l'équipe) jusqu'à
-// atteindre `minContrast` contre `backgroundHex`. Direction déterminée par
-// la luminosité du FOND (on s'en éloigne) : jamais une correction saisie à
-// la main équipe par équipe, une seule règle pour les deux modes et les 6
-// (bientôt 30) couleurs.
+// Ajuste la CLARTÉ (L) à teinte (H) et chroma (C) constants, jusqu'à
+// atteindre `minContrast` contre `backgroundHex` -- méthode OKLCH
+// (2026-09-02, remplace l'ancien réglage en HSL). Ne réduit le chroma que
+// si le point (L, C, H) sort du gamut sRGB à ce niveau de clarté : jamais
+// une désaturation systématique, seulement le filet de sécurité nécessaire
+// pour rester représentable. Direction déterminée par la luminosité du
+// FOND (on s'en éloigne), jamais une correction saisie à la main par
+// équipe -- une seule règle pour les 6 (bientôt 30) couleurs et les deux
+// modes.
 //
-// Bornes 0.02/0.98 plutôt qu'une boucle sans fin : une teinte totalement
-// désaturée n'atteindrait jamais un grand contraste par ce seul biais.
-// Jamais atteint pour les 6 couleurs actuelles (voir docs/design-v1.md
-// §5.7, tableau de contraste mesuré) -- filet de sécurité, pas un cas
-// rencontré en pratique.
-export function adjustForContrast(hex, backgroundHex, minContrast = MIN_RAIL_CONTRAST) {
+// Pourquoi OKLCH et pas HSL (défaut initial, abandonné) : à teinte et
+// saturation HSL constantes, éclaircir une couleur très sombre peut faire
+// dériver sa TEINTE PERÇUE -- mesuré sur Denver, #0E2240 (marine) devenait
+// #2B69C6 (bleu franc, plus la même couleur) une fois éclairci à 3:1 en
+// HSL. OKLCH est construit pour rester perceptuellement uniforme : à H
+// constant, seule la clarté change, la couleur reste reconnaissable comme
+// une variante plus claire de la même teinte.
+export function adjustForContrast(hex, backgroundHex, minContrast = MIN_BADGE_FILL_CONTRAST) {
   if (contrastRatio(hex, backgroundHex) >= minContrast) return hex
 
-  const backgroundIsDark = relativeLuminance(hexToRgb(backgroundHex)) < 0.5
-  const hsl = rgbToHsl(hexToRgb(hex))
-  const step = backgroundIsDark ? 0.02 : -0.02
-  let l = hsl.l
+  const { L: L0, a: a0, b: b0 } = hexToOklab(hex)
+  const { C: C0, H } = oklabToOklch({ L: L0, a: a0, b: b0 })
+  const backgroundIsDark = relativeLuminance(backgroundHex) < 0.5
+  const step = backgroundIsDark ? 0.01 : -0.01
 
-  while (l > 0.02 && l < 0.98) {
-    l += step
-    const candidate = rgbToHex(hslToRgb({ ...hsl, l }))
+  let L = L0
+  let candidate = hex
+  for (let i = 0; i < 200; i += 1) {
+    L += step
+    L = Math.max(0, Math.min(1, L))
+    let C = C0
+    if (!isInSrgbGamut(oklchToOklab({ L, C, H }))) {
+      C = maxChromaInGamut(L, C0, H)
+    }
+    candidate = oklabToHex(oklchToOklab({ L, C, H }))
     if (contrastRatio(candidate, backgroundHex) >= minContrast) return candidate
+    if (L <= 0 || L >= 1) break
   }
-  return rgbToHex(hslToRgb({ ...hsl, l: backgroundIsDark ? 0.98 : 0.02 }))
+  return candidate
+}
+
+// Couleur du tricode À L'INTÉRIEUR du badge : le blanc ou le noir "de
+// l'app" (jamais une 3e teinte, jamais une couleur qui coderait autre
+// chose), celui des deux qui contraste le plus contre le fond du badge.
+// Mathématiquement, pour tout fond, l'un des deux extrêmes atteint 4,5:1
+// (les deux formules de contraste WCAG contre blanc et contre noir se
+// croisent avant leurs seuils respectifs -- vérifié : aucun fond ne peut
+// faire échouer les deux à la fois) ; le ratio est quand même retourné et
+// vérifié par test, jamais supposé.
+export function pickBadgeTextColor(fillHex) {
+  const contrastWithWhite = contrastRatio(fillHex, NEAR_WHITE_TEXT)
+  const contrastWithBlack = contrastRatio(fillHex, NEAR_BLACK_TEXT)
+  return contrastWithWhite >= contrastWithBlack
+    ? { color: NEAR_WHITE_TEXT, ratio: contrastWithWhite }
+    : { color: NEAR_BLACK_TEXT, ratio: contrastWithBlack }
 }
