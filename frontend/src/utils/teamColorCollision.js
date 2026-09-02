@@ -10,23 +10,37 @@ import { oklabDistance } from './colorSpace'
 // reconvertit toujours en (L, a, b) cartésien avant de mesurer).
 export const oklabColorDistance = oklabDistance
 
-// Seuil retenu : 0,15. Calibré empiriquement sur 10 paires de teintes
-// officielles (couleurs de notoriété publique, même réserve de précision
-// qu'ailleurs en §5.7) : les paires reconnues comme un vrai risque de
-// confusion (rouges Miami/Chicago/Toronto, marines Détroit/Denver/Indiana/
-// Utah, violet/marine très sombres Charlotte/Denver) restent toutes sous
-// 0,12 ; les paires manifestement distinctes (n'importe laquelle contre le
-// vert de Boston, par exemple) sautent à 0,27 et au-delà -- un écart net
-// d'un facteur ~2,3 entre les deux groupes. 0,15 passe au milieu de cet
-// écart, avec une marge confortable des deux côtés : une petite imprécision
-// sur une teinte de notoriété publique ne fait basculer aucun cas connu
-// d'un côté à l'autre du seuil.
+// Seuil retenu : 0,03 -- recalibré le 2026-09-02 après un changement
+// d'OBJECTIF, pas un simple réglage plus fin du même objectif (voir
+// docs/design-v1.md §5.7, "Recadrage"). Un seuil à 0,15 (abandonné) répond
+// à "ces deux teintes sont-elles de la même famille ?" -- la question
+// pertinente pour une identification ABSOLUE par la seule couleur, un
+// objectif explicitement écarté : le tricode identifie déjà l'équipe, la
+// couleur n'a plus qu'à garantir que les deux badges D'UNE MÊME CARTE se
+// perçoivent comme deux objets distincts (discrimination LOCALE, pas un
+// placement global des 30 teintes de la ligue).
 //
-// RÉSERVE EXPLICITE : calibré sur 10 paires, pas sur les 435 combinaisons
-// des 30 équipes de la ligue. À revalider une fois la table complète
-// assemblée -- une paire non encore rencontrée pourrait se nicher dans
-// l'écart et remettre en cause le seuil.
-export const COLLISION_THRESHOLD_OKLAB = 0.15
+// Calibré sur des vignettes RENDUES à la taille réelle du badge (40×40px,
+// mode sombre), pas en théorie : jusqu'à ΔE_OK≈0,025 (ex. deux rouges à
+// 0,0247), les deux badges se perçoivent comme UN SEUL bloc de couleur. À
+// partir de ΔE_OK≈0,035-0,045, une différence redevient perceptible -- deux
+// teintes cousines, mais deux. 0,03 tombe dans l'écart entre ces deux
+// groupes (0,0247 → 0,0354, un facteur ~1,4), dans une zone plate où le
+// nombre de paires touchées ne bouge pas (20 sur 435 à 0,025 comme à 0,035).
+//
+// Mesuré sur les 435 paires des 30 équipes (couleurs de notoriété publique,
+// San Antonio en argent -- voir §5.7) : 20 paires, soit 4,6 %, sous la barre
+// de 15 % attendue. Neuf de ces vingt sont des couleurs officielles
+// STRICTEMENT IDENTIQUES dans cet échantillon (ex. Chicago/Houston/Toronto,
+// même rouge) -- aucun seuil ne les aurait jamais séparées, un fait des
+// données, pas un artefact de calibrage.
+//
+// RÉSERVE EXPLICITE, inchangée dans son principe : calibré sur un
+// échantillon de paires vérifiées par rendu, pas sur les 435 combinaisons
+// revues une à une à l'œil. Les 20 paires retenues ont été inspectées
+// individuellement ; les 415 autres sont supposées distinctes sur la seule
+// base du seuil.
+export const COLLISION_THRESHOLD_OKLAB = 0.03
 
 // Calculée sur les couleurs OFFICIELLES BRUTES (constants/teamColors.js),
 // JAMAIS sur le rendu ajusté par teamColorContrast.js -- décision explicite

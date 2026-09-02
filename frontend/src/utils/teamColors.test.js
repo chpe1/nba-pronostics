@@ -7,21 +7,34 @@ const SURFACE_DARK = '#1a1d26'
 const SURFACE_LIGHT = '#ffffff'
 
 describe('resolveTeamBadges', () => {
-  it('bascule l’équipe extérieure sur sa secondaire en cas de collision (Miami chez Chicago)', () => {
+  // Miami-Chicago (ΔE_OK brut ≈ 0,12) collisionnait sous l'ancien seuil
+  // (0,15, calé sur "identification absolue", abandonnée le 2026-09-02).
+  // Sous le seuil retenu (0,03, calé sur "perceptibles comme deux" --
+  // §5.7), ce n'est PLUS une collision : les deux restent des rouges
+  // reconnaissables l'un de l'autre, le tricode fait le reste. Régression
+  // intentionnelle, pas un oubli -- ne pas "corriger" ce test en sens
+  // inverse sans revoir §5.7 d'abord.
+  it('ne bascule plus Miami chez Chicago (rouges distincts, plus une collision au nouveau seuil)', () => {
     const { home, away } = resolveTeamBadges('CHI', 'MIA', 'dark')
-    expect(home).not.toBeNull()
-    expect(away).not.toBeNull()
-    // Chicago (domicile) garde sa primaire (rouge) -- seule Miami bascule.
     expect(home.fill.toUpperCase()).toBe('#CE1141')
-    // La secondaire de Miami est le noir (constants/teamColors.js) : une
-    // fois ajustée pour le contraste, elle reste bien plus sombre/neutre
-    // que le rouge de Chicago -- vérifié par un vrai calcul de distance,
-    // pas supposé.
-    expect(away.fill).not.toBe(home.fill)
+    expect(away.fill.toUpperCase()).toBe('#BE354C') // primaire de Miami, ajustée -- jamais sa secondaire
   })
 
-  it('ne bascule PAS le domicile, même en cas de collision', () => {
-    const { home } = resolveTeamBadges('CHI', 'MIA', 'dark')
+  // Aucune paire parmi les 6 équipes actuelles ne collisionne au nouveau
+  // seuil (la plus proche, Détroit-Denver, est à 0,067 -- plus de 2x le
+  // seuil). Le mécanisme de bascule est donc exercé ici avec une équipe
+  // contre elle-même (ΔE_OK = 0 par construction) : cas synthétique,
+  // jamais rencontré en vrai calendrier NBA, mais la seule façon de
+  // vérifier que la bascule se déclenche encore correctement quand une
+  // collision existe réellement.
+  it('bascule l’équipe extérieure sur sa secondaire quand une collision existe (cas synthétique : équipe contre elle-même)', () => {
+    const { home, away } = resolveTeamBadges('CHI', 'CHI', 'dark')
+    expect(home.fill.toUpperCase()).toBe('#CE1141') // domicile : toujours la primaire
+    expect(away.fill).not.toBe(home.fill) // extérieure : a basculé sur sa secondaire (noir, ajusté)
+  })
+
+  it('ne bascule JAMAIS le domicile, même en cas de collision', () => {
+    const { home } = resolveTeamBadges('CHI', 'CHI', 'dark')
     expect(home.fill.toUpperCase()).toBe('#CE1141')
   })
 
@@ -41,15 +54,12 @@ describe('resolveTeamBadges', () => {
   })
 
   it('la collision est évaluée sur les couleurs BRUTES, pas sur le rendu ajusté par mode', () => {
-    // Même verdict de collision dans les deux modes malgré des fonds très
-    // différents (sombre/clair) -- Miami bascule sur sa secondaire chez
-    // Chicago quel que soit le thème actif.
-    const dark = resolveTeamBadges('CHI', 'MIA', 'dark')
-    const light = resolveTeamBadges('CHI', 'MIA', 'light')
-    // La secondaire de Miami (noir) reste inchangée en clair (déjà très
-    // contrastée) : un test de non-régression sur la stabilité de la
-    // décision de bascule elle-même, pas sur la teinte rendue (qui, elle,
-    // dépend légitimement du mode via adjustForContrast).
+    // Cas synthétique (équipe contre elle-même, voir plus haut) : même
+    // verdict de collision dans les deux modes malgré des fonds très
+    // différents (sombre/clair) -- la bascule se déclenche quel que soit
+    // le thème actif, jamais recalculée à partir du rendu.
+    const dark = resolveTeamBadges('CHI', 'CHI', 'dark')
+    const light = resolveTeamBadges('CHI', 'CHI', 'light')
     expect(dark.away.fill).not.toBe(dark.home.fill)
     expect(light.away.fill).not.toBe(light.home.fill)
   })
@@ -63,6 +73,7 @@ describe('resolveTeamBadges', () => {
         ['CHI', 'MIA'],
         ['DEN', 'BOS'],
         ['DET', 'CHA'],
+        ['CHI', 'CHI'],
       ]
       for (const [home, away] of pairs) {
         const badges = resolveTeamBadges(home, away, mode)
