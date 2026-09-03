@@ -25,7 +25,7 @@ function handleLogout() {
             <AdminNavMenu />
             <button
               type="button"
-              class="flex h-11 items-center rounded-lg px-3 font-medium text-text-secondary hover:bg-surface-sunken"
+              class="press-feedback flex h-11 items-center rounded-lg px-3 font-medium text-text-secondary hover:bg-surface-sunken"
               @click="handleLogout"
             >
               Déconnexion
@@ -34,7 +34,7 @@ function handleLogout() {
           <RouterLink
             v-else
             :to="{ name: 'login' }"
-            class="flex h-11 items-center rounded-lg px-3 font-medium text-text-secondary hover:bg-surface-sunken [&.router-link-exact-active]:text-accent-text"
+            class="press-feedback flex h-11 items-center rounded-lg px-3 font-medium text-text-secondary hover:bg-surface-sunken [&.router-link-exact-active]:text-accent-text"
           >
             Connexion admin
           </RouterLink>

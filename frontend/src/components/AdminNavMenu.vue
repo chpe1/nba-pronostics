@@ -98,7 +98,7 @@ onBeforeUnmount(() => {
     <button
       ref="triggerRef"
       type="button"
-      class="flex h-11 items-center gap-1 rounded-lg px-3 text-sm font-medium text-text-secondary hover:bg-surface-sunken"
+      class="press-feedback flex h-11 items-center gap-1 rounded-lg px-3 text-sm font-medium text-text-secondary hover:bg-surface-sunken"
       aria-haspopup="menu"
       :aria-expanded="isOpen"
       @click="toggle"

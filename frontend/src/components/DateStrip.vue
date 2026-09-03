@@ -202,7 +202,7 @@ const monthLabel = computed(() => {
         role="option"
         :aria-selected="item.iso === modelValue"
         :aria-label="accessibleLabel(item)"
-        class="flex h-14 w-12 shrink-0 snap-center flex-col items-center justify-center rounded-lg text-xs"
+        class="press-feedback flex h-14 w-12 shrink-0 snap-center flex-col items-center justify-center rounded-lg text-xs"
         :class="[
           item.iso === modelValue ? 'bg-accent font-medium text-accent-on' : 'bg-surface-sunken text-text-secondary',
           item.startsNewMonth ? 'ml-2 border-l border-border pl-1' : '',

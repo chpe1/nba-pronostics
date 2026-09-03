@@ -401,3 +401,38 @@ textarea:focus-visible {
     animation: none;
   }
 }
+
+/* =====================================================================
+ * Enfoncement au contact (§13) -- 2% d'échelle, retour en 150ms. Posé
+ * uniquement sur les boutons de la COQUILLE PUBLIQUE et du TABLEAU DE
+ * BORD : §13 interdit toute animation en back-office, et une carte de
+ * match n'a aucun gestionnaire de clic (donner un retour au contact à
+ * quelque chose qui ne réagit pas serait mensonger).
+ *
+ * `transform` uniquement (§13). L'enfoncement est plus vif (60ms) que le
+ * retour (150ms) : c'est le sens littéral de "enfoncement au contact,
+ * retour en 150 ms" -- un aller-retour symétrique donnerait un bouton
+ * mou.
+ *
+ * Sous prefers-reduced-motion, l'échelle n'est pas seulement
+ * instantanée : elle est SUPPRIMÉE. Un saut de 2% sans transition reste
+ * du mouvement -- la préférence demande son absence, pas sa brutalité.
+ * =================================================================== */
+.press-feedback {
+  transition: transform 150ms ease-out;
+}
+
+.press-feedback:active {
+  transform: scale(0.98);
+  transition-duration: 60ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press-feedback {
+    transition: none;
+  }
+
+  .press-feedback:active {
+    transform: none;
+  }
+}
