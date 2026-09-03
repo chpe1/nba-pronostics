@@ -18,6 +18,20 @@ const isLoading = ref(true)
 const isRecalculating = ref(false)
 const errorMessage = ref('')
 
+// Cascade d'entrée (§13) : UNE seule fois par montage de la vue, jamais
+// rejouée sur un changement de date. Naviguer d'un jour à l'autre est
+// l'usage principal du tableau de bord (DateStrip) -- relancer une vague de
+// 12 cartes à chaque clic contredirait "le reste de l'interface est calme".
+// Le drapeau est éteint dans les gestionnaires qui provoquent un rechargement
+// ultérieur, jamais par une minuterie : rien ne peut retirer la classe en
+// plein milieu de l'animation initiale.
+const playEntrance = ref(true)
+
+function loadGamesAfterDateChange() {
+  playEntrance.value = false
+  loadGames()
+}
+
 async function loadGames() {
   isLoading.value = true
   errorMessage.value = ''
@@ -31,6 +45,7 @@ async function loadGames() {
 }
 
 async function recalculate() {
+  playEntrance.value = false
   isRecalculating.value = true
   errorMessage.value = ''
   try {
@@ -57,7 +72,7 @@ onMounted(loadGames)
   <section class="px-4 py-6">
     <h1 class="mb-4 text-xl font-semibold text-text">Matchs</h1>
 
-    <DateStrip v-model="selectedDate" class="mb-4" @update:model-value="loadGames" />
+    <DateStrip v-model="selectedDate" class="mb-4" @update:model-value="loadGamesAfterDateChange" />
 
     <ContextBanner v-if="!isLoading" :games="games" />
 
@@ -83,7 +98,19 @@ onMounted(loadGames)
          où la coquille elle-même s'élargit (Point 1) -- une seule colonne en
          dessous, aucun tri client (l'ordre vient de l'API tel quel). -->
     <div v-else class="grid grid-cols-1 gap-3 xl:grid-cols-3">
-      <GameCard v-for="game in games" :key="game.id" :game="game" :reserved-pastille-count="reservedPastilleCount" />
+      <!-- Décalage de 30ms par carte (§13), seule valeur qui varie d'une
+           carte à l'autre -- posé en style inline plutôt qu'en classe : une
+           classe par rang serait 12 classes générées pour rien. La classe
+           `card-enter` (style.css) porte toute l'animation et sa
+           neutralisation sous prefers-reduced-motion. -->
+      <GameCard
+        v-for="(game, index) in games"
+        :key="game.id"
+        :game="game"
+        :reserved-pastille-count="reservedPastilleCount"
+        :class="playEntrance ? 'card-enter' : null"
+        :style="playEntrance ? { animationDelay: `${index * 30}ms` } : null"
+      />
     </div>
   </section>
 </template>

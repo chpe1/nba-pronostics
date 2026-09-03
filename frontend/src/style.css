@@ -358,3 +358,46 @@ textarea:focus-visible {
     display: none;
   }
 }
+
+/* =====================================================================
+ * Cascade d'entrée de la liste du tableau de bord (§13) -- 8px de
+ * translation verticale + opacité, décalage de 30ms par carte (posé en
+ * style inline par DashboardView.vue, seule valeur qui varie d'une carte
+ * à l'autre).
+ *
+ * `transform` et `opacity` uniquement, jamais une hauteur ni une ombre
+ * (§13, règle de performance non négociable).
+ *
+ * L'état PAR DÉFAUT de la carte est son état FINAL (visible, non
+ * décalée) : seule l'image-clé `from` la rend invisible, et uniquement
+ * pendant que l'animation tourne. Conséquence voulue -- neutraliser
+ * l'animation (préférence système, ci-dessous) laisse la carte
+ * directement visible, jamais bloquée à `opacity: 0`. C'est ce qui rend
+ * ce mécanisme sûr : une animation annulée ne peut pas faire disparaître
+ * du contenu.
+ *
+ * Règle CSS simple plutôt qu'une @utility Tailwind + `motion-reduce:` :
+ * la neutralisation doit gagner de façon certaine, sans dépendre de
+ * l'ordre des utilitaires générés -- même raisonnement que le fond des
+ * <option> et le contour de focus plus haut (§12).
+ * =================================================================== */
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card-enter {
+  animation: card-enter 300ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-enter {
+    animation: none;
+  }
+}
