@@ -477,3 +477,42 @@ textarea:focus-visible {
     animation: none;
   }
 }
+
+/* =====================================================================
+ * Fondu de la piste de jours au changement de date (§13, DateStrip.vue)
+ * -- `opacity` uniquement, RIEN ne se déplace : le surlignage reste donc
+ * immobile à toutes les largeurs. C'est le repli assumé après mesure de
+ * la piste translatée, qui tenait à 390px mais déplaçait le marqueur à
+ * 1400px faute de défilement pour compenser (voir §13 et le commentaire
+ * de DateStrip.vue).
+ *
+ * 60ms de sortie puis 60ms d'entrée, la fenêtre étant régénérée pendant
+ * que la piste est invisible -- le remplacement des libellés ne se voit
+ * jamais.
+ *
+ * Pas de neutralisation par media query ici : sous
+ * prefers-reduced-motion, DateStrip.vue ne pose simplement jamais la
+ * classe et régénère la fenêtre immédiatement (le retard lui-même doit
+ * disparaître, pas seulement son rendu -- voir le commentaire du
+ * composant).
+ * =================================================================== */
+.strip-track {
+  transition: opacity 60ms linear;
+}
+
+.strip-track-faded {
+  opacity: 0;
+}
+
+/* Dégradé de fondu sur les bords de la bande : adoucit la troncature des
+   jours en limite de zone visible -- indépendant de l'animation choisie,
+   il a sa place sur une bande à défilement horizontal de toute façon. */
+.strip-edge-fade {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black 12px,
+    black calc(100% - 12px),
+    transparent 100%
+  );
+}

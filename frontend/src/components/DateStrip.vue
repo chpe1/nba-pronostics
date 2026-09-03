@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 // Habillage du sélecteur de date existant (docs/design-v1.md §8.4) : envoie
 // exactement la même valeur `YYYY-MM-DD` que l'ancien <input type="date">,
@@ -43,8 +43,29 @@ function daysAhead(iso) {
   return Math.round((parseIsoDate(iso) - parseIsoDate(todayIso)) / 86400000)
 }
 
+// Centre de la fenêtre RENDUE, distinct de la date sélectionnée (§13) : il
+// retarde de la durée du glissement, le temps que la piste existante se
+// décale avant d'être régénérée autour de la nouvelle date. Les DONNÉES,
+// elles, ne sont jamais retardées -- l'évènement `update:modelValue` part au
+// clic, le parent charge la journée immédiatement ; seule la piste met 180ms
+// à se remettre en place.
+const renderedCenter = ref(props.modelValue)
+
+// Fondu croisé, PAS un glissement -- repli assumé après mesure, voir §13 :
+// la piste translatée tenait à 390px (marqueur immobile à 195px du début à la
+// fin) mais violait sa propre prémisse à 1400px, où la bande ne défile pas
+// (scrollWidth == clientWidth) : rien ne compensant la translation, le jour
+// marqué partait avec la piste (centre mesuré 492 → 432 en cours de
+// glissement). Garder le marqueur fixe à toutes les largeurs aurait imposé un
+// marqueur en position absolue, calculé différemment selon que la bande
+// défile ou non -- exactement la logique de centrage déjà corrigée deux fois
+// en recette. Le fondu, lui, ne déplace rien : aucune largeur n'est un cas
+// particulier.
+const FADE_MS = 60 // 60ms de sortie + 60ms d'entrée = 120ms au total
+const trackFaded = ref(false)
+
 const dates = computed(() => {
-  const center = parseIsoDate(props.modelValue)
+  const center = parseIsoDate(renderedCenter.value)
   const list = []
   for (let offset = -WINDOW_BEFORE; offset <= WINDOW_AFTER; offset += 1) {
     const d = new Date(center)
@@ -99,7 +120,12 @@ function setItemRef(iso, el) {
 }
 
 function scrollToSelected(behavior = 'smooth') {
-  itemRefs.value[props.modelValue]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior })
+  // Le recentrage est lui aussi du mouvement : sous prefers-reduced-motion il
+  // doit être instantané, pas seulement le fondu (§13, non négociable). Défaut
+  // antérieur à ce chantier, révélé par la mesure -- le jour sélectionné
+  // rejoignait le centre par un défilement animé même préférence active.
+  const effective = prefersReducedMotion() ? 'instant' : behavior
+  itemRefs.value[props.modelValue]?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: effective })
   // Resynchronisation explicite, pas seulement l'évènement 'scroll' passif ci-dessous : vérifié en
   // navigateur (2026-08-31, ≥1280px) que quand les 11 jours tiennent déjà entièrement dans le
   // conteneur, scrollIntoView() ne bouge rien et ne déclenche donc AUCUN évènement 'scroll' --
@@ -110,7 +136,53 @@ function scrollToSelected(behavior = 'smooth') {
   updateVisibleFromScroll()
 }
 
-watch(() => props.modelValue, () => nextTick(() => scrollToSelected()))
+// Fondu au changement de date (§13) : la piste existante s'efface (60ms), son
+// contenu est régénéré autour de la nouvelle date, puis elle réapparaît
+// (60ms). Une seule liste vivante à la fois -- jamais deux fenêtres
+// coexistantes. `opacity` uniquement, aucun déplacement : le surlignage reste
+// donc rigoureusement immobile, à toutes les largeurs.
+//
+// `prefers-reduced-motion` est lu ici en JavaScript, et c'est inévitable :
+// contrairement à une transition CSS qu'une media query peut neutraliser, ce
+// mécanisme REGÉNÈRE du contenu à retardement -- il faut donc supprimer le
+// retard lui-même, pas seulement son rendu. Sous la préférence, la fenêtre est
+// remplacée immédiatement, sans décalage ni délai : aucune dégradation
+// fonctionnelle, juste l'absence de mouvement.
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
+
+let slideTimer = null
+
+watch(
+  () => props.modelValue,
+  (next) => {
+    if (next === renderedCenter.value) return
+
+    if (prefersReducedMotion()) {
+      renderedCenter.value = next
+      return
+    }
+
+    trackFaded.value = true
+
+    clearTimeout(slideTimer)
+    slideTimer = setTimeout(() => {
+      // Régénération pendant que la piste est invisible : le remplacement des
+      // libellés ne se voit jamais, seul le fondu se perçoit.
+      renderedCenter.value = next
+      trackFaded.value = false
+    }, FADE_MS)
+  },
+)
+
+onUnmounted(() => clearTimeout(slideTimer))
+
+// Le recentrage par défilement suit la fenêtre RENDUE, pas la sélection :
+// déclenché sur `modelValue`, il ferait défiler l'ancienne piste vers le jour
+// cliqué pendant que le glissement la décale déjà -- deux mouvements
+// concurrents sur le même élément.
+watch(renderedCenter, () => nextTick(() => scrollToSelected()))
 onMounted(() => nextTick(() => scrollToSelected('instant')))
 
 function onJumpToDate(event) {
@@ -189,11 +261,17 @@ const monthLabel = computed(() => {
     </div>
     <div
       ref="stripRef"
-      class="scrollbar-none flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1"
+      class="strip-edge-fade scrollbar-none snap-x snap-mandatory overflow-x-auto pb-1"
       role="listbox"
       aria-label="Sélection de la date consultée"
       @scroll="updateVisibleFromScroll"
     >
+      <!-- Piste en fondu (§13) : `opacity` seule, rien ne se déplace -- le
+           surlignage reste donc immobile à toutes les largeurs. Le conteneur
+           de défilement au-dessus garde l'accrochage ; `w-max` conserve le
+           dimensionnement sur le contenu qu'avait la ligne flex quand elle
+           était le conteneur elle-même. -->
+      <div class="strip-track flex w-max gap-2" :class="trackFaded ? 'strip-track-faded' : null">
       <button
         v-for="item in dateItems"
         :key="item.iso"
@@ -204,7 +282,13 @@ const monthLabel = computed(() => {
         :aria-label="accessibleLabel(item)"
         class="press-feedback flex h-14 w-12 shrink-0 snap-center flex-col items-center justify-center rounded-lg text-xs"
         :class="[
-          item.iso === modelValue ? 'bg-accent font-medium text-accent-on' : 'bg-surface-sunken text-text-secondary',
+          // Surlignage calé sur la fenêtre RENDUE, pas sur la sélection : c'est
+          // ce qui le rend immobile pendant le glissement (§13) -- le jour
+          // centré reste marqué pendant que la piste défile sous lui, et la
+          // nouvelle fenêtre le replace au centre à l'arrivée. `aria-selected`
+          // reste calé sur `modelValue` juste au-dessus : la sémantique dit la
+          // vérité immédiatement, seul le visuel est en transition.
+          item.iso === renderedCenter ? 'bg-accent font-medium text-accent-on' : 'bg-surface-sunken text-text-secondary',
           item.startsNewMonth ? 'ml-2 border-l border-border pl-1' : '',
           item.isBeyondThreshold ? 'outline outline-1 outline-dashed outline-offset-1 outline-border' : '',
         ]"
@@ -213,11 +297,12 @@ const monthLabel = computed(() => {
         <span class="capitalize">{{ dayLabel(item.iso).weekday }}</span>
         <span
           class="font-mono text-sm tabular-nums"
-          :class="item.iso === todayIso && item.iso !== modelValue ? 'text-accent-text' : ''"
+          :class="item.iso === todayIso && item.iso !== renderedCenter ? 'text-accent-text' : ''"
         >
           {{ dayLabel(item.iso).day }}
         </span>
       </button>
+      </div>
     </div>
   </div>
 </template>
