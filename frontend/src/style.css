@@ -436,3 +436,44 @@ textarea:focus-visible {
     transform: none;
   }
 }
+
+/* =====================================================================
+ * Ouverture du menu Administration (§13) -- fondu + translation courte
+ * de 4px, 120ms. `opacity` et `transform` uniquement.
+ *
+ * EXCEPTION ASSUMÉE au "aucune animation en back-office" de §13 : ce
+ * menu appartient à la COQUILLE, pas à un écran de gestion -- il
+ * s'ouvre au-dessus de n'importe quelle page, tableau de bord public
+ * compris. La règle vise les écrans d'administration eux-mêmes
+ * (formulaires, tableaux, listes), qui restent strictement immobiles.
+ *
+ * Translation vers le BAS (de -4px vers 0), jamais vers le haut : le
+ * menu descend depuis son déclencheur, le mouvement suit l'ancrage.
+ * 4px et non 8px comme les cartes (§13) : un panneau surgissant part
+ * de plus près que des cartes qui entrent dans la page.
+ *
+ * Aucune animation de FERMETURE : `v-if` retire l'élément du DOM
+ * immédiatement, et une disparition animée demanderait de retarder ce
+ * retrait -- un menu qui traîne après un clic gêne plus qu'il ne
+ * flatte. Le menu apparaît en douceur, il disparaît net.
+ * =================================================================== */
+@keyframes menu-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.menu-open {
+  animation: menu-open 120ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-open {
+    animation: none;
+  }
+}

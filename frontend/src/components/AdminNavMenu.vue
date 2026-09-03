@@ -110,7 +110,7 @@ onBeforeUnmount(() => {
       v-if="isOpen"
       ref="menuRef"
       role="menu"
-      class="absolute z-10 mt-1 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
+      class="menu-open absolute z-10 mt-1 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
       :class="anchorRight ? 'right-0' : 'left-0'"
     >
       <RouterLink
