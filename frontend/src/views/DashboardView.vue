@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
 import { useAuthStore } from '@/stores/auth'
 import GameCard from '@/components/GameCard.vue'
@@ -18,6 +18,78 @@ const games = ref([])
 const isLoading = ref(true)
 const isRecalculating = ref(false)
 const errorMessage = ref('')
+
+// Seuil d'apparition des cartes fantômes (§13). Mesuré le 2026-09-04 sur la
+// base de développement, horloge réelle (jamais `clock.install`, §12) : la
+// réponse de `/api/predictions/today` revient entre 6 et 58 ms (21 relevés,
+// médiane 20 ms). Une date JAMAIS consultée n'est pas plus lente qu'une date
+// déjà visitée -- médiane 17 ms contre 26 ms, l'écart tenant au nombre de
+// matchs renvoyés et non à un quelconque cache. L'état de chargement complet
+// durait 2 à 4 images d'affichage selon le clic (33 à 67 ms) : un facteur 2
+// d'un clic à l'autre, sans aucun rapport avec la date -- c'est ce
+// scintillement de durée variable qui se lisait comme « une fois sur deux ».
+//
+// 100 ms : au-dessus du maximum observé (67 ms) avec une marge de moitié,
+// donc le cas local nominal ne déclenche plus rien ; c'est aussi la limite
+// au-delà de laquelle une réaction cesse d'être perçue comme instantanée.
+// En dessous du seuil, rien ne bouge : la nouvelle liste remplace l'ancienne
+// directement.
+const SKELETON_DELAY_MS = 100
+
+// Durée minimale d'affichage une fois les fantômes montrés -- sans elle, on
+// remplacerait un scintillement par un autre : une réponse arrivant à 105 ms
+// les afficherait 5 ms, pire que jamais. 300 ms, c'est 18 images à 60 Hz
+// contre les 2 à 4 mesurées aujourd'hui, et c'est la plus longue durée de
+// mouvement du projet (`card-enter`, style.css) : en dessous, le bloc se
+// lirait encore comme une transition, pas comme un état.
+const SKELETON_MIN_VISIBLE_MS = 300
+
+// État d'AFFICHAGE du chargement, distinct de `isLoading` (état de la
+// requête) : les deux ne coïncident plus, c'est tout l'objet du seuil.
+const showSkeleton = ref(false)
+
+// Le message « Aucun match ce jour-là » ne doit jamais s'afficher avant
+// qu'un chargement se soit réellement terminé : au tout premier montage,
+// `games` est vide et les fantômes ne sont pas encore montrés (100 ms de
+// délai) -- sans ce drapeau, l'écran affirmerait pendant ce laps de temps
+// une absence de match qu'il n'a pas encore vérifiée.
+const hasLoadedOnce = ref(false)
+
+let appearTimer = null
+let hideTimer = null
+let shownAt = 0
+
+function armSkeleton() {
+  clearTimeout(appearTimer)
+  clearTimeout(hideTimer)
+  hideTimer = null
+  if (showSkeleton.value) return // déjà visible : on le laisse, sa durée minimale court toujours
+  appearTimer = setTimeout(() => {
+    appearTimer = null
+    shownAt = performance.now()
+    showSkeleton.value = true
+  }, SKELETON_DELAY_MS)
+}
+
+function releaseSkeleton() {
+  clearTimeout(appearTimer)
+  appearTimer = null
+  if (!showSkeleton.value) return
+  const reste = SKELETON_MIN_VISIBLE_MS - (performance.now() - shownAt)
+  if (reste <= 0) {
+    showSkeleton.value = false
+    return
+  }
+  hideTimer = setTimeout(() => {
+    hideTimer = null
+    showSkeleton.value = false
+  }, reste)
+}
+
+onUnmounted(() => {
+  clearTimeout(appearTimer)
+  clearTimeout(hideTimer)
+})
 
 // Cascade d'entrée (§13) : UNE seule fois, jamais rejouée à chaque changement
 // de date. Naviguer d'un jour à l'autre est l'usage principal du tableau de
@@ -53,6 +125,7 @@ async function loadGames() {
   if (playEntrance.value && games.value.length > 0) playEntrance.value = false
 
   isLoading.value = true
+  armSkeleton()
   errorMessage.value = ''
   try {
     games.value = await apiFetch(`/api/predictions/today?date=${selectedDate.value}`)
@@ -60,6 +133,8 @@ async function loadGames() {
     errorMessage.value = error instanceof ApiError ? error.message : 'Impossible de charger les matchs.'
   } finally {
     isLoading.value = false
+    hasLoadedOnce.value = true
+    releaseSkeleton()
   }
 }
 
@@ -105,7 +180,7 @@ onMounted(loadGames)
     <!-- Bandeau vitrine : remplacé par un bloc de même gabarit pendant le
          chargement, jamais escamoté -- sa disparition était la moitié de
          l'effondrement mesuré (§13). -->
-    <ContextBanner v-if="!isLoading" :games="games" />
+    <ContextBanner v-if="!showSkeleton" :games="games" />
     <!-- `bg-surface`, jamais `bg-surface-sunken` : ce bloc est posé
          directement sur le fond de page, or --surface-sunken vaut EXACTEMENT
          --canvas en mode sombre (#0E1015) -- mesuré invisible à la première
@@ -140,7 +215,7 @@ onMounted(loadGames)
          `aria-hidden` -- un lecteur d'écran entend "Chargement des matchs…"
          une fois, jamais douze cartes vides. -->
     <div
-      v-if="isLoading"
+      v-if="showSkeleton"
       role="status"
       aria-live="polite"
       aria-busy="true"
@@ -150,7 +225,13 @@ onMounted(loadGames)
       <GameCardSkeleton v-for="n in skeletonCount" :key="`skeleton-${n}`" />
     </div>
 
-    <p v-else-if="games.length === 0" class="text-sm text-text-secondary">Aucun match ce jour-là.</p>
+    <!-- `hasLoadedOnce` : ne jamais affirmer une absence de match avant
+         qu'un chargement se soit terminé -- pendant les 100 ms de délai du
+         tout premier montage, ce message serait une affirmation non
+         vérifiée. -->
+    <p v-else-if="hasLoadedOnce && games.length === 0" class="text-sm text-text-secondary">
+      Aucun match ce jour-là.
+    </p>
 
     <!-- Grille ordinateur (§8.4) : 3 colonnes à partir de 1280 px (xl), seuil
          où la coquille elle-même s'élargit (Point 1) -- une seule colonne en
