@@ -140,7 +140,7 @@ onMounted(loadTeams)
       <select
         id="team-select"
         v-model="selectedTeamId"
-        class="rounded-lg border border-border px-3 py-2 text-sm"
+        class="min-h-11 rounded-lg border border-border px-3 py-2 text-sm"
         @change="loadGames"
       >
         <option value="" disabled>Sélectionner une équipe</option>
@@ -176,7 +176,7 @@ onMounted(loadTeams)
         v-for="game in games"
         :key="game.id"
         type="button"
-        class="block w-full rounded-lg border px-3 py-2 text-left text-sm"
+        class="block min-h-11 w-full rounded-lg border px-3 py-2 text-left text-sm"
         :class="game.id === selectedGameId ? 'border-accent bg-accent-tint' : 'border-border bg-surface'"
         @click="selectGame(game)"
       >
@@ -238,7 +238,7 @@ onMounted(loadTeams)
 
         <button
           type="button"
-          class="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+          class="min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
           :disabled="isSimulating"
           @click="simulate"
         >

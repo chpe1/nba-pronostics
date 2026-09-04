@@ -17,7 +17,10 @@ function handleLogout() {
   <div class="flex min-h-screen flex-col bg-canvas text-text">
     <header class="border-b border-border bg-surface">
       <nav class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-        <RouterLink :to="{ name: 'dashboard' }" class="text-base font-semibold text-accent-text">
+        <RouterLink
+          :to="{ name: 'dashboard' }"
+          class="press-feedback inline-flex h-11 items-center text-base font-semibold text-accent-text"
+        >
           Pronostics NBA
         </RouterLink>
         <div class="flex flex-wrap items-center gap-2 text-sm">

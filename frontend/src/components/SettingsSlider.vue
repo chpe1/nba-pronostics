@@ -27,7 +27,7 @@ const value = defineModel({ type: Number, required: true })
       :min="props.min"
       :max="props.max"
       :step="props.step"
-      class="w-full"
+      class="h-11 w-full"
     />
   </div>
 </template>

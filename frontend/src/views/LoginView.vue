@@ -73,7 +73,7 @@ async function handleSubmit() {
 
       <button
         type="submit"
-        class="w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
+        class="min-h-11 w-full rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
         :disabled="isSubmitting"
       >
         {{ isSubmitting ? 'Connexion…' : 'Se connecter' }}

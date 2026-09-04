@@ -61,7 +61,7 @@ async function download(key) {
       <div v-for="template in TEMPLATES" :key="template.key" class="flex flex-col gap-1">
         <button
           type="button"
-          class="max-w-[220px] rounded-lg border border-border px-3 py-2 text-xs font-medium text-text disabled:opacity-50"
+          class="min-h-11 max-w-[220px] rounded-lg border border-border px-3 py-2 text-xs font-medium text-text disabled:opacity-50"
           :disabled="downloadingKey === template.key"
           @click="download(template.key)"
         >

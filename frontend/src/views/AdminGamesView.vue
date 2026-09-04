@@ -178,7 +178,7 @@ onMounted(loadGames)
         </div>
       </div>
 
-      <label class="flex items-center gap-2 text-sm text-text">
+      <label class="flex min-h-11 items-center gap-2 text-sm text-text">
         <input v-model="forms[game.id].keep_auto_sync" type="checkbox" class="rounded border-border" />
         Garder la synchronisation automatique active
       </label>

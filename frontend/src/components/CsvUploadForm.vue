@@ -134,17 +134,17 @@ onMounted(() => {
       ref="fileInputRef"
       type="file"
       accept=".csv"
-      class="mb-3 block w-full text-sm text-text file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-text file:px-3 file:py-2 file:text-sm file:font-medium file:text-canvas hover:file:opacity-90"
+      class="mb-3 block w-full text-sm text-text file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-lg file:border-0 file:bg-text file:px-3 file:py-2 file:text-sm file:font-medium file:text-canvas hover:file:opacity-90"
       @change="onFileChange"
     />
 
     <fieldset class="mb-3 text-sm text-text">
       <legend class="mb-1 font-medium text-text">Saison (équipes / joueurs — sans objet pour la draft)</legend>
-      <label class="mr-4 inline-flex items-center gap-1">
+      <label class="mr-4 inline-flex min-h-11 items-center gap-1">
         <input v-model="seasonType" type="radio" value="current" />
         Saison courante<span v-if="currentSeason"> ({{ currentSeason }})</span>
       </label>
-      <label class="inline-flex items-center gap-1">
+      <label class="inline-flex min-h-11 items-center gap-1">
         <input v-model="seasonType" type="radio" value="previous" />
         Saison précédente<span v-if="previousSeason"> ({{ previousSeason }})</span>
       </label>
@@ -162,7 +162,7 @@ onMounted(() => {
 
     <fieldset class="mb-3 text-sm text-text">
       <legend class="mb-1 font-medium text-text">Équipe (roster par équipe uniquement)</legend>
-      <select v-model="teamId" class="w-full max-w-xs rounded-lg border border-border px-2 py-1 text-sm">
+      <select v-model="teamId" class="min-h-11 w-full max-w-xs rounded-lg border border-border px-2 py-1 text-sm">
         <option value="">—</option>
         <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
       </select>
@@ -174,7 +174,7 @@ onMounted(() => {
     <div class="flex gap-2">
       <button
         type="button"
-        class="rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:opacity-50"
+        class="min-h-11 rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:opacity-50"
         :disabled="!selectedFile || isLoading"
         @click="upload(true)"
       >

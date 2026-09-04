@@ -239,7 +239,7 @@ onMounted(loadGames)
     <div v-if="authStore.isAuthenticated" class="mb-4">
       <button
         type="button"
-        class="press-feedback rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
+        class="press-feedback min-h-11 rounded-lg bg-text px-3 py-2 text-sm font-medium text-canvas disabled:opacity-50"
         :disabled="isRecalculating"
         @click="recalculate"
       >
