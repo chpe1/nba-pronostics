@@ -95,6 +95,11 @@
      --text-secondary à la place pour toute mention atténuée à l'intérieur. */
   --surface-info: #232733;
   --border: #262a35;
+  /* Frontière d'un CONTRÔLE interactif (champ de saisie), jamais un
+     séparateur décoratif -- rôle distinct de --border, qui reste celui du
+     contour d'une carte. Reprend la valeur de --text-disabled plutôt que
+     d'introduire une couleur nouvelle : même gris, autre rôle. Voir §5.2. */
+  --border-strong: #808896;
   --text: #f5f5f7;
   --text-secondary: #9ca3af;
   --text-disabled: #808896;
@@ -135,6 +140,7 @@
   --surface-sunken: #e8eaef;
   --surface-info: #f1f2f6;
   --border: #d7dae2;
+  --border-strong: #666d7b; /* §5.3 -- même rôle qu'en sombre */
   --text: #14161c;
   --text-secondary: #545b6b;
   --text-disabled: #666d7b;
@@ -186,6 +192,45 @@ select,
 option {
   background-color: var(--surface);
   color: var(--text);
+}
+
+/* =====================================================================
+ * Frontière visible des champs de saisie -- QUATRIÈME occurrence du schéma
+ * « une capacité native neutralisée par le socle sans être remplacée »
+ * (§12), après color-scheme/accent-color, le fond des <option> et le
+ * contour de focus -- et la plus étendue des quatre.
+ *
+ * Cause : le preflight Tailwind pose `background-color: transparent` sur
+ * les champs. L'intérieur d'un champ est donc EXACTEMENT la couleur peinte
+ * derrière lui, et sa bordure reste son seul délimiteur -- or --border,
+ * dimensionné pour séparer deux zones voisines, n'y suffit pas : mesuré le
+ * 2026-09-04 sur les 9 écrans du produit, 1,17:1 sur --surface et 1,33:1
+ * sur --canvas en sombre, 1,40:1 et 1,28:1 en clair. Aucun champ du produit
+ * n'atteignait les 3:1 exigés pour un objet non textuel (WCAG 1.4.11).
+ *
+ * Le défaut n'avait été signalé que sur AdminTeamDiagnosticView (2026-08-31)
+ * parce que ses 9 champs de dérogation sont VIDES par construction (« champ
+ * vide = valeur réelle conservée ») : rien à l'intérieur ne trahissait le
+ * champ. Ailleurs, ce sont les valeurs pré-remplies qui le signalaient --
+ * jamais sa bordure. Les <select> y échappaient par effet de bord de la
+ * règle ci-dessus, qui leur peint un fond.
+ *
+ * --border reste INCHANGÉ : les cartes s'en servent comme séparateur
+ * décoratif, pas comme frontière d'un composant -- le 1.4.11 ne demande pas
+ * de repeindre le contour de chaque carte du produit.
+ *
+ * Portée globale, hors de tout @layer (même technique que le fond des
+ * <option>) : aucune des ~380 occurrences de `border-border` sur un champ
+ * n'a à être touchée, et tout champ futur est couvert sans qu'on y repense.
+ * Sans effet sur les contrôles dessinés par le navigateur (case à cocher,
+ * bouton radio, curseur, sélecteur de fichier) : leur bordure ne vient pas
+ * de cette déclaration, et le bouton d'un input[type=file] est un
+ * pseudo-élément que ce sélecteur n'atteint pas -- vérifié au navigateur.
+ * =================================================================== */
+input,
+select,
+textarea {
+  border-color: var(--border-strong);
 }
 
 /* =====================================================================
@@ -312,6 +357,7 @@ textarea:focus-visible {
   --color-surface-sunken: var(--surface-sunken);
   --color-surface-info: var(--surface-info);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-text: var(--text);
   --color-text-secondary: var(--text-secondary);
   --color-text-disabled: var(--text-disabled);
