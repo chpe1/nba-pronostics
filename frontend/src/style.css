@@ -414,6 +414,10 @@ textarea:focus-visible {
  * retour en 150 ms" -- un aller-retour symétrique donnerait un bouton
  * mou.
  *
+ * Deux amplitudes, pas une : 2% au-dessus d'environ 64px de cote,
+ * ~7% en dessous (`press-feedback-sm`) -- voir la note sur la regle
+ * generale plus bas et en §13.
+ *
  * Sous prefers-reduced-motion, l'échelle n'est pas seulement
  * instantanée : elle est SUPPRIMÉE. Un saut de 2% sans transition reste
  * du mouvement -- la préférence demande son absence, pas sa brutalité.
@@ -427,19 +431,35 @@ textarea:focus-visible {
   transition-duration: 60ms;
 }
 
+/* Petites cibles : 7% au lieu de 2%. Un pourcentage d'echelle produit un
+   deplacement PROPORTIONNEL, qui s'effondre sous ~64px -- mesure sur les
+   boutons reels : 266px de large -> 5,32px de retrait (percu), 44px ->
+   0,88px (invisible). 7% sur 44px redonne ~3,1px, du meme ordre que ce
+   que 2% donne sur un bouton large. Regle generale consignee en §13. */
+.press-feedback-sm:active {
+  transform: scale(0.93);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .press-feedback {
     transition: none;
   }
 
-  .press-feedback:active {
+  .press-feedback:active,
+  .press-feedback-sm:active {
     transform: none;
   }
 }
 
 /* =====================================================================
- * Ouverture du menu Administration (§13) -- fondu + translation courte
- * de 4px, 120ms. `opacity` et `transform` uniquement.
+ * Ouverture du menu Administration (§13) -- fondu + translation de 8px,
+ * 180ms. `opacity` et `transform` uniquement.
+ *
+ * 8px/180ms et non 4px/120ms (premiere version) : l'animation tournait
+ * correctement (mesure image par image : opacity 0->1 et translateY
+ * -4px->0 sur ~122ms, sur le panneau bien affiche) mais restait sous le
+ * seuil de perception -- aucun defaut technique, une amplitude trop
+ * faible. 4px, c'est l'epaisseur de deux ou trois pixels de texte.
  *
  * EXCEPTION ASSUMÉE au "aucune animation en back-office" de §13 : ce
  * menu appartient à la COQUILLE, pas à un écran de gestion -- il
@@ -460,7 +480,7 @@ textarea:focus-visible {
 @keyframes menu-open {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
@@ -469,7 +489,7 @@ textarea:focus-visible {
 }
 
 .menu-open {
-  animation: menu-open 120ms ease-out both;
+  animation: menu-open 180ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -486,9 +506,12 @@ textarea:focus-visible {
  * 1400px faute de défilement pour compenser (voir §13 et le commentaire
  * de DateStrip.vue).
  *
- * 60ms de sortie puis 60ms d'entrée, la fenêtre étant régénérée pendant
- * que la piste est invisible -- le remplacement des libellés ne se voit
- * jamais.
+ * 90ms de sortie puis 90ms d'entrée. Le remplacement de la fenêtre est
+ * déclenché par `transitionend` côté DateStrip.vue, jamais par une
+ * minuterie : mesuré le 2026-09-04, une minuterie calée sur la durée du
+ * fondu tire AVANT sa fin (la transition ne démarre qu'au recalcul de
+ * style suivant), l'opacité ne descendait jamais à 0 et les libellés
+ * étaient remplacés à 0,44 -- donc bien visibles.
  *
  * Pas de neutralisation par media query ici : sous
  * prefers-reduced-motion, DateStrip.vue ne pose simplement jamais la
@@ -497,7 +520,7 @@ textarea:focus-visible {
  * composant).
  * =================================================================== */
 .strip-track {
-  transition: opacity 60ms linear;
+  transition: opacity 90ms linear;
 }
 
 .strip-track-faded {
@@ -515,4 +538,39 @@ textarea:focus-visible {
     black calc(100% - 12px),
     transparent 100%
   );
+}
+
+/* =====================================================================
+ * Battement des cartes fantômes pendant un chargement (§13,
+ * GameCardSkeleton.vue) -- `opacity` uniquement, jamais une dimension.
+ *
+ * Un squelette parfaitement immobile se lit comme un rendu figé : le
+ * battement est ce qui dit "en cours", pas la forme. Volontairement
+ * lent et peu profond (1 -> 0,6 sur 1,4s) pour rester dans "le reste de
+ * l'interface est calme".
+ *
+ * Neutralisé sous prefers-reduced-motion : les blocs restent alors
+ * pleinement visibles et immobiles -- l'annonce accessible
+ * ("Chargement des matchs…", role=status dans DashboardView.vue) porte
+ * l'information indépendamment de toute animation, elle n'est donc
+ * jamais perdue.
+ * =================================================================== */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.skeleton-pulse {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-pulse {
+    animation: none;
+  }
 }

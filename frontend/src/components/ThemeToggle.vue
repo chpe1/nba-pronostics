@@ -7,7 +7,7 @@ const themeStore = useThemeStore()
 <template>
   <button
     type="button"
-    class="press-feedback flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface text-accent-text hover:bg-surface-sunken"
+    class="press-feedback press-feedback-sm flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface text-accent-text hover:bg-surface-sunken"
     :aria-label="themeStore.theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'"
     :title="themeStore.theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'"
     @click="themeStore.toggleTheme()"

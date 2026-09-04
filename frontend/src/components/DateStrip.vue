@@ -61,8 +61,12 @@ const renderedCenter = ref(props.modelValue)
 // défile ou non -- exactement la logique de centrage déjà corrigée deux fois
 // en recette. Le fondu, lui, ne déplace rien : aucune largeur n'est un cas
 // particulier.
-const FADE_MS = 60 // 60ms de sortie + 60ms d'entrée = 120ms au total
+// 90ms de sortie + 90ms d'entrée = 180ms au total. Les 60+60 d'origine
+// étaient sous le seuil de perception (constaté à l'usage, confirmé par
+// mesure : un aller-retour d'opacité en 120ms passe inaperçu).
+const FADE_MS = 90
 const trackFaded = ref(false)
+const trackRef = ref(null)
 
 const dates = computed(() => {
   const center = parseIsoDate(renderedCenter.value)
@@ -136,9 +140,9 @@ function scrollToSelected(behavior = 'smooth') {
   updateVisibleFromScroll()
 }
 
-// Fondu au changement de date (§13) : la piste existante s'efface (60ms), son
-// contenu est régénéré autour de la nouvelle date, puis elle réapparaît
-// (60ms). Une seule liste vivante à la fois -- jamais deux fenêtres
+// Fondu au changement de date (§13) : la piste existante s'efface (90ms), son
+// contenu est régénéré une fois l'opacité RÉELLEMENT à zéro, puis elle
+// réapparaît (90ms). Une seule liste vivante à la fois -- jamais deux fenêtres
 // coexistantes. `opacity` uniquement, aucun déplacement : le surlignage reste
 // donc rigoureusement immobile, à toutes les largeurs.
 //
@@ -152,7 +156,36 @@ function prefersReducedMotion() {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 
-let slideTimer = null
+// Le remplacement est piloté par la FIN RÉELLE du fondu sortant
+// (`transitionend`), jamais par une minuterie -- correctif du 2026-09-04 après
+// mesure. La version à minuterie était fausse : la transition CSS ne démarre
+// qu'au recalcul de style suivant (mesuré ~26ms après le clic), donc une
+// minuterie calée sur la même durée que la transition tirait AVANT sa fin.
+// Résultat mesuré image par image : l'opacité ne descendait jamais à 0
+// (minimum 0,17) et les libellés étaient remplacés à 0,44 d'opacité, donc
+// parfaitement visibles -- l'inverse exact de ce que le code et §13
+// affirmaient tous deux. `transitionend` supprime la course : le remplacement
+// ne peut plus avoir lieu qu'une fois l'opacité réellement à 0.
+let pendingDate = null
+let fadeFallbackTimer = null
+
+function applyPendingDate() {
+  if (pendingDate === null) return
+  clearTimeout(fadeFallbackTimer)
+  // Régénération ET retour du fondu dans le même rendu : le contenu change
+  // alors que l'opacité vaut encore 0, la remontée ne commence qu'après.
+  renderedCenter.value = pendingDate
+  pendingDate = null
+  trackFaded.value = false
+}
+
+function onTrackTransitionEnd(event) {
+  // Les boutons de jour portent eux aussi une transition (`press-feedback`,
+  // sur `transform`) dont l'évènement remonte jusqu'ici : ne réagir qu'à
+  // l'opacité de la piste ELLE-MÊME, jamais à celle d'un descendant.
+  if (event.target !== trackRef.value || event.propertyName !== 'opacity') return
+  applyPendingDate()
+}
 
 watch(
   () => props.modelValue,
@@ -164,19 +197,20 @@ watch(
       return
     }
 
+    pendingDate = next
     trackFaded.value = true
 
-    clearTimeout(slideTimer)
-    slideTimer = setTimeout(() => {
-      // Régénération pendant que la piste est invisible : le remplacement des
-      // libellés ne se voit jamais, seul le fondu se perçoit.
-      renderedCenter.value = next
-      trackFaded.value = false
-    }, FADE_MS)
+    // Filet de sécurité, jamais le mécanisme nominal : si `transitionend` ne
+    // se produisait pas (transition interrompue, élément recréé, onglet mis
+    // en arrière-plan), la piste resterait invisible indéfiniment. Trois fois
+    // la durée du fondu, assez long pour ne jamais court-circuiter le cas
+    // normal.
+    clearTimeout(fadeFallbackTimer)
+    fadeFallbackTimer = setTimeout(applyPendingDate, FADE_MS * 3)
   },
 )
 
-onUnmounted(() => clearTimeout(slideTimer))
+onUnmounted(() => clearTimeout(fadeFallbackTimer))
 
 // Le recentrage par défilement suit la fenêtre RENDUE, pas la sélection :
 // déclenché sur `modelValue`, il ferait défiler l'ancienne piste vers le jour
@@ -271,7 +305,12 @@ const monthLabel = computed(() => {
            de défilement au-dessus garde l'accrochage ; `w-max` conserve le
            dimensionnement sur le contenu qu'avait la ligne flex quand elle
            était le conteneur elle-même. -->
-      <div class="strip-track flex w-max gap-2" :class="trackFaded ? 'strip-track-faded' : null">
+      <div
+        ref="trackRef"
+        class="strip-track flex w-max gap-2"
+        :class="trackFaded ? 'strip-track-faded' : null"
+        @transitionend="onTrackTransitionEnd"
+      >
       <button
         v-for="item in dateItems"
         :key="item.iso"
@@ -280,7 +319,7 @@ const monthLabel = computed(() => {
         role="option"
         :aria-selected="item.iso === modelValue"
         :aria-label="accessibleLabel(item)"
-        class="press-feedback flex h-14 w-12 shrink-0 snap-center flex-col items-center justify-center rounded-lg text-xs"
+        class="press-feedback press-feedback-sm flex h-14 w-12 shrink-0 snap-center flex-col items-center justify-center rounded-lg text-xs"
         :class="[
           // Surlignage calé sur la fenêtre RENDUE, pas sur la sélection : c'est
           // ce qui le rend immobile pendant le glissement (§13) -- le jour
