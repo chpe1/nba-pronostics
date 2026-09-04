@@ -55,6 +55,12 @@ const showSkeleton = ref(false)
 // une absence de match qu'il n'a pas encore vérifiée.
 const hasLoadedOnce = ref(false)
 
+// Troisième état, distinct des deux autres : des données, une absence VÉRIFIÉE,
+// un échec (§12). `hasLoadedOnce` distinguait déjà "pas encore vérifié" de
+// "vérifié vide" ; il manquait "on a demandé, et on ne sait pas" -- sans quoi
+// l'écran affirme quelque chose sur une date dont il n'a rien obtenu.
+const loadFailed = ref(false)
+
 let appearTimer = null
 let hideTimer = null
 let shownAt = 0
@@ -127,9 +133,21 @@ async function loadGames() {
   isLoading.value = true
   armSkeleton()
   errorMessage.value = ''
+  loadFailed.value = false
   try {
     games.value = await apiFetch(`/api/predictions/today?date=${selectedDate.value}`)
   } catch (error) {
+    // La liste est vidée ICI, dans le `catch`, et surtout PAS au lancement de
+    // la requête : ne pas la vider pendant le chargement est un choix
+    // délibéré (les cartes fantômes s'y comptent pour que la page garde sa
+    // hauteur, voir `skeletonCount`). Ce sont deux questions distinctes --
+    // "qu'affiche-t-on pendant le chargement" a sa réponse depuis les
+    // fantômes, "qu'affiche-t-on quand il échoue" n'en avait aucune, et la
+    // liste précédente survivait par défaut. Elle s'affichait alors sous la
+    // date nouvellement sélectionnée : l'écran affirmait que ces matchs
+    // avaient lieu ce jour-là (constaté en recette le 2026-09-04, §12).
+    games.value = []
+    loadFailed.value = true
     errorMessage.value = error instanceof ApiError ? error.message : 'Impossible de charger les matchs.'
   } finally {
     isLoading.value = false
@@ -229,7 +247,11 @@ onMounted(loadGames)
       </button>
     </div>
 
-    <p v-if="errorMessage" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">
+    <!-- Erreur qui ACCOMPAGNE des données encore valables : uniquement l'échec
+         d'un recalcul, dont les données à l'écran appartiennent bien à la date
+         affichée. Un échec de CHARGEMENT, lui, ne se pose jamais au-dessus de
+         la liste : il prend sa place, plus bas (§12). -->
+    <p v-if="errorMessage && !loadFailed" class="mb-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">
       {{ errorMessage }}
     </p>
 
@@ -249,11 +271,35 @@ onMounted(loadGames)
       <GameCardSkeleton v-for="n in skeletonCount" :key="`skeleton-${n}`" />
     </div>
 
-    <!-- `hasLoadedOnce` : ne jamais affirmer une absence de match avant
-         qu'un chargement se soit terminé -- pendant les 100 ms de délai du
-         tout premier montage, ce message serait une affirmation non
-         vérifiée. -->
-    <p v-else-if="hasLoadedOnce && games.length === 0" class="text-sm text-text-secondary">
+    <!-- L'échec prend la PLACE des données, il ne se superpose pas à elles
+         (§12) : ni cartes, ni bandeau, ni message de vide. Placé avant la
+         branche « Aucun match » dans la chaîne, il l'exclut mécaniquement --
+         les deux phrases s'affichaient ensemble jusqu'ici, et l'une des deux
+         était fausse. -->
+    <div v-else-if="loadFailed" role="alert" class="rounded-lg bg-danger/10 p-3">
+      <p class="text-sm text-danger-text">{{ errorMessage }}</p>
+      <!-- Relance la date COURANTE : une panne transitoire doit pouvoir se
+           retenter sans re-cliquer la date, geste peu évident quand la date
+           affichée est déjà la bonne. `loadGames` lit `selectedDate`, rien
+           dans la sélection ne bouge. -->
+      <button
+        type="button"
+        class="press-feedback mt-3 min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        :disabled="isLoading"
+        @click="loadGames"
+      >
+        Réessayer
+      </button>
+    </div>
+
+    <!-- Ne jamais affirmer une absence de match qui n'a pas été vérifiée :
+         `hasLoadedOnce` couvre le tout premier montage (pendant les 100 ms de
+         délai des fantômes), `!isLoading` couvre le cas révélé par le bouton
+         ci-dessus -- après un échec la liste est vide, donc une nouvelle
+         tentative afficherait « Aucun match ce jour-là » pendant les 100 ms
+         qui précèdent l'apparition des fantômes. Une requête en cours n'a
+         encore rien établi. -->
+    <p v-else-if="hasLoadedOnce && !isLoading && games.length === 0" class="text-sm text-text-secondary">
       Aucun match ce jour-là.
     </p>
 
