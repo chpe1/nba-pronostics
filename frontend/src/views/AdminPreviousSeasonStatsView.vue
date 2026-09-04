@@ -8,6 +8,11 @@ const filterSeason = ref('')
 const filterPlayerName = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
+// Troisième état, distinct des deux autres : des données, une absence
+// VÉRIFIÉE, un échec (docs/design-v1.md §12). Sans lui, un échec de
+// chargement laissait à l'écran la liste du contexte précédent -- sous le
+// nouveau contexte sélectionné, donc en affirmant qu'elle lui appartenait.
+const loadFailed = ref(false)
 const savingId = ref(null)
 const savedId = ref(null)
 const deletingId = ref(null)
@@ -43,6 +48,7 @@ async function loadDefaultSeason() {
 async function loadStats() {
   isLoading.value = true
   errorMessage.value = ''
+  loadFailed.value = false
   try {
     const params = new URLSearchParams()
     if (filterSeason.value.trim()) params.set('season', filterSeason.value.trim())
@@ -50,6 +56,11 @@ async function loadStats() {
     stats.value = await apiFetch(`/api/previous-season-stats?${params.toString()}`)
     forms.value = Object.fromEntries(stats.value.map((s) => [s.id, buildForm(s)]))
   } catch (error) {
+    // Vidée ICI : sans cela les lignes de la saison précédemment filtrée
+    // restaient affichées sous les nouveaux filtres.
+    stats.value = []
+    forms.value = {}
+    loadFailed.value = true
     errorMessage.value = error instanceof ApiError ? error.message : 'Impossible de charger les statistiques.'
   } finally {
     isLoading.value = false
@@ -148,7 +159,10 @@ onMounted(async () => {
       transferts et au garde-fou petit échantillon.
     </p>
 
-    <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
+    <!-- Erreur qui ACCOMPAGNE des données encore valables (échec d'un
+         enregistrement, d'une suppression) : elle se pose au-dessus. Un échec
+         de CHARGEMENT, lui, prend la place de la liste, plus bas (§12). -->
+    <p v-if="errorMessage && !loadFailed" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
 
     <div class="space-y-3 rounded-xl border border-border bg-surface p-4">
       <h2 class="text-sm font-semibold text-text">Ajouter une ligne</h2>
@@ -205,6 +219,23 @@ onMounted(async () => {
     </div>
 
     <p v-if="isLoading" class="text-sm text-text-secondary">Chargement…</p>
+    <!-- L'échec prend la PLACE des données, il ne se superpose pas à elles
+         (§12) : ni liste, ni message de vide. Placé avant la branche du vide
+         dans la chaîne, il l'exclut mécaniquement -- les deux s'affichaient
+         ensemble jusqu'ici, et l'une des deux était fausse. -->
+    <div v-else-if="loadFailed" role="alert" class="rounded-lg bg-danger/10 p-3">
+      <p class="text-sm text-danger-text">{{ errorMessage }}</p>
+      <!-- Relance le contexte COURANT, sans rien changer à la sélection. -->
+      <button
+        type="button"
+        class="mt-3 min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        :disabled="isLoading"
+        @click="loadStats"
+      >
+        Réessayer
+      </button>
+    </div>
+
     <p v-else-if="stats.length === 0" class="text-sm text-text-secondary">Aucune ligne pour ces filtres.</p>
 
     <div v-for="stat in stats" :key="stat.id" class="space-y-3 rounded-xl border border-border bg-surface p-4">

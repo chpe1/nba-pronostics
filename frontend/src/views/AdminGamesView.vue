@@ -7,6 +7,11 @@ const games = ref([])
 const forms = ref({})
 const isLoading = ref(false)
 const errorMessage = ref('')
+// Troisième état, distinct des deux autres : des données, une absence
+// VÉRIFIÉE, un échec (docs/design-v1.md §12). Sans lui, un échec de
+// chargement laissait à l'écran la liste du contexte précédent -- sous le
+// nouveau contexte sélectionné, donc en affirmant qu'elle lui appartenait.
+const loadFailed = ref(false)
 const savingId = ref(null)
 const savedId = ref(null)
 const deletingId = ref(null)
@@ -31,10 +36,17 @@ function buildForm(game) {
 async function loadGames() {
   isLoading.value = true
   errorMessage.value = ''
+  loadFailed.value = false
   try {
     games.value = await apiFetch(`/api/games?date=${selectedDate.value}`)
     forms.value = Object.fromEntries(games.value.map((g) => [g.id, buildForm(g)]))
   } catch (error) {
+    // Vidée ICI, dans le `catch` : sans cela les matchs de la date
+    // précédente restaient listés sous la date nouvellement choisie,
+    // formulaires d'édition compris.
+    games.value = []
+    forms.value = {}
+    loadFailed.value = true
     errorMessage.value = error instanceof ApiError ? error.message : 'Impossible de charger les matchs.'
   } finally {
     isLoading.value = false
@@ -110,8 +122,28 @@ onMounted(loadGames)
       />
     </div>
 
-    <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
+    <!-- Erreur qui ACCOMPAGNE des données encore valables (échec d'un
+         enregistrement, d'une suppression) : elle se pose au-dessus. Un échec
+         de CHARGEMENT, lui, prend la place de la liste, plus bas (§12). -->
+    <p v-if="errorMessage && !loadFailed" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
     <p v-if="isLoading" class="text-sm text-text-secondary">Chargement…</p>
+    <!-- L'échec prend la PLACE des données, il ne se superpose pas à elles
+         (§12) : ni liste, ni message de vide. Placé avant la branche du vide
+         dans la chaîne, il l'exclut mécaniquement -- les deux s'affichaient
+         ensemble jusqu'ici, et l'une des deux était fausse. -->
+    <div v-else-if="loadFailed" role="alert" class="rounded-lg bg-danger/10 p-3">
+      <p class="text-sm text-danger-text">{{ errorMessage }}</p>
+      <!-- Relance le contexte COURANT, sans rien changer à la sélection. -->
+      <button
+        type="button"
+        class="mt-3 min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        :disabled="isLoading"
+        @click="loadGames"
+      >
+        Réessayer
+      </button>
+    </div>
+
     <p v-else-if="games.length === 0" class="text-sm text-text-secondary">Aucun match ce jour-là.</p>
 
     <div v-for="game in games" :key="game.id" class="space-y-3 rounded-xl border border-border bg-surface p-4">

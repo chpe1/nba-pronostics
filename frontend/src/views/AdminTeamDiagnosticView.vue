@@ -11,6 +11,11 @@ const games = ref([])
 const selectedGameId = ref(null)
 const isLoadingGames = ref(false)
 const errorMessage = ref('')
+// Troisième état, distinct des deux autres : des données, une absence
+// VÉRIFIÉE, un échec (docs/design-v1.md §12). Sans lui, un échec de
+// chargement laissait à l'écran la liste du contexte précédent -- sous le
+// nouveau contexte sélectionné, donc en affirmant qu'elle lui appartenait.
+const loadFailed = ref(false)
 
 const OVERRIDE_FIELDS = [
   { key: 'base_note_multiplier', label: 'Multiplicateur note de base (Curseur A)', help: SETTINGS_HELP.base_note_multiplier },
@@ -44,6 +49,7 @@ async function loadGames() {
   selectedGameId.value = null
   simulationResult.value = null
   games.value = []
+  loadFailed.value = false
   if (!selectedTeamId.value) return
 
   isLoadingGames.value = true
@@ -51,6 +57,13 @@ async function loadGames() {
   try {
     games.value = await apiFetch(`/api/predictions/by-team/${selectedTeamId.value}`)
   } catch (error) {
+    // Seul écran des quatre qui vidait déjà `games` avant la requête -- mais
+    // pour une autre raison (remettre à zéro la sélection de match au
+    // changement d'équipe). Il n'affichait donc pas de données périmées, il
+    // tombait directement dans le piège symétrique : son message « aucun
+    // pronostic calculé pour cette équipe » s'affichait sur un échec, une
+    // affirmation d'absence tout aussi fausse.
+    loadFailed.value = true
     errorMessage.value = error instanceof ApiError ? error.message : 'Impossible de charger les matchs.'
   } finally {
     isLoadingGames.value = false
@@ -117,7 +130,10 @@ onMounted(loadTeams)
       pour tester d'autres réglages sans rien enregistrer.
     </p>
 
-    <p v-if="errorMessage" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
+    <!-- Erreur qui ACCOMPAGNE des données encore valables (échec d'un
+         enregistrement, d'une suppression) : elle se pose au-dessus. Un échec
+         de CHARGEMENT, lui, prend la place de la liste, plus bas (§12). -->
+    <p v-if="errorMessage && !loadFailed" class="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">{{ errorMessage }}</p>
 
     <div class="flex items-center gap-2">
       <label for="team-select" class="text-sm font-medium text-text">Équipe</label>
@@ -133,6 +149,23 @@ onMounted(loadTeams)
     </div>
 
     <p v-if="isLoadingGames" class="text-sm text-text-secondary">Chargement…</p>
+    <!-- L'échec prend la PLACE des données, il ne se superpose pas à elles
+         (§12) : ni liste, ni message de vide. Placé avant la branche du vide
+         dans la chaîne, il l'exclut mécaniquement -- les deux s'affichaient
+         ensemble jusqu'ici, et l'une des deux était fausse. -->
+    <div v-else-if="loadFailed" role="alert" class="rounded-lg bg-danger/10 p-3">
+      <p class="text-sm text-danger-text">{{ errorMessage }}</p>
+      <!-- Relance le contexte COURANT, sans rien changer à la sélection. -->
+      <button
+        type="button"
+        class="mt-3 min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        :disabled="isLoadingGames"
+        @click="loadGames"
+      >
+        Réessayer
+      </button>
+    </div>
+
     <p v-else-if="selectedTeamId && games.length === 0" class="text-sm text-text-secondary">
       Aucun pronostic calculé pour cette équipe pour l'instant (roster de la saison courante pas
       encore importé, ou aucun recalcul lancé).
