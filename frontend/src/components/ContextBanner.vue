@@ -72,11 +72,23 @@ const upcomingCount = computed(() => props.games.filter((g) => g.prediction?.is_
 </script>
 
 <template>
-  <div v-if="showcaseGame" class="mb-4 space-y-3 rounded-xl bg-accent-tint p-4 text-accent-on">
-    <div class="flex items-center justify-between">
+  <!-- Corps neutre coiffé d'une bande d'accent (§5.6/§9.2, 2026-09-04). L'aplat
+       d'accent ne couvre plus tout le bandeau mais sa seule coiffe : la surface
+       d'accent de l'écran passe de 16,0 % à 5,0 % (mesuré, deux modes, 1280 et
+       390 px), sous la règle des 10 % du §5.6. `overflow-hidden` est structurel,
+       pas cosmétique : sans lui, la coiffe déborde des coins arrondis. -->
+  <div
+    v-if="showcaseGame"
+    class="mb-4 overflow-hidden rounded-xl border border-border bg-surface text-text"
+  >
+    <!-- La coiffe garde EXACTEMENT le couple accent-tint/accent-on d'avant :
+         c'est ce qui préserve au centième les contrastes de la pastille déjà
+         validés en recette (8,34:1 en sombre, 12,07:1 en clair) -- son fond ne
+         change pas, donc ses valeurs non plus. -->
+    <div class="flex items-center justify-between bg-accent-tint px-4 py-2 text-accent-on">
       <p class="text-xs font-medium">Pronostic du jour</p>
-      <!-- Traitement uniforme (pas de couleur par niveau) : bg-accent-tint est déjà l'aplat
-           d'accent du bandeau (§5.3, "l'orange est piégeux" en clair) -- y superposer les
+      <!-- Traitement uniforme (pas de couleur par niveau) : la coiffe est un aplat
+           d'accent (§5.3, "l'orange est piégeux" en clair) -- y superposer les
            pastilles colorées des cartes (bg-warning/15, bg-neutral/15...) exposerait un rendu
            jamais mesuré sur ce fond précis. accent-on/accent-tint sont les deux seules valeurs
            mesurées et sûres dans les DEUX modes sur ce fond précis (voir docs/design-v1.md
@@ -88,21 +100,29 @@ const upcomingCount = computed(() => props.games.filter((g) => g.prediction?.is_
         {{ mention }}
       </span>
     </div>
-    <div class="flex items-center justify-between font-title">
-      <span>{{ winner.abbreviation }}</span>
-      <span class="font-mono tabular-nums">{{ winner.note.toFixed(2) }}</span>
-    </div>
-    <DivergentGauge
-      compact
-      :home-note="showcaseGame.prediction.home_team_note"
-      :away-note="showcaseGame.prediction.away_team_note"
-      :home-team-abbreviation="showcaseGame.home_team_abbreviation"
-      :away-team-abbreviation="showcaseGame.away_team_abbreviation"
-      :threshold-high="showcaseGame.reliability_threshold_high"
-    />
-    <div class="flex items-center justify-between font-title text-accent-on/60">
-      <span>{{ loser.abbreviation }}</span>
-      <span class="font-mono tabular-nums">{{ loser.note.toFixed(2) }}</span>
+
+    <div class="space-y-3 p-4">
+      <div class="flex items-center justify-between font-title">
+        <span>{{ winner.abbreviation }}</span>
+        <span class="font-mono tabular-nums">{{ winner.note.toFixed(2) }}</span>
+      </div>
+      <DivergentGauge
+        compact
+        :home-note="showcaseGame.prediction.home_team_note"
+        :away-note="showcaseGame.prediction.away_team_note"
+        :home-team-abbreviation="showcaseGame.home_team_abbreviation"
+        :away-team-abbreviation="showcaseGame.away_team_abbreviation"
+        :threshold-high="showcaseGame.reliability_threshold_high"
+      />
+      <!-- Note atténuée : `text-text-secondary`, PAS l'ancien `text-accent-on/60`.
+           Ce dernier valait #6E543B sur #FDBA74, soit 4,17:1 en sombre -- sous le
+           seuil de 4,5:1, défaut jamais mesuré parce que validé à l'œil seul.
+           Corrigé explicitement plutôt que laissé se résoudre par accident du
+           changement de fond : 6,63:1 en sombre, 6,81:1 en clair. -->
+      <div class="flex items-center justify-between font-title text-text-secondary">
+        <span>{{ loser.abbreviation }}</span>
+        <span class="font-mono tabular-nums">{{ loser.note.toFixed(2) }}</span>
+      </div>
     </div>
   </div>
 

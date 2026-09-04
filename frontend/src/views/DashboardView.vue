@@ -185,14 +185,38 @@ onMounted(loadGames)
          directement sur le fond de page, or --surface-sunken vaut EXACTEMENT
          --canvas en mode sombre (#0E1015) -- mesuré invisible à la première
          tentative, exactement le piège déjà consigné en §5.2 (bug réel de
-         CsvUploadForm.vue au Lot 3). Les blocs INTERNES des cartes fantômes
-         peuvent, eux, rester en `bg-surface-sunken` : ils se détachent sur
-         `bg-surface`, pas sur le fond de page. -->
+         CsvUploadForm.vue au Lot 3). Les blocs INTERNES peuvent, eux, rester
+         en `bg-surface-sunken` : ils se détachent sur `bg-surface`, pas sur le
+         fond de page.
+
+         Hauteur DÉRIVÉE, plus jamais figée (corrigé le 2026-09-04) : ce bloc
+         valait `h-[104px]` alors que le bandeau réel en mesurait 140,5 -- 36,5
+         px d'écart, donc un saut de mise en page à l'arrivée des données,
+         précisément ce qu'un squelette existe pour éviter. Il reprend
+         désormais la structure de ContextBanner.vue (coiffe px-4 py-2, corps
+         space-y-3 p-4, jauge compacte h-1) : la hauteur vient du même modèle
+         de boîte et suivra toute évolution du bandeau, au lieu d'un nombre à
+         resynchroniser à la main.
+
+         La coiffe du squelette reste NEUTRE, jamais l'aplat d'accent : un
+         bandeau vitrine n'existe que s'il y a un pronostic à montrer, et
+         afficher sa coiffe colorée avant de le savoir affirmerait ce qui n'est
+         pas encore vérifié (§13). -->
     <div
       v-else
-      class="skeleton-pulse mb-4 h-[104px] rounded-xl border border-border bg-surface"
+      class="skeleton-pulse mb-4 overflow-hidden rounded-xl border border-border bg-surface"
       aria-hidden="true"
-    />
+    >
+      <div class="flex items-center justify-between px-4 py-2">
+        <div class="h-4 w-32 rounded bg-surface-sunken" />
+        <div class="h-5 w-28 rounded-full bg-surface-sunken" />
+      </div>
+      <div class="space-y-3 p-4">
+        <div class="h-6 w-full rounded bg-surface-sunken" />
+        <div class="h-1 w-full rounded-full bg-surface-sunken" />
+        <div class="h-6 w-full rounded bg-surface-sunken" />
+      </div>
+    </div>
 
     <div v-if="authStore.isAuthenticated" class="mb-4">
       <button
