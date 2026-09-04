@@ -60,7 +60,15 @@ const ariaLabel = computed(() => {
     role="img"
     :aria-label="ariaLabel"
   >
-    <!-- bg-accent OU bg-neutral selon `muted`, jamais un 3e code couleur (2026-08-31,
+    <!-- `bg-accent-text`, PAS `bg-accent` : c'est l'accent DU MODE (§5.3). En sombre les
+         deux tokens valent le même #F97316, rien ne bouge ; en clair, `--accent-fill`
+         (#F97316) ne donnait que 2,33:1 contre la piste #E8EAEF, sous les 3:1 d'un objet
+         non textuel (WCAG 1.4.11) -- et aucune piste PLUS CLAIRE ne pouvait y remédier, le
+         blanc lui-même plafonnant à 2,80:1 contre cet orange. `--accent-text` (#C2410C)
+         donne 4,30:1. La barre reste donc à l'accent, et n'encode toujours pas le niveau
+         de fiabilité (voir juste en dessous).
+
+         bg-accent-text OU bg-neutral selon `muted`, jamais un 3e code couleur (2026-08-31,
          docs/design-v1.md §10.1/§10.2) : la barre ne distingue TOUJOURS PAS élevée de modérée
          (les deux restent bg-accent, comme au 2026-08-31 -- désigne le favori par sa position,
          jamais par sa couleur, déjà annoncé par la pastille de mention, GameCard.vue). `muted`
@@ -70,47 +78,37 @@ const ariaLabel = computed(() => {
          inconditionnel après le retrait de barFill, annulant le refus de recommander de §10.2. -->
     <div
       class="absolute inset-y-0 left-1/2 w-1/2 origin-left rounded-r-full transition-transform duration-[600ms] ease-out motion-reduce:transition-none"
-      :class="muted ? 'bg-neutral' : 'bg-accent'"
+      :class="muted ? 'bg-neutral' : 'bg-accent-text'"
       :style="{ transform: `scaleX(${rightScale})` }"
       aria-hidden="true"
     />
     <div
       class="absolute inset-y-0 right-1/2 w-1/2 origin-right rounded-l-full transition-transform duration-[600ms] ease-out motion-reduce:transition-none"
-      :class="muted ? 'bg-neutral' : 'bg-accent'"
+      :class="muted ? 'bg-neutral' : 'bg-accent-text'"
       :style="{ transform: `scaleX(${leftScale})` }"
       aria-hidden="true"
     />
-    <!-- Repère central : trois défauts cumulés initialement (2026-08-31), chacun mesuré en
-         navigateur avant correction -- un token à bon contraste sur le papier ne suffit pas si le
-         pixel réel ne le porte jamais.
-         1. Peint APRÈS les deux barres (pas avant) : le côté favori a TOUJOURS son bord intérieur
-            exactement au centre par construction -- peint avant elle, le repère se faisait
-            recouvrir pile à cet endroit, quelle que soit sa couleur.
-         2. w-0.5 (2px), jamais w-px (1px) : à résolution d'écran normale (1x), une ligne de 1px
-            positionnée via left:50% ne tombe quasiment jamais sur une frontière de pixel entière --
-            elle se rend comme un flou d'anti-crénelage réparti sur deux pixels voisins, dont AUCUN
-            n'affiche la vraie couleur du token (vérifié par lecture directe des pixels rendus :
-            deux tons intermédiaires ternes, jamais rgb(156,163,175)). 2px laisse une chance réelle
-            qu'au moins un pixel plein porte la couleur choisie.
-         3. bg-text, jamais bg-text-secondary : --neutral et --text-secondary sont la MÊME valeur
-            hexacodée (#9CA3AF, vérifié dans style.css) -- un repère de cette couleur serait
-            invisible par définition sur un remplissage neutre, pas seulement mal contrasté.
+    <!-- PAS de repère central : supprimé le 2026-09-04, et à ne pas réintroduire.
+         Le bord INTÉRIEUR de la barre est le repère. La barre part exactement du centre
+         (`left-1/2` / `right-1/2`, `origin-left` / `origin-right`), donc la frontière
+         piste→barre EST le centre -- et c'est la frontière la mieux contrastée de la
+         jauge : 6,79:1 en sombre, 4,30:1 en clair. Le repère peint faisait doublon avec
+         le bord qu'il devait signaler.
 
-         4e défaut, distinct des trois premiers, trouvé le 2026-09-01 en réintroduisant `muted`
-         (§10.2) : --text reste bien DIFFÉRENT de --neutral dans les deux modes (le piège nommé au
-         point 3 ne se reproduit pas), mais leurs LUMINANCES sont trop proches pour satisfaire
-         3:1 (WCAG 1.4.11) une fois le remplissage neutre réellement mesuré au pixel --
-         2,33:1 en sombre, 2,66:1 en clair, sous le seuil dans les DEUX modes. "Différent" ne
-         voulait pas dire "assez contrasté" -- une distinction que le point 3 n'avait pas eu à
-         faire tant que le remplissage restait à l'accent (là, --text donne largement plus de 3:1
-         dans les deux modes, vérifié). D'où un repère CONDITIONNEL comme les barres elles-mêmes :
-         bg-text contre le remplissage à l'accent (inchangé, déjà mesuré conforme), bg-surface
-         contre le remplissage neutre (mesuré 6,6:1 sombre / 6,8:1 clair) -- jamais une 3e couleur
-         qui coderait un niveau, seulement celle qui reste lisible sur le fond réellement présent. -->
-    <div
-      class="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2"
-      :class="muted ? 'bg-surface' : 'bg-text'"
-      aria-hidden="true"
-    />
+         Il était de surcroît impossible à rendre conforme. Démonstration, valable pour
+         toute couleur et pas seulement pour celles essayées : un repère est à cheval sur
+         la frontière, ses voisins sont donc la piste d'un côté et la barre de l'autre. En
+         sombre, être à 3:1 d'une piste quasi noire (L = 0,005) exige une luminance
+         >= 0,121 ; être à 3:1 d'une barre orange (L = 0,325) exige <= 0,075. Les deux
+         intervalles sont DISJOINTS : aucune valeur ne satisfait les deux, balayage
+         exhaustif des luminances à l'appui. Et ce n'est pas un accident de palette --
+         **plus la barre se détache de sa piste, moins il reste de place pour une
+         troisième couleur entre les deux**, les deux voisins occupant déjà les
+         extrémités de l'échelle utilisable. Améliorer le contraste barre/piste (ce que
+         fait le geste ci-dessus) ne pouvait donc que resserrer encore l'étau.
+
+         La condition `muted ? 'bg-surface' : 'bg-text'` disparaît avec lui : ce repère
+         conditionnel avait déjà coûté deux corrections (2026-08-31, 2026-09-01)
+         précisément parce qu'il était coincé entre ces deux voisins. Voir §10.1. -->
   </div>
 </template>
