@@ -8,6 +8,12 @@ const filterSeason = ref('')
 const filterPlayerName = ref('')
 const filterTeamAbbreviation = ref('')
 
+// Distinct des trois refs ci-dessus : PAS un filtre (total ne bouge pas),
+// mais recharge la liste depuis la page 1 comme un filtre -- une ligne en
+// cours d'édition peut se retrouver sur une autre page si l'ordre change.
+// '' = tri par défaut (season desc, player_name), jamais envoyé en params.
+const sort = ref('')
+
 // Source du <select> équipe (chantier filtre) -- même route que le
 // sélecteur d'AdminPlayersView.vue:201-212, qui l'utilise déjà pour un
 // usage identique : options = noms complets, valeur envoyée = abréviation,
@@ -67,6 +73,7 @@ const createMessage = ref('')
 let lastConfirmedSeason = ''
 let lastConfirmedPlayerName = ''
 let lastConfirmedTeamAbbreviation = ''
+let lastConfirmedSort = ''
 
 function toNumberOrNull(value) {
   return value === '' || value === null || value === undefined ? null : Number(value)
@@ -169,6 +176,7 @@ async function loadStats() {
     if (filterSeason.value.trim()) params.set('season', filterSeason.value.trim())
     if (filterTeamAbbreviation.value) params.set('team_abbreviation', filterTeamAbbreviation.value)
     if (filterPlayerName.value.trim()) params.set('player_name', filterPlayerName.value.trim())
+    if (sort.value) params.set('sort', sort.value)
     params.set('page', String(page.value))
     const response = await apiFetch(`/api/previous-season-stats?${params.toString()}`)
     stats.value = response.items
@@ -213,6 +221,7 @@ async function reloadCurrentPageKeepingEdits() {
     if (filterSeason.value.trim()) params.set('season', filterSeason.value.trim())
     if (filterTeamAbbreviation.value) params.set('team_abbreviation', filterTeamAbbreviation.value)
     if (filterPlayerName.value.trim()) params.set('player_name', filterPlayerName.value.trim())
+    if (sort.value) params.set('sort', sort.value)
     params.set('page', String(page.value))
     const response = await apiFetch(`/api/previous-season-stats?${params.toString()}`)
     const previousForms = forms.value
@@ -289,6 +298,27 @@ function onTeamFilterChange(event) {
   lastConfirmedSeason = filterSeason.value
   lastConfirmedPlayerName = filterPlayerName.value
   lastConfirmedTeamAbbreviation = newValue
+  page.value = 1
+  loadStats()
+}
+
+// Même patron que onTeamFilterChange ci-dessus, appliqué d'EMBLÉE (défaut
+// déjà trouvé une fois sur un <select> lié par v-model + @change au même
+// événement natif `change` -- pas question de le redécouvrir sur celui-ci).
+// Le tri n'est PAS un filtre (`total` ne bouge pas), mais il recharge la
+// liste depuis la page 1 comme un filtre : une ligne en cours d'édition peut
+// changer de page si l'ordre change -- même garde, même remise à page 1.
+function onSortChange(event) {
+  const newValue = event.target.value
+  if (!confirmDiscardUnsavedEdits()) {
+    event.target.value = lastConfirmedSort
+    return
+  }
+  sort.value = newValue
+  lastConfirmedSeason = filterSeason.value
+  lastConfirmedPlayerName = filterPlayerName.value
+  lastConfirmedTeamAbbreviation = filterTeamAbbreviation.value
+  lastConfirmedSort = newValue
   page.value = 1
   loadStats()
 }
@@ -514,6 +544,26 @@ onMounted(async () => {
     <p v-if="teamsLoadFailed" class="text-xs text-text-secondary">
       Filtre équipe indisponible (échec du chargement des équipes) -- le reste de l'écran fonctionne normalement.
     </p>
+
+    <!-- Rangée séparée de la rangée de filtres ci-dessus : le tri ne
+         restreint rien (`total` ne bouge pas, voir showTotalCount) -- ce
+         n'est pas un filtre, et le mélanger visuellement aux trois qui en
+         sont un brouillerait cette distinction. -->
+    <div class="flex flex-wrap items-center gap-2">
+      <label for="sort-select" class="text-sm font-medium text-text">Trier par</label>
+      <select
+        id="sort-select"
+        :value="sort"
+        class="min-h-11 rounded-lg border border-border px-3 py-2 text-sm"
+        @change="onSortChange"
+      >
+        <option value="">Nom (par défaut)</option>
+        <option value="per_asc">PER croissant</option>
+        <option value="per_desc">PER décroissant</option>
+        <option value="mpg_asc">MPG croissant</option>
+        <option value="mpg_desc">MPG décroissant</option>
+      </select>
+    </div>
 
     <!-- Mention du total (chantier filtre équipe) : répond à "cette équipe
          a-t-elle bien tous ses joueurs ?" même quand le pager reste masqué

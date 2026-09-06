@@ -278,6 +278,250 @@ def test_list_without_team_filter_is_unchanged(client, db_session, auth_headers)
     assert body["total"] == 2
 
 
+# --- GET : tri PER/MPG (chantier tri AdminPreviousSeasonStatsView) -----
+
+
+def test_list_default_sort_is_unchanged(client, db_session, auth_headers):
+    # Insérées dans un ordre volontairement mélangé -- sans `sort`, l'ordre
+    # reste (season desc, player_name), inchangé par ce chantier.
+    db_session.add_all(
+        [
+            _stat(player_name="Zach Zed", per=10.0),
+            _stat(player_name="Amy Alpha", per=20.0),
+            _stat(player_name="Mona Mid", per=15.0),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/api/previous-season-stats", params={"season": SEASON}, headers=auth_headers)
+    body = response.json()
+    names = [item["player_name"] for item in body["items"]]
+    assert names == ["Amy Alpha", "Mona Mid", "Zach Zed"]
+
+
+def test_list_sort_per_asc(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="Player B", per=20.0),
+            _stat(player_name="Player C", per=5.0),
+            _stat(player_name="Player A", per=10.0),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "per_asc"}, headers=auth_headers
+    )
+    names = [item["player_name"] for item in response.json()["items"]]
+    assert names == ["Player C", "Player A", "Player B"]
+
+
+def test_list_sort_per_desc(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="Player B", per=20.0),
+            _stat(player_name="Player C", per=5.0),
+            _stat(player_name="Player A", per=10.0),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "per_desc"}, headers=auth_headers
+    )
+    names = [item["player_name"] for item in response.json()["items"]]
+    assert names == ["Player B", "Player A", "Player C"]
+
+
+def test_list_sort_mpg_asc(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="Player B", mpg=30.0),
+            _stat(player_name="Player C", mpg=2.0),
+            _stat(player_name="Player A", mpg=18.0),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "mpg_asc"}, headers=auth_headers
+    )
+    names = [item["player_name"] for item in response.json()["items"]]
+    assert names == ["Player C", "Player A", "Player B"]
+
+
+def test_list_sort_mpg_desc(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="Player B", mpg=30.0),
+            _stat(player_name="Player C", mpg=2.0),
+            _stat(player_name="Player A", mpg=18.0),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "mpg_desc"}, headers=auth_headers
+    )
+    names = [item["player_name"] for item in response.json()["items"]]
+    assert names == ["Player B", "Player A", "Player C"]
+
+
+def test_list_sort_per_uses_player_name_as_tiebreak(client, db_session, auth_headers):
+    # Trois lignes au MÊME per, insérées dans un ordre qui ne suit PAS
+    # l'ordre alphabétique attendu -- si la clé de départage player_name
+    # manquait, l'ordre naturel de SQLite (proche de l'ordre d'insertion en
+    # l'absence d'index) romprait cette assertion.
+    db_session.add_all(
+        [
+            _stat(player_name="Zach Tied", per=15.0),
+            _stat(player_name="Amy Tied", per=15.0),
+            _stat(player_name="Mona Tied", per=15.0),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "per_desc"}, headers=auth_headers
+    )
+    names = [item["player_name"] for item in response.json()["items"]]
+    assert names == ["Amy Tied", "Mona Tied", "Zach Tied"]
+
+
+def test_list_sort_pagination_is_stable_across_repeated_calls_under_ties(client, db_session, auth_headers):
+    # 21 lignes au MÊME per, insérées en ordre alphabétique INVERSE -- la clé
+    # de départage (player_name, croissant) est ce qui garantit un résultat
+    # identique à chaque appel et une frontière de page nette, jamais un
+    # artefact de l'ordre d'insertion.
+    db_session.add_all(
+        [_stat(player_name=f"Player {i:02d}", per=15.0) for i in range(21, 0, -1)]
+    )
+    db_session.commit()
+
+    page1_a = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "per_desc", "page": 1}, headers=auth_headers
+    ).json()
+    page1_b = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "per_desc", "page": 1}, headers=auth_headers
+    ).json()
+    page2_a = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "per_desc", "page": 2}, headers=auth_headers
+    ).json()
+    page2_b = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "per_desc", "page": 2}, headers=auth_headers
+    ).json()
+
+    assert page1_a == page1_b
+    assert page2_a == page2_b
+
+    names1 = [item["player_name"] for item in page1_a["items"]]
+    names2 = [item["player_name"] for item in page2_a["items"]]
+    assert len(names1) == 20
+    assert len(names2) == 1
+    assert set(names1).isdisjoint(names2)
+    expected = sorted(f"Player {i:02d}" for i in range(1, 22))
+    assert names1 + names2 == expected
+
+
+def test_list_unknown_sort_value_falls_back_to_default_not_error(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="Zach Zed", per=10.0),
+            _stat(player_name="Amy Alpha", per=20.0),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "sort": "not_a_real_sort"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    names = [item["player_name"] for item in response.json()["items"]]
+    # Repli sur le tri par défaut (season desc, player_name) -- jamais 422.
+    assert names == ["Amy Alpha", "Zach Zed"]
+
+
+def test_list_sort_combines_with_team_filter(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="High PER GSW", team_abbreviation="GSW", per=25.0),
+            _stat(player_name="High PER MEM", team_abbreviation="MEM", per=30.0),
+            _stat(player_name="Low PER MEM", team_abbreviation="MEM", per=5.0),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats",
+        params={"season": SEASON, "team_abbreviation": "MEM", "sort": "per_desc"},
+        headers=auth_headers,
+    )
+    body = response.json()
+    names = [item["player_name"] for item in body["items"]]
+    assert body["total"] == 2
+    assert names == ["High PER MEM", "Low PER MEM"]
+
+
+def test_list_sort_does_not_affect_total(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="Player A", team_abbreviation="MEM", per=10.0),
+            _stat(player_name="Player B", team_abbreviation="MEM", per=20.0),
+        ]
+    )
+    db_session.commit()
+
+    default_total = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "team_abbreviation": "MEM"}, headers=auth_headers
+    ).json()["total"]
+    sorted_total = client.get(
+        "/api/previous-season-stats",
+        params={"season": SEASON, "team_abbreviation": "MEM", "sort": "per_desc"},
+        headers=auth_headers,
+    ).json()["total"]
+    assert default_total == sorted_total == 2
+
+
+def test_list_sort_pagination_and_team_filter_combine_without_gap_or_overlap(client, db_session, auth_headers):
+    # Le triplet réel de l'usage visé : Memphis (2 pages) trié par PER, avec
+    # un ex æquo qui tombe PILE sur la frontière de page (positions 20/21)
+    # -- filtre équipe, tri non-défaut et pagination exercés ensemble, pas
+    # séparément comme dans les tests ci-dessus.
+    rows = [_stat(player_name=f"Player {i:02d}", team_abbreviation="MEM", per=float(22 - i)) for i in range(1, 20)]
+    # Deux lignes au plus bas per (2.0), tied pile sur la frontière de page.
+    rows += [
+        _stat(player_name="AAA Tied", team_abbreviation="MEM", per=2.0),
+        _stat(player_name="ZZZ Tied", team_abbreviation="MEM", per=2.0),
+    ]
+    # Une ligne d'une autre équipe, exclue par le filtre -- vérifie que le
+    # filtre reste appliqué sur LES DEUX pages, pas seulement la première.
+    rows.append(_stat(player_name="Other Team Player", team_abbreviation="GSW", per=999.0))
+    db_session.add_all(rows)
+    db_session.commit()
+
+    page1 = client.get(
+        "/api/previous-season-stats",
+        params={"season": SEASON, "team_abbreviation": "MEM", "sort": "per_desc", "page": 1},
+        headers=auth_headers,
+    ).json()
+    page2 = client.get(
+        "/api/previous-season-stats",
+        params={"season": SEASON, "team_abbreviation": "MEM", "sort": "per_desc", "page": 2},
+        headers=auth_headers,
+    ).json()
+
+    assert page1["total"] == 21
+    assert page2["total"] == 21
+    names1 = [item["player_name"] for item in page1["items"]]
+    names2 = [item["player_name"] for item in page2["items"]]
+    assert len(names1) == 20
+    assert len(names2) == 1
+    assert set(names1).isdisjoint(names2)
+    expected = [f"Player {i:02d}" for i in range(1, 20)] + ["AAA Tied", "ZZZ Tied"]
+    assert names1 + names2 == expected
+    assert all(item["team_abbreviation"] == "MEM" for item in page1["items"] + page2["items"])
+
+
 # --- POST --------------------------------------------------------------
 
 

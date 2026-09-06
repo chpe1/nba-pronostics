@@ -51,11 +51,29 @@ def _validate_and_normalize_abbreviation(abbreviation: str) -> str:
     return normalized
 
 
+# Tris offerts (chantier tri PER/MPG) : ensemble fermé, un par option du
+# <select> frontend -- pas de reconstruction de clause côté client. PER et
+# MPG ne sont PAS uniques (88 % / 12 % des lignes en ex æquo, mesuré sur la
+# vraie base) : sans second critère, deux appels à la même page pourraient
+# légitimement renvoyer des ensembles différents. player_name en clé de
+# départage restaure le déterminisme -- absent du tri par défaut ci-dessous
+# car il en fait déjà partie (season.desc(), player_name), lui-même
+# déterministe grâce à UNIQUE(season, player_name).
+_DEFAULT_SORT = (PreviousSeasonPlayerStat.season.desc(), PreviousSeasonPlayerStat.player_name)
+_SORT_OPTIONS: dict[str, tuple] = {
+    "per_asc": (PreviousSeasonPlayerStat.per.asc(), PreviousSeasonPlayerStat.player_name),
+    "per_desc": (PreviousSeasonPlayerStat.per.desc(), PreviousSeasonPlayerStat.player_name),
+    "mpg_asc": (PreviousSeasonPlayerStat.mpg.asc(), PreviousSeasonPlayerStat.player_name),
+    "mpg_desc": (PreviousSeasonPlayerStat.mpg.desc(), PreviousSeasonPlayerStat.player_name),
+}
+
+
 @router.get("", response_model=PreviousSeasonPlayerStatListRead)
 def list_previous_season_stats(
     season: str | None = Query(default=None),
     player_name: str | None = Query(default=None),
     team_abbreviation: str | None = Query(default=None),
+    sort: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     db: Session = Depends(get_db),
 ):
@@ -81,8 +99,16 @@ def list_previous_season_stats(
     # par nom isole une poignée de résultats).
     total = query.count()
 
+    # Repli silencieux sur le tri par défaut pour une valeur inconnue de
+    # `sort`, jamais une 422 : comme team_abbreviation, cette valeur ne peut
+    # venir ici que d'un <select> contrôlé côté frontend -- mais contrairement
+    # à un filtre, un tri n'a pas d'équivalent "vide" à renvoyer pour une
+    # valeur invalide, la requête doit de toute façon trier les lignes d'une
+    # façon ou d'une autre.
+    order_by_clauses = _SORT_OPTIONS.get(sort, _DEFAULT_SORT)
+
     items = (
-        query.order_by(PreviousSeasonPlayerStat.season.desc(), PreviousSeasonPlayerStat.player_name)
+        query.order_by(*order_by_clauses)
         .offset((page - 1) * DEFAULT_PAGE_SIZE)
         .limit(DEFAULT_PAGE_SIZE)
         .all()
