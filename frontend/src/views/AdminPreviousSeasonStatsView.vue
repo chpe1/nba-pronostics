@@ -6,6 +6,19 @@ const stats = ref([])
 const forms = ref({})
 const filterSeason = ref('')
 const filterPlayerName = ref('')
+const filterTeamAbbreviation = ref('')
+
+// Source du <select> équipe (chantier filtre) -- même route que le
+// sélecteur d'AdminPlayersView.vue:201-212, qui l'utilise déjà pour un
+// usage identique : options = noms complets, valeur envoyée = abréviation,
+// jamais reconstruite ni devinée côté frontend.
+const teams = ref([])
+// Distinct de `loadFailed` (qui remplace TOUTE la liste, §12) : un échec de
+// GET /api/teams ne doit jamais bloquer cet écran -- les statistiques
+// restent consultables sans le filtre équipe. Sans cette note dédiée, un
+// <select> réduit à sa seule option "Toutes les équipes" se lirait comme un
+// état normal (aucune équipe à filtrer), pas comme une panne.
+const teamsLoadFailed = ref(false)
 
 // Pagination (limitation n°14). `page` est la seule valeur que le client
 // possède avant toute réponse ; `total`/`size` viennent du serveur et
@@ -53,6 +66,7 @@ const createMessage = ref('')
 // fermées, pas des refs : jamais lues par le template.
 let lastConfirmedSeason = ''
 let lastConfirmedPlayerName = ''
+let lastConfirmedTeamAbbreviation = ''
 
 function toNumberOrNull(value) {
   return value === '' || value === null || value === undefined ? null : Number(value)
@@ -112,6 +126,17 @@ const totalPages = computed(() => {
 // ou sur `total === 0`, `total` étant remis à 0 dans les deux cas.
 const showPager = computed(() => totalPages.value > 1)
 
+// Distinct de `showPager` (qui dépend du nombre de PAGES) : cette mention
+// affiche le total quel que soit ce nombre -- c'est elle qui répond à
+// l'usage visé ("cette équipe a-t-elle bien tous ses joueurs ?") pour les
+// équipes qui tiennent sur une seule page, où le pager reste masqué. Cachée
+// sur `loadFailed` (aucune liste à quantifier) et sur une page hors bornes
+// (ce bloc dit déjà son propre total en toutes lettres, voir plus bas --
+// une mention en double ferait doublon). `pageSize.value !== null` évite
+// d'afficher "0 ligne" au tout premier rendu, avant la première réponse.
+const isOutOfBoundsPage = computed(() => total.value > 0 && stats.value.length === 0)
+const showTotalCount = computed(() => pageSize.value !== null && !loadFailed.value && !isOutOfBoundsPage.value)
+
 async function loadDefaultSeason() {
   try {
     const settings = await apiFetch('/api/settings')
@@ -123,6 +148,18 @@ async function loadDefaultSeason() {
   }
 }
 
+// Dégradation silencieuse assumée, alignée sur loadDefaultSeason() ci-dessus
+// (même principe : un échec ne doit jamais bloquer l'écran). `teamsLoadFailed`
+// porte la note dédiée qui la rend visible malgré tout (voir sa déclaration).
+async function loadTeams() {
+  try {
+    teams.value = await apiFetch('/api/teams')
+    teamsLoadFailed.value = false
+  } catch {
+    teamsLoadFailed.value = true
+  }
+}
+
 async function loadStats() {
   isLoading.value = true
   errorMessage.value = ''
@@ -130,6 +167,7 @@ async function loadStats() {
   try {
     const params = new URLSearchParams()
     if (filterSeason.value.trim()) params.set('season', filterSeason.value.trim())
+    if (filterTeamAbbreviation.value) params.set('team_abbreviation', filterTeamAbbreviation.value)
     if (filterPlayerName.value.trim()) params.set('player_name', filterPlayerName.value.trim())
     params.set('page', String(page.value))
     const response = await apiFetch(`/api/previous-season-stats?${params.toString()}`)
@@ -173,6 +211,7 @@ async function reloadCurrentPageKeepingEdits() {
   try {
     const params = new URLSearchParams()
     if (filterSeason.value.trim()) params.set('season', filterSeason.value.trim())
+    if (filterTeamAbbreviation.value) params.set('team_abbreviation', filterTeamAbbreviation.value)
     if (filterPlayerName.value.trim()) params.set('player_name', filterPlayerName.value.trim())
     params.set('page', String(page.value))
     const response = await apiFetch(`/api/previous-season-stats?${params.toString()}`)
@@ -215,16 +254,41 @@ function goToPage(target) {
 function onFilterChange() {
   if (!confirmDiscardUnsavedEdits()) {
     // Annulé : les deux champs reviennent à leur dernière valeur confirmée
-    // -- v-model a déjà appliqué la saisie avant que @change ne se déclenche,
-    // « annuler » doit donc effacer ce changement, pas seulement renoncer au
-    // rechargement (sans quoi le champ affiché divergerait des données
-    // réellement chargées).
+    // -- v-model a déjà appliqué la saisie avant que @change ne se déclenche
+    // (événements distincts, `input` puis `change` : pas de course), « annuler »
+    // doit donc effacer ce changement, pas seulement renoncer au rechargement
+    // (sans quoi le champ affiché divergerait des données réellement chargées).
     filterSeason.value = lastConfirmedSeason
     filterPlayerName.value = lastConfirmedPlayerName
     return
   }
   lastConfirmedSeason = filterSeason.value
   lastConfirmedPlayerName = filterPlayerName.value
+  page.value = 1
+  loadStats()
+}
+
+// Distinct de onFilterChange ci-dessus : PAS de v-model sur ce <select>,
+// volontairement -- vérifié en recette (Playwright), v-model et notre
+// @change partagent le MÊME événement natif `change` sur un <select> (pour
+// un <input>, v-model écoute `input`, notre @change écoute `change` :
+// événements distincts, jamais de course). Sur annulation, la ref finit
+// bien par revenir à sa valeur confirmée, mais Vue ne resynchronise pas
+// toujours l'option AFFICHÉE avant un futur re-rendu sans rapport -- un
+// <select> natif a déjà commis son changement dans le DOM avant que
+// `change` ne se déclenche, et rien ne force le navigateur à revenir sur ce
+// choix entre-temps. D'où l'affectation DOM explicite et immédiate ci-dessous
+// plutôt qu'une réécriture de la seule ref.
+function onTeamFilterChange(event) {
+  const newValue = event.target.value
+  if (!confirmDiscardUnsavedEdits()) {
+    event.target.value = lastConfirmedTeamAbbreviation
+    return
+  }
+  filterTeamAbbreviation.value = newValue
+  lastConfirmedSeason = filterSeason.value
+  lastConfirmedPlayerName = filterPlayerName.value
+  lastConfirmedTeamAbbreviation = newValue
   page.value = 1
   loadStats()
 }
@@ -355,6 +419,7 @@ async function deleteStat(stat) {
 
 onMounted(async () => {
   await loadDefaultSeason()
+  await loadTeams()
   await loadStats()
 })
 </script>
@@ -424,6 +489,16 @@ onMounted(async () => {
         class="rounded-lg border border-border px-3 py-2 text-sm"
         @change="onFilterChange"
       />
+      <label for="team-filter" class="text-sm font-medium text-text">Équipe</label>
+      <select
+        id="team-filter"
+        :value="filterTeamAbbreviation"
+        class="min-h-11 rounded-lg border border-border px-3 py-2 text-sm"
+        @change="onTeamFilterChange"
+      >
+        <option value="">Toutes les équipes</option>
+        <option v-for="team in teams" :key="team.id" :value="team.abbreviation">{{ team.name }}</option>
+      </select>
       <label class="text-sm font-medium text-text">Joueur</label>
       <input
         v-model="filterPlayerName"
@@ -433,6 +508,20 @@ onMounted(async () => {
         @change="onFilterChange"
       />
     </div>
+    <!-- Note dédiée, distincte de loadFailed : un <select> réduit à sa seule
+         option vide ne se lit pas comme une panne (§12) -- sans elle,
+         l'indisponibilité du filtre équipe serait invisible. -->
+    <p v-if="teamsLoadFailed" class="text-xs text-text-secondary">
+      Filtre équipe indisponible (échec du chargement des équipes) -- le reste de l'écran fonctionne normalement.
+    </p>
+
+    <!-- Mention du total (chantier filtre équipe) : répond à "cette équipe
+         a-t-elle bien tous ses joueurs ?" même quand le pager reste masqué
+         -- la majorité des équipes (16 à 25 lignes) tient sur une seule
+         page de 20. Conditions d'affichage : voir `showTotalCount`. -->
+    <p v-if="showTotalCount" class="text-sm text-text-secondary">
+      {{ total }} ligne{{ total > 1 ? 's' : '' }} au total sous ces filtres.
+    </p>
 
     <!-- Pager du HAUT : visible dès qu'il y a plus d'une page, y compris
          pendant isLoading (boutons alors désactivés, comme Réessayer) et

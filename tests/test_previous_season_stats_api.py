@@ -155,6 +155,129 @@ def test_list_rejects_page_below_one(client, db_session, auth_headers):
     assert response.status_code == 422
 
 
+# --- GET : filtre équipe (chantier filtre AdminPreviousSeasonStatsView) -
+
+
+def test_list_filters_by_team_abbreviation(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="LeBron James", team_abbreviation="LAL"),
+            _stat(player_name="Stephen Curry", team_abbreviation="GSW"),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "team_abbreviation": "LAL"}, headers=auth_headers
+    )
+    body = response.json()
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["player_name"] == "LeBron James"
+
+
+def test_list_team_filter_combines_with_player_name(client, db_session, auth_headers):
+    # Deux joueurs dont le nom matche le même filtre texte ("curry"), dans
+    # deux équipes différentes : le filtre équipe doit exclure celui qui
+    # n'appartient pas à l'équipe demandée (point (b) du plan) -- sans lui,
+    # une recherche de nom sous filtre équipe pourrait renvoyer le mauvais
+    # joueur. (Deux VRAIS homonymes dans la même saison sont impossibles ici :
+    # UNIQUE(season, player_name) les bloquerait quelle que soit l'équipe.)
+    db_session.add_all(
+        [
+            _stat(player_name="Stephen Curry", team_abbreviation="GSW"),
+            _stat(player_name="Seth Curry", team_abbreviation="SAS"),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats",
+        params={"season": SEASON, "player_name": "curry", "team_abbreviation": "SAS"},
+        headers=auth_headers,
+    )
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["player_name"] == "Seth Curry"
+
+
+def test_list_team_filter_combines_with_season(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="LeBron James", team_abbreviation="LAL", season="2025-2026"),
+            _stat(player_name="LeBron James", team_abbreviation="LAL", season="2024-2025"),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats",
+        params={"season": "2025-2026", "team_abbreviation": "LAL"},
+        headers=auth_headers,
+    )
+    body = response.json()
+    assert body["total"] == 1
+    assert body["items"][0]["season"] == "2025-2026"
+
+
+def test_list_unknown_team_abbreviation_returns_empty_not_error(client, db_session, auth_headers):
+    db_session.add(_stat())
+    db_session.commit()
+
+    # Contre-pied délibéré de test_create_normalizes_non_canonical_abbreviation
+    # et test_create_rejects_unknown_team_abbreviation : en LECTURE, une
+    # abréviation non canonique ou inconnue n'est ni normalisée ni rejetée --
+    # elle ne peut simplement matcher aucune ligne (point (a) du plan).
+    response = client.get(
+        "/api/previous-season-stats", params={"team_abbreviation": "BRK"}, headers=auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 0
+    assert body["items"] == []
+
+
+def test_list_pagination_combines_with_team_filter(client, db_session, auth_headers):
+    db_session.add_all(
+        [_stat(player_name=f"Player {i:02d}", team_abbreviation="MEM") for i in range(1, 22)]
+        + [_stat(player_name="Other Player", team_abbreviation="GSW")]
+    )
+    db_session.commit()
+
+    page1 = client.get(
+        "/api/previous-season-stats",
+        params={"season": SEASON, "team_abbreviation": "MEM", "page": 1},
+        headers=auth_headers,
+    ).json()
+    page2 = client.get(
+        "/api/previous-season-stats",
+        params={"season": SEASON, "team_abbreviation": "MEM", "page": 2},
+        headers=auth_headers,
+    ).json()
+
+    # total reflète les 21 lignes MEM, jamais les 22 lignes toutes équipes
+    # confondues (attrape un total calculé après découpage, ou avant filtre).
+    assert page1["total"] == 21
+    assert page2["total"] == 21
+    assert len(page1["items"]) == 20
+    assert len(page2["items"]) == 1
+    assert all(item["team_abbreviation"] == "MEM" for item in page1["items"] + page2["items"])
+
+
+def test_list_without_team_filter_is_unchanged(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="LeBron James", team_abbreviation="LAL"),
+            _stat(player_name="Stephen Curry", team_abbreviation="GSW"),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/api/previous-season-stats", params={"season": SEASON}, headers=auth_headers)
+    body = response.json()
+    assert body["total"] == 2
+
+
 # --- POST --------------------------------------------------------------
 
 

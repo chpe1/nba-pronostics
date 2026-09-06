@@ -55,6 +55,7 @@ def _validate_and_normalize_abbreviation(abbreviation: str) -> str:
 def list_previous_season_stats(
     season: str | None = Query(default=None),
     player_name: str | None = Query(default=None),
+    team_abbreviation: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     db: Session = Depends(get_db),
 ):
@@ -63,6 +64,16 @@ def list_previous_season_stats(
         query = query.filter(PreviousSeasonPlayerStat.season == season)
     if player_name is not None:
         query = query.filter(PreviousSeasonPlayerStat.player_name.ilike(f"%{player_name}%"))
+    if team_abbreviation is not None:
+        # Égalité stricte, volontairement SANS normalize_abbreviation() ni la
+        # validation 422 utilisées en écriture (POST/PATCH) : la valeur ne
+        # peut venir ici que d'un <select> alimenté par Team (frontend), donc
+        # toujours déjà canonique -- une abréviation inconnue/mal formée
+        # renvoie simplement {items: [], total: 0}, une réponse honnête,
+        # jamais une erreur. Filtrer ne corrompt rien en base, contrairement
+        # à écrire -- c'est cette asymétrie qui justifie de ne PAS réutiliser
+        # _validate_and_normalize_abbreviation ici.
+        query = query.filter(PreviousSeasonPlayerStat.team_abbreviation == team_abbreviation)
 
     # total sur la requête FILTRÉE, avant découpage -- reflète le filtre
     # courant, jamais la table entière (§14.1-A ne s'applique pas ici : c'est
