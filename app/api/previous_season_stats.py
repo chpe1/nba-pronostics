@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import MAX_REALISTIC_MPG, PreviousSeasonPlayerStat
 from app.schemas.previous_season_player_stat import (
     PreviousSeasonPlayerStatCreate,
+    PreviousSeasonPlayerStatListRead,
     PreviousSeasonPlayerStatRead,
     PreviousSeasonPlayerStatUpdate,
 )
@@ -19,6 +20,18 @@ router = APIRouter(
     tags=["previous-season-stats"],
     dependencies=[Depends(get_current_admin)],
 )
+
+# Taille de page pour GET (limitation n°14) : constante en dur, pas un
+# curseur Settings -- même raisonnement que PREDICTION_REVEAL_THRESHOLD_DAYS
+# (app/api/predictions.py) : Settings est réservé aux curseurs qui nourrissent
+# un calcul exposé au simulateur (compute_matchup/compute_team_note), et une
+# densité d'affichage n'en nourrit aucun. Pas de paramètre `size` en entrée :
+# aucun sélecteur de taille n'existe côté écran, un paramètre sans appelant
+# ne serait que de la surface à valider et documenter pour personne (voir
+# docs/design-v1.md §11). Choisie sur un pas de ligne mesuré à 304 px/carte
+# à 390 px : 20 lignes = 6 080 px de lignes, 30 pages pour les 582 lignes
+# réelles de la saison 2025-2026 -- la dernière n'en portant que 2.
+DEFAULT_PAGE_SIZE = 20
 
 
 def _validate_mpg(mpg: float | None) -> None:
@@ -38,10 +51,11 @@ def _validate_and_normalize_abbreviation(abbreviation: str) -> str:
     return normalized
 
 
-@router.get("", response_model=list[PreviousSeasonPlayerStatRead])
+@router.get("", response_model=PreviousSeasonPlayerStatListRead)
 def list_previous_season_stats(
     season: str | None = Query(default=None),
     player_name: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
     db: Session = Depends(get_db),
 ):
     query = db.query(PreviousSeasonPlayerStat)
@@ -49,7 +63,25 @@ def list_previous_season_stats(
         query = query.filter(PreviousSeasonPlayerStat.season == season)
     if player_name is not None:
         query = query.filter(PreviousSeasonPlayerStat.player_name.ilike(f"%{player_name}%"))
-    return query.order_by(PreviousSeasonPlayerStat.season.desc(), PreviousSeasonPlayerStat.player_name).all()
+
+    # total sur la requête FILTRÉE, avant découpage -- reflète le filtre
+    # courant, jamais la table entière (§14.1-A ne s'applique pas ici : c'est
+    # précisément ce qui permet au pager de se masquer quand une recherche
+    # par nom isole une poignée de résultats).
+    total = query.count()
+
+    items = (
+        query.order_by(PreviousSeasonPlayerStat.season.desc(), PreviousSeasonPlayerStat.player_name)
+        .offset((page - 1) * DEFAULT_PAGE_SIZE)
+        .limit(DEFAULT_PAGE_SIZE)
+        .all()
+    )
+    # `page` renvoyée telle que demandée, jamais rabotée à la dernière page
+    # valide : une page hors bornes doit rester OBSERVABLE (items=[], total
+    # correct) plutôt que servir silencieusement le contenu d'une autre page
+    # -- même principe que le 04/09 (ne jamais remplacer une donnée demandée
+    # par une autre sans le dire).
+    return PreviousSeasonPlayerStatListRead(items=items, total=total, page=page, size=DEFAULT_PAGE_SIZE)
 
 
 @router.post("", response_model=PreviousSeasonPlayerStatRead, status_code=201)

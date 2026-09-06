@@ -33,9 +33,126 @@ def test_list_filters_by_season_and_player_name(client, db_session, auth_headers
     )
     assert response.status_code == 200
     body = response.json()
-    assert len(body) == 1
-    assert body[0]["player_name"] == "LeBron James"
-    assert body[0]["season"] == "2025-2026"
+    # Enveloppe {items, total, page, size} (limitation n°14) -- plus une
+    # liste nue : c'est le seul dépendant de l'ancienne forme, réécrit ici.
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["player_name"] == "LeBron James"
+    assert body["items"][0]["season"] == "2025-2026"
+
+
+# --- GET : pagination (limitation n°14) ---------------------------------
+
+
+def test_list_default_page_returns_default_size_and_full_total(client, db_session, auth_headers):
+    # 21 lignes -- une de plus que DEFAULT_PAGE_SIZE (20), le strict
+    # nécessaire pour exercer une seconde page (voir plan révisé, point 5 :
+    # "des centaines" n'apporte rien qu'une seule ligne en trop n'apporte pas).
+    db_session.add_all([_stat(player_name=f"Player {i:02d}") for i in range(1, 22)])
+    db_session.commit()
+
+    response = client.get("/api/previous-season-stats", params={"season": SEASON}, headers=auth_headers)
+    body = response.json()
+    assert response.status_code == 200
+    assert body["total"] == 21
+    assert body["page"] == 1
+    assert body["size"] == 20
+    assert len(body["items"]) == 20
+
+
+def test_list_second_page_has_no_overlap_or_gap_with_first(client, db_session, auth_headers):
+    db_session.add_all([_stat(player_name=f"Player {i:02d}") for i in range(1, 22)])
+    db_session.commit()
+
+    page1 = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "page": 1}, headers=auth_headers
+    ).json()
+    page2 = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "page": 2}, headers=auth_headers
+    ).json()
+
+    names1 = [item["player_name"] for item in page1["items"]]
+    names2 = [item["player_name"] for item in page2["items"]]
+    assert len(names1) == 20
+    assert len(names2) == 1  # 21 - 20
+    assert set(names1).isdisjoint(names2)  # aucun recouvrement
+    # aucun trou : les deux pages mises bout à bout reconstituent l'ordre
+    # complet attendu (tri par player_name croissant, une seule saison ici)
+    expected = sorted(f"Player {i:02d}" for i in range(1, 22))
+    assert names1 + names2 == expected
+
+
+def test_list_last_page_returns_partial_results(client, db_session, auth_headers):
+    db_session.add_all([_stat(player_name=f"Player {i:02d}") for i in range(1, 22)])
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "page": 2}, headers=auth_headers
+    )
+    body = response.json()
+    assert body["total"] == 21
+    assert body["page"] == 2
+    assert len(body["items"]) == 1  # reste après une page pleine de 20
+
+
+def test_list_page_beyond_total_returns_empty_items_with_correct_total(client, db_session, auth_headers):
+    db_session.add_all([_stat(player_name=f"Player {i:02d}") for i in range(1, 22)])
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": SEASON, "page": 999}, headers=auth_headers
+    )
+    body = response.json()
+    # `page` n'est jamais rabotée : renvoyée telle que demandée, avec le
+    # vrai total -- pas une erreur, pas un repli silencieux sur une autre
+    # page (voir docstring de PreviousSeasonPlayerStatListRead).
+    assert response.status_code == 200
+    assert body["page"] == 999
+    assert body["total"] == 21
+    assert body["items"] == []
+
+
+def test_list_total_reflects_current_filter_not_whole_table(client, db_session, auth_headers):
+    db_session.add_all(
+        [
+            _stat(player_name="Joueur A", season="2025-2026"),
+            _stat(player_name="Joueur B", season="2025-2026"),
+            _stat(player_name="Joueur C", season="2024-2025"),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats", params={"season": "2025-2026"}, headers=auth_headers
+    )
+    body = response.json()
+    # 2 lignes en 2025-2026, 3 au total en base -- total doit refléter le
+    # filtre, jamais la table entière (décision (d) du plan).
+    assert body["total"] == 2
+    assert len(body["items"]) == 2
+
+
+def test_list_pagination_combines_with_player_name_filter(client, db_session, auth_headers):
+    db_session.add_all(
+        [_stat(player_name=f"Alpha {i:02d}") for i in range(1, 6)]
+        + [_stat(player_name=f"Beta {i:02d}") for i in range(1, 6)]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/previous-season-stats",
+        params={"season": SEASON, "player_name": "alpha", "page": 1},
+        headers=auth_headers,
+    )
+    body = response.json()
+    assert body["total"] == 5
+    assert len(body["items"]) == 5
+    assert all(item["player_name"].startswith("Alpha") for item in body["items"])
+
+
+def test_list_rejects_page_below_one(client, db_session, auth_headers):
+    response = client.get("/api/previous-season-stats", params={"page": 0}, headers=auth_headers)
+    assert response.status_code == 422
 
 
 # --- POST --------------------------------------------------------------
