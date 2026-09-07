@@ -53,14 +53,14 @@ def test_update_team_applies_partial_changes(client, db_session, auth_headers):
 
     response = client.patch(
         f"/api/teams/{team.id}",
-        json={"win_pct_home": 0.75, "conference": "Est"},
+        json={"win_pct_home": 0.75, "win_pct_home_prev_season": 0.6},
         headers=auth_headers,
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["win_pct_home"] == 0.75
-    assert body["conference"] == "Est"
+    assert body["win_pct_home_prev_season"] == 0.6
     assert body["win_pct_away"] == 0.4  # champ non fourni -> inchangé
 
     db_session.expire_all()

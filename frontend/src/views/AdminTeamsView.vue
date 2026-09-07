@@ -14,9 +14,6 @@ function buildForm(team) {
   return {
     name: team.name,
     abbreviation: team.abbreviation,
-    conference: team.conference ?? '',
-    division: team.division ?? '',
-    current_streak: team.current_streak,
     win_pct_home: team.win_pct_home,
     win_pct_away: team.win_pct_away,
     win_pct_home_prev_season: team.win_pct_home_prev_season,
@@ -56,9 +53,6 @@ async function save(team) {
       body: {
         name: form.name,
         abbreviation: form.abbreviation,
-        conference: form.conference || null,
-        division: form.division || null,
-        current_streak: Number(form.current_streak),
         win_pct_home: Number(form.win_pct_home),
         win_pct_away: Number(form.win_pct_away),
         win_pct_home_prev_season: Number(form.win_pct_home_prev_season),
@@ -124,27 +118,6 @@ onMounted(loadTeams)
         <div>
           <label class="mb-1 block text-xs font-medium text-text">% victoires extérieur (N-1)</label>
           <input v-model="forms[team.id].win_pct_away_prev_season" type="number" step="0.001" min="0" max="1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
-        </div>
-      </div>
-
-      <div class="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
-        Les champs ci-dessous (conférence, division, série en cours) sont vides pour les 30
-        équipes : aucun import ne les alimente, aucun calcul de l'algorithme ne les lit, et rien
-        ne les affiche en dehors de ce formulaire. Les remplir n'a donc aucun effet visible
-        aujourd'hui.
-      </div>
-      <div class="grid grid-cols-3 gap-3">
-        <div>
-          <label class="mb-1 block text-xs font-medium text-text">Conférence</label>
-          <input v-model="forms[team.id].conference" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-text">Division</label>
-          <input v-model="forms[team.id].division" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-text">Série en cours</label>
-          <input v-model="forms[team.id].current_streak" type="number" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
       </div>
 
