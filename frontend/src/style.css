@@ -305,29 +305,46 @@ textarea:focus-visible {
  * data-accent="..." sur <html> (aucun code de ce lot ne le fait).
  * Orange parquet reste l'accent actif par défaut (valeurs ci-dessus).
  *
- * Seul l'orange a une valeur --accent-text (mode clair) et --accent-on
- * mesurées et sûres (§5.3, §5.5). Les trois alternatives ci-dessous ne
- * redéfinissent donc que --accent-fill/--accent-tint : elles n'ont
- * jamais besoin d'être combinées au mode clair ni de porter du texte
- * par-dessus pour l'instant (§5.5, note -- le violet électrique
- * mesuré à 4,49:1 avec #0e1015, sous le seuil, la valeur ne se
- * transpose PAS automatiquement d'un accent à l'autre). Mesurer leurs
- * propres --accent-text/--accent-on avant toute activation réelle.
+ * --accent-text mesurée et sûre pour les quatre axes depuis le
+ * 2026-09-07 (limitation n°21) -- contre --surface, le fond réel du
+ * bandeau où le lien-titre la porte, seuil texte 4,5:1. Une seule
+ * valeur par axe suffit quand le fill passe déjà dans les deux modes
+ * (mint sombre : --accent-text = --accent-fill, 10,19:1, comme
+ * l'orange en sombre) ; les trois autres cas nécessitent une valeur
+ * dédiée par mode, ci-dessous via [data-theme="light"][data-accent="..."].
+ * --accent-on (texte POSÉ SUR un aplat d'accent, ex. un bouton plein)
+ * reste, lui, non mesuré pour ces trois axes -- à faire avant toute
+ * activation réelle si un tel usage apparaît.
  * =================================================================== */
 
 [data-accent="violet"] {
   --accent-fill: #8b5cf6;
   --accent-tint: #c4b5fd;
+  --accent-text: #9973ff; /* 5,01:1 sur --surface sombre (#1a1d26) */
+}
+
+[data-theme="light"][data-accent="violet"] {
+  --accent-text: #8540ff; /* 5,03:1 sur --surface claire (#ffffff) */
 }
 
 [data-accent="mint"] {
   --accent-fill: #00e5a0;
   --accent-tint: #7df5cd;
+  --accent-text: #00e5a0; /* = --accent-fill, 10,19:1 sur --surface sombre */
+}
+
+[data-theme="light"][data-accent="mint"] {
+  --accent-text: #007f57; /* 5,03:1 sur --surface claire (#ffffff) */
 }
 
 [data-accent="blue"] {
   --accent-fill: #3b82f6;
   --accent-tint: #93c5fd;
+  --accent-text: #4189ff; /* 5,01:1 sur --surface sombre (#1a1d26) */
+}
+
+[data-theme="light"][data-accent="blue"] {
+  --accent-text: #0066f1; /* 5,04:1 sur --surface claire (#ffffff) */
 }
 
 /* =====================================================================
