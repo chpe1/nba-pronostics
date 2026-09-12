@@ -402,6 +402,127 @@ def test_apply_draft_upsert_is_case_insensitive(db_session):
     assert player.per == pytest.approx(14.2)
 
 
+# --- Fermeture du doublon : apply_players_advanced/apply_draft recherchent
+# désormais league-wide (find_or_create_player_league_wide), comme
+# apply_roster -- plus seulement dans l'équipe du fichier (chantier
+# 2026-09-12). ----------------------------------------------------------------
+
+
+def test_apply_players_advanced_matches_existing_player_through_diacritic_variant(db_session):
+    """Cas réel mesuré au chantier ROSTER (13/488 noms) : le futur fichier
+    Advanced peut orthographier un nom sans le diacritique déjà stocké en
+    base. Avant ce chantier, find_player_by_name (règle stricte) aurait
+    manqué le rapprochement et créé un second Player."""
+    team = Team(name="Houston Rockets", abbreviation="HOU")
+    db_session.add(team)
+    db_session.flush()
+    db_session.add(Player(name="Bogdan Bogdanović", team_id=team.id, is_active=True))
+    db_session.flush()
+
+    df = pd.DataFrame([{"Player": "Bogdan Bogdanovic", "Team": "HOU", "PER": 18.0, "G": 40, "MP": 1000}])
+    parsed, errors = csv_import.parse_players_advanced(df)
+    assert errors == []
+
+    csv_import.apply_players_advanced(parsed, db_session)
+
+    assert db_session.query(Player).count() == 1  # pas de doublon
+    player = db_session.query(Player).one()
+    assert player.name == "Bogdan Bogdanović"  # orthographe d'origine jamais réécrite
+    assert player.per == pytest.approx(18.0)
+
+
+def test_apply_players_advanced_moves_player_found_under_another_team(db_session):
+    """Le joueur a changé d'équipe depuis le dernier import (27/60 draftés
+    dans le vrai fichier ROSTER) : doit être déplacé, jamais dupliqué."""
+    old_team = Team(name="Boston Celtics", abbreviation="BOS")
+    new_team = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([old_team, new_team])
+    db_session.flush()
+    db_session.add(Player(name="Traded Guy", team_id=old_team.id, draft_pick=12, is_active=True))
+    db_session.flush()
+
+    df = pd.DataFrame([{"Player": "Traded Guy", "Team": "LAL", "PER": 14.0, "G": 30, "MP": 600}])
+    parsed, errors = csv_import.parse_players_advanced(df)
+    assert errors == []
+
+    csv_import.apply_players_advanced(parsed, db_session)
+
+    assert db_session.query(Player).count() == 1  # déplacé, pas dupliqué
+    player = db_session.query(Player).one()
+    assert player.team.abbreviation == "LAL"
+    assert player.draft_pick == 12  # jamais touché par apply_players_advanced
+    assert player.per == pytest.approx(14.0)
+
+
+def test_apply_draft_moves_player_found_under_another_team(db_session):
+    """Même mécanisme partagé, côté apply_draft -- un rookie déjà en base
+    sous une équipe (ex: import CSV précédent) retrouvé sous une autre est
+    déplacé, pas dupliqué."""
+    old_team = Team(name="Boston Celtics", abbreviation="BOS")
+    new_team = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([old_team, new_team])
+    db_session.flush()
+    db_session.add(Player(name="Rookie One", team_id=old_team.id, per=8.0, is_active=True))
+    db_session.flush()
+
+    df = _draft_df([{"Pk": 5, "Tm": "LAL", "Player": "Rookie One"}])
+    parsed, errors = csv_import.parse_draft(df)
+    assert errors == []
+
+    csv_import.apply_draft(parsed, db_session)
+
+    assert db_session.query(Player).count() == 1
+    player = db_session.query(Player).one()
+    assert player.team.abbreviation == "LAL"
+    assert player.draft_pick == 5
+    assert player.per == pytest.approx(8.0)  # jamais touché par apply_draft
+
+
+def test_league_wide_index_documents_homonym_collision_risk(db_session):
+    """Risque déjà accepté ailleurs dans le projet pour la même famille de
+    raison (CLAUDE.md, Décision d'architecture n°4 -- pas de désambiguïsation
+    d'homonymes) : deux joueurs RÉELLEMENT différents partageant la même
+    _roster_match_key, sur deux équipes différentes, ne peuvent pas
+    cohabiter dans l'index league-wide (une seule entrée par clé). Ce test
+    ne "corrige" rien -- il rend le comportement visible et vérifiable
+    plutôt que silencieux, comme demandé."""
+    team_a = Team(name="Boston Celtics", abbreviation="BOS")
+    team_b = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([team_a, team_b])
+    db_session.flush()
+    # Deux "Chris Johnson" réellement distincts, sur deux équipes.
+    db_session.add_all(
+        [
+            Player(name="Chris Johnson", team_id=team_a.id, per=5.0, is_active=True),
+            Player(name="Chris Johnson", team_id=team_b.id, per=9.0, is_active=True),
+        ]
+    )
+    db_session.flush()
+
+    index = csv_import.build_active_player_index(db_session)
+    # Une seule entrée survit pour la clé partagée -- l'ordre de la requête
+    # (non trié) décide laquelle, pas une logique de désambiguïsation.
+    assert sum(1 for name in ["Chris Johnson"] if csv_import._roster_match_key(name) in index) == 1
+
+
+def test_create_or_upsert_player_league_wide_helper_never_creates_duplicate_on_repeat_call(db_session):
+    """Non-régression directe sur find_or_create_player_league_wide : un
+    même nom rencontré deux fois d'affilée (même index, non reconstruit)
+    retrouve la ligne qu'il vient de créer, ne la duplique pas."""
+    team = Team(name="Boston Celtics", abbreviation="BOS")
+    db_session.add(team)
+    db_session.flush()
+
+    index = csv_import.build_active_player_index(db_session)
+    player1, created1 = csv_import.find_or_create_player_league_wide(db_session, index, "New Guy", team)
+    player2, created2 = csv_import.find_or_create_player_league_wide(db_session, index, "New Guy", team)
+
+    assert created1 is True
+    assert created2 is False
+    assert player1.id == player2.id
+    assert db_session.query(Player).count() == 1
+
+
 # --- Import saison précédente (Étape 6bis) ----------------------------------
 
 

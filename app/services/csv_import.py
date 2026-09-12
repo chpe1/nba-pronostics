@@ -45,7 +45,7 @@ from app.models import (
     Team,
 )
 from app.services.nba_teams import ABBREVIATION_TO_NAME, NBA_TEAMS, normalize_abbreviation, resolve_team_name
-from app.services.player_matching import find_player_by_name, find_prev_season_stat_by_name, normalize_player_name
+from app.services.player_matching import find_prev_season_stat_by_name, normalize_player_name
 
 # Ordre figé (pas juste un ensemble) : c'est aussi la source de vérité pour
 # l'ordre des colonnes des modèles CSV téléchargeables (generate_template_csv
@@ -595,16 +595,72 @@ def _get_or_create_team(db: Session, abbreviation: str) -> Team:
     return team
 
 
+# --- Rapprochement league-wide, partagé entre apply_players_advanced,
+# apply_draft, apply_roster et POST /api/players (app/api/players.py) --------
+#
+# Introduit avec apply_roster (chantier ROSTER, 2026-09-12), généralisé ici
+# (chantier fermeture du doublon, 2026-09-12) : find_player_by_name
+# (player_matching.py, règle stricte, restreint à UNE équipe) crée une
+# nouvelle ligne dès que le nom diverge d'orthographe (diacritique,
+# ponctuation, suffixe Jr./Sr./II/III) OU que le joueur a changé d'équipe
+# depuis le dernier import -- un doublon, jamais un rapprochement manqué
+# signalé. Mesuré sur le vrai fichier ROSTER : 27 des 60 draftés avaient
+# changé d'équipe, 13 des 488 noms rapprochés avaient une orthographe
+# divergente -- aucun des deux cas n'est marginal.
+#
+# Ces deux fonctions restent volontairement dans csv_import.py, PAS dans
+# player_matching.py : ce dernier reste le point d'entrée unique du reste du
+# projet (détection de transferts, PATCH /api/players -- son contrôle de
+# conflit sert un autre but, voir plus bas) -- élargir sa règle de
+# comparaison changerait leur comportement à tous d'un coup, sans qu'aucun
+# n'ait été audité pour ce risque élargi. Pas de préfixe `_` (contrairement à
+# _get_or_create_team, _upsert_prev_season_stat) : ce sont les deux seules
+# fonctions de ce module importées depuis un autre module (app/api/players.py).
+
+
+def build_active_player_index(db: Session) -> dict[str, Player]:
+    """Index de tous les Player actifs, toutes équipes confondues, par
+    _roster_match_key -- à construire UNE FOIS par appel d'un applier
+    (jamais reconstruit ligne à ligne), puis passé à
+    find_or_create_player_league_wide pour chaque ligne du fichier."""
+    active_players = db.query(Player).filter(Player.is_active.is_(True)).all()
+    return {_roster_match_key(p.name): p for p in active_players}
+
+
+def find_or_create_player_league_wide(
+    db: Session, player_by_key: dict[str, Player], name: str, team: Team
+) -> tuple[Player, bool]:
+    """Retrouve `name` dans TOUT l'effectif actif (pas restreint à `team`) ;
+    déplace la ligne trouvée (team_id mis à jour) si son équipe actuelle
+    diffère de `team` ; n'en crée une nouvelle que si aucune correspondance
+    n'existe nulle part dans la ligue. Retourne (player, was_created).
+
+    `player_by_key` est mis à jour en place à chaque création (pas seulement
+    lu) : un même nom apparaissant deux fois dans le même fichier se
+    retrouve lui-même dès sa seconde occurrence, sans passer par une requête
+    DB (la session tourne avec autoflush=False, voir _upsert_prev_season_stat
+    pour le même raisonnement)."""
+    key = _roster_match_key(name)
+    player = player_by_key.get(key)
+    was_created = player is None
+    if was_created:
+        player = Player(name=name, team_id=team.id)
+        db.add(player)
+        db.flush()
+        player_by_key[key] = player
+    elif player.team_id != team.id:
+        player.team_id = team.id
+    return player, was_created
+
+
 def apply_players_advanced(parsed: list[dict], db: Session) -> int:
     """mpg est dérivé ici (mp/g), pas au parsing -- gère explicitement g=0
     (joueur sans match joué) pour éviter une division par zéro."""
     count = 0
+    player_by_key = build_active_player_index(db)
     for item in parsed:
         team = _get_or_create_team(db, item["team_abbreviation"])
-        player = find_player_by_name(db, item["name"], team.id)
-        if player is None:
-            player = Player(name=item["name"], team_id=team.id)
-            db.add(player)
+        player, _ = find_or_create_player_league_wide(db, player_by_key, item["name"], team)
         player.per = item["per"]
         player.mpg = item["mp"] / item["g"] if item["g"] else 0.0
         player.games_played_this_season = int(item["g"])
@@ -614,18 +670,17 @@ def apply_players_advanced(parsed: list[dict], db: Session) -> int:
 
 
 def apply_draft(parsed: list[dict], db: Session) -> int:
-    """Crée le Player s'il n'existe pas encore (cas normal pour un rookie
-    sans stats), ou met juste à jour draft_pick sinon. Upsert par
-    (name, team_id) -- la même clé que apply_players_advanced -- de sorte
-    que l'arrivée ultérieure des vraies stats de ce joueur retrouve cette
-    même ligne au lieu d'en créer une deuxième."""
+    """Crée le Player s'il n'existe nulle part dans l'effectif actif (cas
+    normal pour un rookie sans stats), le déplace s'il existe sous une autre
+    équipe, ou met juste à jour draft_pick sinon. Upsert league-wide -- la
+    même clé que apply_players_advanced -- de sorte que l'arrivée ultérieure
+    des vraies stats de ce joueur retrouve cette même ligne au lieu d'en
+    créer une deuxième."""
     count = 0
+    player_by_key = build_active_player_index(db)
     for item in parsed:
         team = _get_or_create_team(db, item["team_abbreviation"])
-        player = find_player_by_name(db, item["name"], team.id)
-        if player is None:
-            player = Player(name=item["name"], team_id=team.id)
-            db.add(player)
+        player, _ = find_or_create_player_league_wide(db, player_by_key, item["name"], team)
         player.draft_pick = item["draft_pick"]
         count += 1
     db.flush()
@@ -971,22 +1026,19 @@ def apply_roster(parsed: list[dict], db: Session) -> int:
     sous une autre équipe est DÉPLACÉ (team_id mis à jour), jamais dupliqué
     -- il conserve ainsi son draft_pick, son games_played_this_season, son
     historique. C'est aussi ce qui rend l'import idempotent : le relancer sur
-    le même fichier ne crée et ne modifie plus rien après le premier passage."""
-    count = 0
-    active_players = db.query(Player).filter(Player.is_active.is_(True)).all()
-    player_by_key: dict[str, Player] = {_roster_match_key(p.name): p for p in active_players}
+    le même fichier ne crée et ne modifie plus rien après le premier passage.
 
+    Depuis le chantier fermeture du doublon (2026-09-12), cette recherche
+    league-wide est partagée avec apply_players_advanced/apply_draft/
+    POST /api/players via build_active_player_index/
+    find_or_create_player_league_wide, ci-dessus -- extraction pure de ce qui
+    était déjà ici, comportement inchangé (mêmes requêtes, même ordre, même
+    flush par création)."""
+    count = 0
+    player_by_key = build_active_player_index(db)
     for item in parsed:
         team = _get_or_create_team(db, item["team_abbreviation"])
-        key = _roster_match_key(item["name"])
-        player = player_by_key.get(key)
-        if player is None:
-            player = Player(name=item["name"], team_id=team.id)
-            db.add(player)
-            db.flush()
-            player_by_key[key] = player
-        elif player.team_id != team.id:
-            player.team_id = team.id
+        find_or_create_player_league_wide(db, player_by_key, item["name"], team)
         count += 1
     db.flush()
     return count

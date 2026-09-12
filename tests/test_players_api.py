@@ -157,6 +157,52 @@ def test_create_player_upsert_by_name_is_case_insensitive(client, db_session, au
     assert db_session.query(Player).count() == 1
 
 
+def test_create_player_matches_existing_player_through_diacritic_variant(client, db_session, auth_headers):
+    """Même mécanisme league-wide que les appliers CSV (chantier fermeture
+    du doublon, 2026-09-12) : une saisie manuelle sans diacritique retrouve
+    le joueur déjà en base, ne le duplique pas."""
+    bos, _ = _teams(db_session)
+    existing = Player(name="Bogdan Bogdanović", team_id=bos.id, per=15.0)
+    db_session.add(existing)
+    db_session.commit()
+
+    response = client.post(
+        "/api/players",
+        json={"name": "Bogdan Bogdanovic", "team_id": bos.id, "per": 18.0},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200  # 200, pas 201 : ligne retrouvée, pas créée
+    body = response.json()
+    assert body["id"] == existing.id
+    assert body["name"] == "Bogdan Bogdanović"  # orthographe d'origine jamais réécrite
+    assert body["per"] == 18.0
+    assert db_session.query(Player).count() == 1
+
+
+def test_create_player_moves_player_found_under_another_team(client, db_session, auth_headers):
+    """Arbitrage tranché explicitement : un admin qui choisit une équipe
+    pour un joueur qui appartient à une autre veut très probablement le
+    transférer -- déplacé, pas dupliqué, sans cas particulier."""
+    bos, lal = _teams(db_session)
+    existing = Player(name="Traded Guy", team_id=bos.id, draft_pick=9)
+    db_session.add(existing)
+    db_session.commit()
+
+    response = client.post(
+        "/api/players",
+        json={"name": "Traded Guy", "team_id": lal.id, "per": 11.0},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == existing.id
+    assert body["team_id"] == lal.id
+    assert body["draft_pick"] == 9  # jamais touché, non fourni dans ce POST
+    assert db_session.query(Player).count() == 1
+
+
 def test_manual_placeholder_is_overwritten_by_next_csv_import_without_protection(client, db_session, auth_headers):
     """Décision explicite (point 2bis) : contrairement à Game.manually_overridden,
     aucun verrou n'existe côté Player -- un placeholder manuel est écrasé
