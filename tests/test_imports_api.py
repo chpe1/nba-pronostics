@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models import Game, GameStatus, ImportHistory, Player, Team
+from app.models import Game, GameStatus, ImportHistory, Player, Settings, Team
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -272,3 +272,128 @@ def test_download_template_returns_csv_with_content_disposition(client, auth_hea
     assert f'modele_{key}.csv' in response.headers["content-disposition"]
     lines = response.text.strip().splitlines()
     assert len(lines) == 2
+
+
+# --- Effectif complet (type ROSTER) ------------------------------------------
+
+
+def _roster_csv(rows: list[tuple[str, str]]) -> bytes:
+    lines = ["Player,Team"] + [f"{name},{team}" for name, team in rows]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def test_roster_dry_run_does_not_write_to_db(client, db_session, auth_headers):
+    db_session.add(Settings(current_season="2026-2027"))
+    db_session.commit()
+    content = _roster_csv([("Rookie One", "BOS")])
+    response = client.post(
+        "/api/imports/stats",
+        params={"dry_run": True},
+        files={"file": ("roster.csv", io.BytesIO(content), "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["import_type"] == "roster"
+    assert body["row_count"] == 1
+    assert body["error_count"] == 0
+    assert db_session.query(Player).count() == 0
+
+
+def test_roster_dry_run_returns_the_five_sections(client, db_session, auth_headers):
+    db_session.add(Settings(current_season="2026-2027"))
+    bos = Team(name="Boston Celtics", abbreviation="BOS")
+    db_session.add(bos)
+    db_session.commit()
+    db_session.add(Player(name="Already Here", team_id=bos.id, is_active=True))
+    db_session.commit()
+
+    content = _roster_csv([("New Guy", "BOS")])
+    response = client.post(
+        "/api/imports/stats",
+        params={"dry_run": True},
+        files={"file": ("roster.csv", io.BytesIO(content), "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert set(["matched_count", "unmatched", "orphans", "moved", "no_prior_data"]).issubset(body)
+    assert body["orphans"] == ["Already Here"]  # absent du fichier
+    assert "New Guy" in body["no_prior_data"]  # ni ligne N-1, ni draft_pick
+
+
+def test_roster_import_does_not_require_a_season_param(client, db_session, auth_headers):
+    """Comme DRAFT : toujours la saison courante, jamais exposé au sélecteur
+    saison précédente."""
+    db_session.add(Settings(current_season="2026-2027"))
+    db_session.commit()
+    content = _roster_csv([("Rookie One", "BOS")])
+    response = client.post(
+        "/api/imports/stats",
+        params={"dry_run": False},
+        files={"file": ("roster.csv", io.BytesIO(content), "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["import_history"]["import_type"] == "roster"
+    assert body["import_history"]["season_type"] == "current"
+    assert body["import_history"]["season"] is None
+
+
+def test_roster_confirmed_import_creates_players_and_history(client, db_session, auth_headers):
+    db_session.add(Settings(current_season="2026-2027"))
+    db_session.commit()
+    content = _roster_csv([("Rookie One", "BOS"), ("Rookie Two", "LAL")])
+    response = client.post(
+        "/api/imports/stats",
+        params={"dry_run": False},
+        files={"file": ("roster.csv", io.BytesIO(content), "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert db_session.query(Player).count() == 2
+    assert db_session.query(Player).filter(Player.name == "Rookie One").one().team.abbreviation == "BOS"
+
+    history_response = client.get("/api/imports/history", headers=auth_headers)
+    assert len(history_response.json()) == 1
+    assert history_response.json()[0]["import_type"] == "roster"
+
+
+def test_roster_import_moves_existing_player_between_teams(client, db_session, auth_headers):
+    bos = Team(name="Boston Celtics", abbreviation="BOS")
+    lal = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([bos, lal, Settings(current_season="2026-2027")])
+    db_session.commit()
+    db_session.add(Player(name="Moving Target", team_id=bos.id, draft_pick=7, is_active=True))
+    db_session.commit()
+
+    content = _roster_csv([("Moving Target", "LAL")])
+    response = client.post(
+        "/api/imports/stats",
+        params={"dry_run": False},
+        files={"file": ("roster.csv", io.BytesIO(content), "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert db_session.query(Player).count() == 1  # déplacé, pas dupliqué
+    player = db_session.query(Player).filter(Player.name == "Moving Target").one()
+    assert player.team.abbreviation == "LAL"
+    assert player.draft_pick == 7  # jamais réécrit par apply_roster
+
+
+def test_roster_import_unknown_team_reports_error(client, db_session, auth_headers):
+    db_session.add(Settings(current_season="2026-2027"))
+    db_session.commit()
+    content = _roster_csv([("Someone", "ZZZ")])
+    response = client.post(
+        "/api/imports/stats",
+        params={"dry_run": True},
+        files={"file": ("roster.csv", io.BytesIO(content), "text/csv")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["row_count"] == 0
+    assert body["error_count"] == 1
+    assert "inconnue" in body["errors"][0]["message"]

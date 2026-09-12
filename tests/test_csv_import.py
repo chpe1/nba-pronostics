@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from app.models import Game, GameStatus, ImportType, Player, PreviousSeasonPlayerStat, Team
+from app.models import Game, GameStatus, ImportType, Player, PreviousSeasonPlayerStat, Settings, Team
 from app.services import csv_import
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -873,3 +873,330 @@ def test_every_required_column_has_an_example_value():
     all_required_columns.add("Team")  # réintégré pour players_advanced_league
     missing = all_required_columns - csv_import._EXAMPLE_VALUES.keys()
     assert missing == set()
+
+
+# --- Effectif complet (type ROSTER) ------------------------------------------
+
+
+def _settings(**overrides) -> Settings:
+    defaults = dict(current_season="2026-2027")
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
+def test_detect_roster():
+    df = pd.DataFrame(
+        [{"Player": "Rookie One", "Team": "BOS", "Number": 0, "Position": "G", "Height": "6-2",
+          "Weight": 180, "Last Attended": "College", "Country": "USA"}]
+    )
+    assert csv_import.detect_import_type(df) == ImportType.ROSTER
+    assert csv_import.validate_columns(df, ImportType.ROSTER) == []
+
+
+def test_detect_players_advanced_league_is_never_confused_with_roster():
+    """Non-régression sur la contrainte d'ordre de detect_import_type : un
+    export Advanced ligue entière a lui aussi Player ET Team, en plus de
+    PER/G/MP -- doit rester détecté comme PLAYERS_ADVANCED, jamais ROSTER."""
+    df = pd.DataFrame([{"Player": "Jayson Tatum", "Team": "BOS", "PER": 24.3, "G": 72, "MP": 2450}])
+    assert csv_import.detect_import_type(df) == ImportType.PLAYERS_ADVANCED
+
+
+def test_parse_roster_extracts_name_and_team_ignores_other_columns():
+    df = pd.DataFrame(
+        [{"Player": "Rookie One", "Team": "BOS", "Number": 0, "Position": "G", "Height": "6-2",
+          "Weight": 180, "Last Attended": "College", "Country": "USA"}]
+    )
+    parsed, errors = csv_import.parse_roster(df)
+    assert errors == []
+    assert parsed == [{"name": "Rookie One", "team_abbreviation": "BOS"}]
+
+
+def test_parse_roster_missing_player_or_team_reports_error():
+    df = pd.DataFrame([{"Player": "", "Team": "BOS"}, {"Player": "Someone", "Team": ""}])
+    parsed, errors = csv_import.parse_roster(df)
+    assert parsed == []
+    assert len(errors) == 2
+    assert all("manquante" in e["message"] for e in errors)
+
+
+def test_parse_roster_unknown_team_reports_error():
+    df = pd.DataFrame([{"Player": "Someone", "Team": "ZZZ"}])
+    parsed, errors = csv_import.parse_roster(df)
+    assert parsed == []
+    assert "inconnue" in errors[0]["message"]
+
+
+def test_parse_roster_normalizes_basketball_reference_abbreviations():
+    """Réutilise normalize_abbreviation (BRK/PHO/CHO), comme parse_draft --
+    pas une nouvelle règle inventée pour ce type."""
+    df = pd.DataFrame([{"Player": "Someone", "Team": "BRK"}])
+    parsed, errors = csv_import.parse_roster(df)
+    assert errors == []
+    assert parsed[0]["team_abbreviation"] == "BKN"
+
+
+# --- _roster_match_key : normalisation locale au chantier --------------------
+
+
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        ("Jimmy Butler III", "Jimmy Butler"),
+        ("DaRon Holmes II", "DaRon Holmes"),
+        ("GG Jackson", "GG Jackson II"),
+        ("Xavier Tillman", "Xavier Tillman Sr."),
+        ("Walter Clayton Jr.", "Walter Clayton"),
+        ("Terrence Shannon Jr", "Terrence Shannon Jr."),
+        ("AJ Green", "A.J. Green"),
+        ("Alperen Sengun", "Alperen Şengün"),
+        ("Nolan Traore", "Nolan Traoré"),
+        ("David Jones Garcia", "David Jones García"),
+    ],
+    ids=[
+        "suffix-iii", "suffix-ii-a", "suffix-ii-b", "suffix-sr", "suffix-jr-dot",
+        "suffix-jr-nodot", "punctuation", "diacritic-turkish", "diacritic-french",
+        "diacritic-spanish",
+    ],
+)
+def test_roster_match_key_folds_diacritics_punctuation_and_suffixes(a, b):
+    assert csv_import._roster_match_key(a) == csv_import._roster_match_key(b)
+
+
+def test_roster_match_key_does_not_conflate_unrelated_players_with_close_spelling():
+    """Non-régression sur le faux positif mesuré au constat : "Caleb Wilson"
+    est à distance de Levenshtein 2 de "Jalen Wilson" (joueurs sans rapport)
+    -- la clé de rapprochement doit les garder distincts, la distance ne
+    devant jamais servir de critère de fusion automatique."""
+    assert csv_import._roster_match_key("Caleb Wilson") != csv_import._roster_match_key("Jalen Wilson")
+    # La distance existe bel et bien (c'est justement pour ça que Levenshtein
+    # seul est dangereux) -- mais reste une suggestion, jamais une fusion.
+    assert csv_import._levenshtein_distance("caleb wilson", "jalen wilson") == 2
+
+
+def test_roster_match_key_does_not_fold_genuine_first_name_differences():
+    """Contrepartie : un vrai prénom différent ("Ronald" vs "Ron") ne doit
+    jamais être considéré comme une variante cosmétique, même si les deux
+    noms partagent le même nom de famille et un suffixe."""
+    assert csv_import._roster_match_key("Ronald Holland II") != csv_import._roster_match_key("Ron Holland")
+
+
+# --- analyze_roster_import : les 5 sections du récapitulatif ----------------
+
+
+@pytest.fixture()
+def roster_analysis_fixture(db_session):
+    """Effectif "avant import" + stats N-1, construit pour exercer les 5
+    sections en une seule fois (voir plan du chantier, point b) :
+    - "Rookie One" (BOS, draft_pick=5) : déjà en base, CSV le confirme sur la
+      même équipe -- pas de ligne N-1, mais draft_pick connu -> jamais signalé
+      en section 5 (rookie normal).
+    - "Traded Veteran" (BOS, sans draft_pick) : le CSV le place à LAL -> doit
+      apparaître en section 4 (déplacé) et section 5 (pas de ligne N-1, pas de
+      draft_pick).
+    - "Departed Veteran" (LAL) : absent du CSV -> section 3 (orphelin).
+    - "Star Player" : ligne N-1 (LAL) réclamée exactement par le CSV ->
+      section 1 (rapproché), pas de joueur existant avant import.
+    - "Marcus Example" : ligne N-1 (BOS) jamais réclamée par le CSV -> sert
+      de candidat de suggestion pour "Marcuz Example" (section 2)."""
+    db_session.add(_settings())
+    bos = Team(name="Boston Celtics", abbreviation="BOS")
+    lal = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([bos, lal])
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            Player(name="Rookie One", team_id=bos.id, draft_pick=5, is_active=True),
+            Player(name="Traded Veteran", team_id=bos.id, per=15.0, mpg=20.0, is_active=True),
+            Player(name="Departed Veteran", team_id=lal.id, is_active=True),
+            PreviousSeasonPlayerStat(
+                season="2025-2026", player_name="Star Player", team_abbreviation="LAL", per=25.0, mpg=32.0
+            ),
+            PreviousSeasonPlayerStat(
+                season="2025-2026", player_name="Marcus Example", team_abbreviation="BOS", per=10.0, mpg=18.0
+            ),
+        ]
+    )
+    db_session.flush()
+
+    parsed = [
+        {"name": "Rookie One", "team_abbreviation": "BOS"},
+        {"name": "Traded Veteran", "team_abbreviation": "LAL"},
+        {"name": "Marcuz Example", "team_abbreviation": "BOS"},
+        {"name": "Star Player", "team_abbreviation": "LAL"},
+    ]
+    return parsed
+
+
+def test_analyze_roster_import_matched_count(db_session, roster_analysis_fixture):
+    analysis = csv_import.analyze_roster_import(db_session, roster_analysis_fixture)
+    assert analysis.matched_count == 1  # seul "Star Player" a une ligne N-1 réclamée exactement
+
+
+def test_analyze_roster_import_unmatched_with_suggestion(db_session, roster_analysis_fixture):
+    analysis = csv_import.analyze_roster_import(db_session, roster_analysis_fixture)
+    by_name = {u.name: u for u in analysis.unmatched}
+    assert set(by_name) == {"Rookie One", "Traded Veteran", "Marcuz Example"}
+    # "Marcuz Example" est une coquille à distance 1 de "Marcus Example", la
+    # seule ligne N-1 non réclamée -- suggestion attendue précisément.
+    assert by_name["Marcuz Example"].closest_match == "Marcus Example"
+    assert by_name["Marcuz Example"].distance == 1
+
+
+def test_analyze_roster_import_orphans(db_session, roster_analysis_fixture):
+    analysis = csv_import.analyze_roster_import(db_session, roster_analysis_fixture)
+    assert analysis.orphans == ["Departed Veteran"]
+
+
+def test_analyze_roster_import_moved(db_session, roster_analysis_fixture):
+    analysis = csv_import.analyze_roster_import(db_session, roster_analysis_fixture)
+    assert len(analysis.moved) == 1
+    assert analysis.moved[0].name == "Traded Veteran"
+    assert analysis.moved[0].from_team == "BOS"
+    assert analysis.moved[0].to_team == "LAL"
+
+
+def test_analyze_roster_import_no_prior_data_excludes_known_rookie(db_session, roster_analysis_fixture):
+    """Critère corrigé (voir plan révisé) : sans ligne N-1 ET sans
+    draft_pick connu -> signalé. "Rookie One" a un draft_pick -> jamais
+    signalé, même sans ligne N-1."""
+    analysis = csv_import.analyze_roster_import(db_session, roster_analysis_fixture)
+    assert set(analysis.no_prior_data) == {"Traded Veteran", "Marcuz Example"}
+    assert "Rookie One" not in analysis.no_prior_data
+
+
+def test_analyze_roster_import_never_writes_to_db(db_session, roster_analysis_fixture):
+    """Lecture seule : aucun db.add/flush ne doit avoir créé, modifié ou
+    déplacé quoi que ce soit (voir plan du chantier, point a)."""
+    players_before = {p.id: (p.team_id, p.draft_pick) for p in db_session.query(Player).all()}
+    csv_import.analyze_roster_import(db_session, roster_analysis_fixture)
+    players_after = {p.id: (p.team_id, p.draft_pick) for p in db_session.query(Player).all()}
+    assert players_before == players_after
+    assert db_session.query(Player).count() == 3  # aucune création
+
+
+# --- apply_roster : écriture, idempotence, arbitrages -----------------------
+
+
+def test_apply_roster_creates_new_players_with_defaults(db_session):
+    df = pd.DataFrame([{"Player": "Brand New Guy", "Team": "BOS"}])
+    parsed, errors = csv_import.parse_roster(df)
+    assert errors == []
+
+    count = csv_import.apply_roster(parsed, db_session)
+
+    assert count == 1
+    player = db_session.query(Player).filter(Player.name == "Brand New Guy").one()
+    assert player.team.abbreviation == "BOS"
+    assert player.per == 0.0
+    assert player.mpg == 0.0
+    assert player.draft_pick is None
+    assert player.is_active is True
+    assert player.previous_team_id is None
+
+
+def test_apply_roster_moves_existing_player_preserving_draft_pick_and_games_played(db_session):
+    """Cœur de l'arbitrage 4 : rapprochement par nom seul -> déplacement,
+    jamais duplication -- draft_pick/games_played_this_season/per/mpg tous
+    préservés tels quels."""
+    bos = Team(name="Boston Celtics", abbreviation="BOS")
+    lal = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([bos, lal])
+    db_session.flush()
+    db_session.add(
+        Player(
+            name="Star Rookie", team_id=bos.id, draft_pick=3,
+            games_played_this_season=12, per=8.5, mpg=22.0, is_active=True,
+        )
+    )
+    db_session.flush()
+
+    parsed = [{"name": "Star Rookie", "team_abbreviation": "LAL"}]
+    count = csv_import.apply_roster(parsed, db_session)
+
+    assert count == 1
+    assert db_session.query(Player).count() == 1  # déplacé, pas dupliqué
+    player = db_session.query(Player).filter(Player.name == "Star Rookie").one()
+    assert player.team.abbreviation == "LAL"
+    assert player.draft_pick == 3
+    assert player.games_played_this_season == 12
+    assert player.per == pytest.approx(8.5)
+    assert player.mpg == pytest.approx(22.0)
+
+
+def test_apply_roster_matches_existing_player_through_diacritic_and_suffix_variants(db_session):
+    """Le déplacement utilise la même clé que l'analyse (_roster_match_key)
+    -- une variante orthographique du CSV ne doit jamais créer un doublon."""
+    bos = Team(name="Boston Celtics", abbreviation="BOS")
+    lal = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([bos, lal])
+    db_session.flush()
+    db_session.add(Player(name="Alperen Sengun", team_id=bos.id, is_active=True))
+    db_session.flush()
+
+    parsed = [{"name": "Alperen Şengün", "team_abbreviation": "LAL"}]
+    csv_import.apply_roster(parsed, db_session)
+
+    assert db_session.query(Player).count() == 1
+    player = db_session.query(Player).one()
+    assert player.team.abbreviation == "LAL"
+    assert player.name == "Alperen Sengun"  # casse/orthographe d'origine jamais réécrite
+
+
+def test_apply_roster_never_touches_per_mpg_on_a_matched_player(db_session):
+    bos = Team(name="Boston Celtics", abbreviation="BOS")
+    db_session.add(bos)
+    db_session.flush()
+    db_session.add(Player(name="Same Team Guy", team_id=bos.id, per=12.0, mpg=25.0, is_active=True))
+    db_session.flush()
+
+    parsed = [{"name": "Same Team Guy", "team_abbreviation": "BOS"}]
+    csv_import.apply_roster(parsed, db_session)
+
+    player = db_session.query(Player).filter(Player.name == "Same Team Guy").one()
+    assert player.per == pytest.approx(12.0)
+    assert player.mpg == pytest.approx(25.0)
+
+
+def test_apply_roster_never_deactivates_players_absent_from_file(db_session):
+    lal = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add(lal)
+    db_session.flush()
+    db_session.add(Player(name="Not In This File", team_id=lal.id, is_active=True))
+    db_session.flush()
+
+    parsed = [{"name": "Someone Else Entirely", "team_abbreviation": "LAL"}]
+    csv_import.apply_roster(parsed, db_session)
+
+    player = db_session.query(Player).filter(Player.name == "Not In This File").one()
+    assert player.is_active is True
+
+
+def test_apply_roster_is_idempotent(db_session):
+    """Arbitrage 4 : relancer le même import ne duplique rien -- deuxième
+    passage sans effet, y compris sur les lignes déplacées au premier."""
+    bos = Team(name="Boston Celtics", abbreviation="BOS")
+    lal = Team(name="Los Angeles Lakers", abbreviation="LAL")
+    db_session.add_all([bos, lal])
+    db_session.flush()
+    db_session.add(Player(name="Moving Target", team_id=bos.id, draft_pick=7, is_active=True))
+    db_session.flush()
+
+    parsed = [
+        {"name": "Moving Target", "team_abbreviation": "LAL"},
+        {"name": "Fresh Face", "team_abbreviation": "LAL"},
+    ]
+
+    first_count = csv_import.apply_roster(parsed, db_session)
+    assert first_count == 2
+    assert db_session.query(Player).count() == 2
+
+    snapshot = {
+        p.name: (p.team_id, p.draft_pick, p.per, p.mpg) for p in db_session.query(Player).all()
+    }
+
+    second_count = csv_import.apply_roster(parsed, db_session)
+    assert second_count == 2
+    assert db_session.query(Player).count() == 2  # aucun doublon créé
+    after = {p.name: (p.team_id, p.draft_pick, p.per, p.mpg) for p in db_session.query(Player).all()}
+    assert after == snapshot  # rien n'a bougé au second passage

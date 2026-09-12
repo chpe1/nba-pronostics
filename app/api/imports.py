@@ -6,13 +6,20 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_admin
 from app.database import get_db
 from app.models import ImportHistory, ImportStatus, ImportType, SeasonType, Team
-from app.schemas import ImportHistoryRead, ImportPreviewResponse, ImportResultResponse
+from app.schemas import (
+    ImportHistoryRead,
+    ImportPreviewResponse,
+    ImportResultResponse,
+    MovedRosterEntryRead,
+    RosterImportPreviewResponse,
+    UnmatchedRosterNameRead,
+)
 from app.services import csv_import
 
 router = APIRouter(prefix="/api/imports", tags=["imports"], dependencies=[Depends(get_current_admin)])
 
 
-@router.post("/stats", response_model=ImportPreviewResponse | ImportResultResponse)
+@router.post("/stats", response_model=ImportPreviewResponse | RosterImportPreviewResponse | ImportResultResponse)
 async def import_stats(
     file: UploadFile = File(...),
     dry_run: bool = Query(True, description="Aperçu sans écriture en base si true"),
@@ -78,9 +85,11 @@ async def import_stats(
         resolved_team_abbreviation = team.abbreviation
 
     # La draft n'a pas de notion de saison précédente (toujours l'effectif
-    # actuel). Le calendrier n'a pas cette notion non plus, mais pour la
-    # raison inverse : `season` y est TOUJOURS requis (pas de "courant" par
-    # défaut déductible des dates, cf. plan-etape6ter.md).
+    # actuel) -- ROSTER non plus, pour la même raison (l'effectif complet
+    # décrit toujours la saison courante, jamais N-1). Le calendrier n'a pas
+    # cette notion non plus, mais pour la raison inverse : `season` y est
+    # TOUJOURS requis (pas de "courant" par défaut déductible des dates, cf.
+    # plan-etape6ter.md).
     if detected_type == ImportType.SCHEDULE:
         effective_season_type = SeasonType.CURRENT
         if not season:
@@ -88,7 +97,7 @@ async def import_stats(
                 status_code=400,
                 detail="Le paramètre 'season' (ex: '2026-2027') est requis pour importer un calendrier.",
             )
-    elif detected_type == ImportType.DRAFT:
+    elif detected_type in (ImportType.DRAFT, ImportType.ROSTER):
         effective_season_type = SeasonType.CURRENT
     else:
         effective_season_type = season_type
@@ -101,6 +110,12 @@ async def import_stats(
     if detected_type == ImportType.SCHEDULE:
         parser = csv_import.PARSERS[detected_type]
         applier = None  # apply_schedule appelé directement plus bas (signature dédiée)
+    elif detected_type == ImportType.ROSTER:
+        # Hors des dicts génériques PARSERS/APPLIERS, comme SCHEDULE ci-dessus
+        # -- l'aperçu ROSTER a besoin d'analyze_roster_import (lecture DB),
+        # que rien d'autre ne fait à ce stade (voir plan du chantier).
+        parser = csv_import.parse_roster
+        applier = csv_import.apply_roster
     elif effective_season_type == SeasonType.PREVIOUS:
         parser = csv_import.PREV_SEASON_PARSERS[detected_type]
         applier = csv_import.PREV_SEASON_APPLIERS[detected_type]
@@ -115,6 +130,30 @@ async def import_stats(
     filename = file.filename or "fichier.csv"
 
     if dry_run:
+        if detected_type == ImportType.ROSTER:
+            # Récapitulatif AVANT toute écriture (plan du chantier, point a)
+            # -- analyze_roster_import ne fait que lire, jamais db.add/flush.
+            analysis = csv_import.analyze_roster_import(db, parsed)
+            return RosterImportPreviewResponse(
+                import_type=detected_type,
+                filename=filename,
+                row_count=len(parsed),
+                error_count=len(errors),
+                errors=errors,
+                matched_count=analysis.matched_count,
+                unmatched=[
+                    UnmatchedRosterNameRead(
+                        name=item.name, closest_match=item.closest_match, distance=item.distance
+                    )
+                    for item in analysis.unmatched
+                ],
+                orphans=analysis.orphans,
+                moved=[
+                    MovedRosterEntryRead(name=item.name, from_team=item.from_team, to_team=item.to_team)
+                    for item in analysis.moved
+                ],
+                no_prior_data=analysis.no_prior_data,
+            )
         return ImportPreviewResponse(
             import_type=detected_type,
             filename=filename,
@@ -130,6 +169,8 @@ async def import_stats(
 
     if detected_type == ImportType.SCHEDULE:
         row_count = csv_import.apply_schedule(parsed, db, season)
+    elif detected_type == ImportType.ROSTER:
+        row_count = csv_import.apply_roster(parsed, db)
     elif effective_season_type == SeasonType.PREVIOUS:
         row_count = applier(parsed, db, season)
     else:

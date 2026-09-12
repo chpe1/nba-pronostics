@@ -17,6 +17,13 @@ venv/
 *.sqlite
 *.sqlite3
 
+# Exports CSV Basketball-Reference déposés à la racine pour import manuel
+# (données personnelles/volumineuses, jamais destinées au dépôt public) --
+# ancré à la racine (/*.csv), jamais tests/fixtures/*.csv (suivies par Git,
+# nécessaires à la suite de tests) : un *.csv non ancré les aurait aussi
+# touchées, avec le risque qu'une future fixture y passe inaperçue.
+/*.csv
+
 # Logs applicatifs (RotatingFileHandler, voir app/logging_config.py)
 logs/
 

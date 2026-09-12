@@ -27,12 +27,23 @@ from __future__ import annotations
 import csv
 import io
 import re
+import unicodedata
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models import MAX_REALISTIC_MPG, Game, GameStatus, ImportType, Player, PreviousSeasonPlayerStat, Team
+from app.models import (
+    MAX_REALISTIC_MPG,
+    Game,
+    GameStatus,
+    ImportType,
+    Player,
+    PreviousSeasonPlayerStat,
+    Settings,
+    Team,
+)
 from app.services.nba_teams import ABBREVIATION_TO_NAME, NBA_TEAMS, normalize_abbreviation, resolve_team_name
 from app.services.player_matching import find_player_by_name, find_prev_season_stat_by_name, normalize_player_name
 
@@ -46,6 +57,11 @@ REQUIRED_COLUMNS: dict[ImportType, tuple[str, ...]] = {
     ImportType.PLAYERS_ADVANCED: ("Player", "PER", "G", "MP"),
     ImportType.DRAFT: ("Pk", "Tm", "Player"),
     ImportType.SCHEDULE: ("Date", "Start (ET)", "Visitor/Neutral", "Home/Neutral"),
+    # Number/Position/Height/Weight/Last Attended/Country peuvent être présentes
+    # dans le fichier réel (export "ligue entière" du roster) mais ne sont ni
+    # lues ni stockées (arbitrage explicite, voir plan du chantier ROSTER) --
+    # Player et Team sont les deux seules colonnes que parse_roster consomme.
+    ImportType.ROSTER: ("Player", "Team"),
 }
 
 # Basketball-Reference ajoute une ligne agrégée (toutes équipes confondues)
@@ -155,6 +171,14 @@ def detect_import_type(df: pd.DataFrame) -> ImportType | None:
         return ImportType.DRAFT
     if {"Player", "PER"}.issubset(columns):
         return ImportType.PLAYERS_ADVANCED
+    # ROSTER doit être vérifié APRÈS PLAYERS_ADVANCED, jamais avant : un
+    # export Advanced "ligue entière" a lui aussi Player ET Team (en plus de
+    # PER/G/MP) -- si ce test passait en premier, un tel fichier serait
+    # détecté à tort comme ROSTER. L'ordre des `if` de cette fonction fait foi
+    # (pas un ensemble non ordonné) ; ne jamais déplacer ce bloc avant celui
+    # de PLAYERS_ADVANCED.
+    if {"Player", "Team"}.issubset(columns):
+        return ImportType.ROSTER
     if {"Team", "Home", "Road"}.issubset(columns):
         return ImportType.TEAMS_HOME_AWAY
     return None
@@ -719,6 +743,251 @@ def apply_schedule(parsed: list[dict], db: Session, season: str) -> int:
             game.away_score = None
         # sinon : déjà FINISHED et la ligne réimportée n'a pas de score ->
         # on ne touche pas au statut/score existant.
+    db.flush()
+    return count
+
+
+# --- Effectif complet (ligue entière) ---------------------------------------
+#
+# Import ROSTER : nom + équipe pour l'intégralité de la ligue, en un seul
+# fichier. Number/Position/Height/Weight/Last Attended/Country peuvent être
+# présentes dans le fichier réel mais ne sont jamais lues au-delà de
+# REQUIRED_COLUMNS -- arbitrage explicite du chantier, aucune des deux
+# n'alimente le moteur ni ne rejoint le modèle Player.
+#
+# Rapprochement par nom : ROSTER a besoin d'un rapprochement plus agressif
+# que le reste du projet (diacritiques, ponctuation, suffixes Jr./Sr./II/III)
+# pour retrouver correctement les 582 PreviousSeasonPlayerStat et les Player
+# déjà en base. _roster_match_key() ci-dessous est volontairement LOCALE à
+# ce chantier -- elle n'étend PAS et ne remplace PAS
+# player_matching.normalize_player_name (le point d'entrée unique du reste
+# du projet : import Advanced/Draft, formulaire admin, détection de
+# transferts). Partagée par analyze_roster_import et apply_roster pour
+# qu'aperçu et confirmation ne puissent jamais diverger sur une même ligne
+# (même principe que la source de vérité unique retenue pour
+# compute_calendar_flags, voir CLAUDE.md, Décision d'architecture n°13).
+
+_ROSTER_NAME_SUFFIX_PATTERN = re.compile(r"\b(jr\.?|sr\.?|ii|iii|iv|v)\.?$", re.IGNORECASE)
+
+
+def _roster_match_key(name: str) -> str:
+    """Replie diacritiques + ponctuation + suffixes générationnels, en plus
+    du strip().casefold() habituel. Mesuré sur le vrai fichier (voir plan du
+    chantier) : résout les seuls échecs "cosmétiques" (accents, ponctuation,
+    Jr./Sr./II/III) sans rapprocher à tort deux joueurs différents -- le faux
+    positif mesuré par ailleurs (distance de Levenshtein entre "Caleb Wilson"
+    et "Jalen Wilson") ne partage aucun de ces éléments et reste un échec ici
+    aussi, comme attendu."""
+    normalized = name.strip().casefold()
+    without_diacritics = "".join(
+        c for c in unicodedata.normalize("NFD", normalized) if not unicodedata.combining(c)
+    )
+    without_punct = re.sub(r"[^\w\s]", "", without_diacritics)
+    without_suffix = _ROSTER_NAME_SUFFIX_PATTERN.sub("", without_punct).strip()
+    return re.sub(r"\s+", " ", without_suffix).strip()
+
+
+def _levenshtein_distance(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    previous_row = list(range(len(b) + 1))
+    for i, char_a in enumerate(a, start=1):
+        current_row = [i] + [0] * len(b)
+        for j, char_b in enumerate(b, start=1):
+            cost = 0 if char_a == char_b else 1
+            current_row[j] = min(
+                previous_row[j] + 1,
+                current_row[j - 1] + 1,
+                previous_row[j - 1] + cost,
+            )
+        previous_row = current_row
+    return previous_row[-1]
+
+
+def _closest_name(target: str, candidates: list[str]) -> tuple[str, int] | None:
+    """Suggestion purement informative pour le récapitulatif -- JAMAIS
+    appliquée automatiquement : un faux positif mesuré ("Caleb Wilson" à
+    distance 2 de "Jalen Wilson", deux joueurs sans rapport) interdit de
+    fusionner deux noms sur ce seul critère. Comparaison faite sur
+    _roster_match_key des deux côtés, pas sur les chaînes brutes."""
+    best_name: str | None = None
+    best_distance: int | None = None
+    target_key = _roster_match_key(target)
+    for candidate in candidates:
+        distance = _levenshtein_distance(target_key, _roster_match_key(candidate))
+        if best_distance is None or distance < best_distance:
+            best_distance = distance
+            best_name = candidate
+    if best_name is None:
+        return None
+    return best_name, best_distance
+
+
+def parse_roster(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    """Pure -- aucun accès DB, même contrat que les autres parse_* (voir
+    docstring de module). N'extrait que Player/Team ; toute autre colonne du
+    fichier réel (Number/Position/Height/Weight/Last Attended/Country) est
+    ignorée silencieusement, jamais lue."""
+    parsed: list[dict] = []
+    errors: list[dict] = []
+    for idx, row in df.iterrows():
+        row_num = int(idx) + 2
+        name = str(row.get("Player", "")).strip()
+        raw_team = str(row.get("Team", "")).strip()
+        if not name or not raw_team:
+            errors.append({"row": row_num, "message": "Colonne Player ou Team manquante"})
+            continue
+        team_abbr = normalize_abbreviation(raw_team)
+        if team_abbr not in ABBREVIATION_TO_NAME:
+            errors.append({"row": row_num, "message": f"Équipe inconnue : {team_abbr!r}"})
+            continue
+        parsed.append({"name": name, "team_abbreviation": team_abbr})
+    return parsed, errors
+
+
+@dataclass
+class UnmatchedRosterName:
+    name: str
+    closest_match: str | None
+    distance: int | None
+
+
+@dataclass
+class MovedRosterEntry:
+    name: str
+    from_team: str
+    to_team: str
+
+
+@dataclass
+class RosterImportAnalysis:
+    """Les 5 sections du récapitulatif (plan du chantier, point b) --
+    produites par analyze_roster_import, jamais persistées (comme
+    resolved_team_name pour le roster par équipe : portée dry-run
+    uniquement, jamais dans ImportHistory)."""
+
+    matched_count: int
+    unmatched: list[UnmatchedRosterName]
+    orphans: list[str]
+    moved: list[MovedRosterEntry]
+    no_prior_data: list[str]
+
+
+def analyze_roster_import(db: Session, parsed: list[dict]) -> RosterImportAnalysis:
+    """Lecture seule (aucun db.add/flush) -- appelée UNIQUEMENT pendant
+    l'aperçu (dry_run=True), jamais pendant la confirmation. apply_roster ne
+    reçoit jamais son résultat : il recalcule ses propres décisions
+    indépendamment, à partir du même _roster_match_key (voir plan du
+    chantier, point a -- stateless par choix, aucun état de session entre
+    aperçu et confirmation)."""
+    settings = db.query(Settings).first()
+    prev_season = settings.previous_season if settings is not None else None
+
+    csv_keys = {_roster_match_key(item["name"]) for item in parsed}
+
+    n1_rows = (
+        db.query(PreviousSeasonPlayerStat).filter(PreviousSeasonPlayerStat.season == prev_season).all()
+        if prev_season is not None
+        else []
+    )
+    n1_by_key: dict[str, PreviousSeasonPlayerStat] = {
+        _roster_match_key(stat.player_name): stat for stat in n1_rows
+    }
+
+    matched_count = 0
+    unmatched_names: list[str] = []
+    for item in parsed:
+        if _roster_match_key(item["name"]) in n1_by_key:
+            matched_count += 1
+        else:
+            unmatched_names.append(item["name"])
+
+    # Bassin de suggestion : uniquement les lignes N-1 qu'AUCUN nom du CSV
+    # n'a réclamées -- comparer un échec à un nom N-1 déjà rapproché par
+    # ailleurs produirait une suggestion trompeuse (deux noms CSV différents
+    # pointant vers la même ligne N-1 déjà prise).
+    n1_orphan_names = [stat.player_name for key, stat in n1_by_key.items() if key not in csv_keys]
+
+    unmatched: list[UnmatchedRosterName] = []
+    for name in unmatched_names:
+        suggestion = _closest_name(name, n1_orphan_names)
+        if suggestion is None:
+            unmatched.append(UnmatchedRosterName(name=name, closest_match=None, distance=None))
+        else:
+            closest, distance = suggestion
+            unmatched.append(UnmatchedRosterName(name=name, closest_match=closest, distance=distance))
+
+    active_players = db.query(Player).filter(Player.is_active.is_(True)).all()
+    player_by_key: dict[str, Player] = {_roster_match_key(p.name): p for p in active_players}
+
+    orphans = sorted(p.name for key, p in player_by_key.items() if key not in csv_keys)
+
+    moved: list[MovedRosterEntry] = []
+    for item in parsed:
+        player = player_by_key.get(_roster_match_key(item["name"]))
+        if player is not None and player.team.abbreviation != item["team_abbreviation"]:
+            moved.append(
+                MovedRosterEntry(
+                    name=item["name"],
+                    from_team=player.team.abbreviation,
+                    to_team=item["team_abbreviation"],
+                )
+            )
+
+    # Sans ligne N-1 ET sans draft_pick connu : signalé pour saisie manuelle
+    # (arbitrage du chantier -- corrigé après mesure, voir plan révisé). Un
+    # joueur sans ligne N-1 mais déjà connu comme drafté (draft_pick non nul)
+    # est un rookie normal, jamais signalé ici.
+    no_prior_data: list[str] = []
+    for name in unmatched_names:
+        player = player_by_key.get(_roster_match_key(name))
+        if player is not None and player.draft_pick is not None:
+            continue
+        no_prior_data.append(name)
+
+    return RosterImportAnalysis(
+        matched_count=matched_count,
+        unmatched=unmatched,
+        orphans=orphans,
+        moved=moved,
+        no_prior_data=sorted(no_prior_data),
+    )
+
+
+def apply_roster(parsed: list[dict], db: Session) -> int:
+    """N'écrit jamais per/mpg/is_active/previous_team_id/draft_pick/
+    games_played_this_season -- seuls `name` (à la création) et `team_id`
+    sont modifiés. Le rapprochement PER N-1 se fait au moment du calcul
+    (pronostic_calculator._effective_per_mpg), jamais ici : ce n'est pas une
+    lacune, c'est le mécanisme déjà en place qui s'applique automatiquement
+    dès que games_played_this_season reste sous le seuil (voir plan du
+    chantier, point a).
+
+    Recherche par NOM SEUL (arbitrage du chantier) : un joueur déjà en base
+    sous une autre équipe est DÉPLACÉ (team_id mis à jour), jamais dupliqué
+    -- il conserve ainsi son draft_pick, son games_played_this_season, son
+    historique. C'est aussi ce qui rend l'import idempotent : le relancer sur
+    le même fichier ne crée et ne modifie plus rien après le premier passage."""
+    count = 0
+    active_players = db.query(Player).filter(Player.is_active.is_(True)).all()
+    player_by_key: dict[str, Player] = {_roster_match_key(p.name): p for p in active_players}
+
+    for item in parsed:
+        team = _get_or_create_team(db, item["team_abbreviation"])
+        key = _roster_match_key(item["name"])
+        player = player_by_key.get(key)
+        if player is None:
+            player = Player(name=item["name"], team_id=team.id)
+            db.add(player)
+            db.flush()
+            player_by_key[key] = player
+        elif player.team_id != team.id:
+            player.team_id = team.id
+        count += 1
     db.flush()
     return count
 

@@ -14,6 +14,9 @@ from app.schemas.import_history import (
     ImportHistoryRead,
     ImportPreviewResponse,
     ImportResultResponse,
+    MovedRosterEntryRead,
+    RosterImportPreviewResponse,
+    UnmatchedRosterNameRead,
 )
 from app.schemas.auth import LoginRequest, TokenResponse
 
@@ -40,4 +43,7 @@ __all__ = [
     "ImportHistoryRead",
     "ImportPreviewResponse",
     "ImportResultResponse",
+    "RosterImportPreviewResponse",
+    "UnmatchedRosterNameRead",
+    "MovedRosterEntryRead",
 ]

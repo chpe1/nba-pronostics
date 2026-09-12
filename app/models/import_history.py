@@ -14,6 +14,7 @@ class ImportType(str, enum.Enum):
     PLAYERS_ADVANCED = "players_advanced"
     DRAFT = "draft"
     SCHEDULE = "schedule"
+    ROSTER = "roster"
 
 
 class ImportStatus(str, enum.Enum):

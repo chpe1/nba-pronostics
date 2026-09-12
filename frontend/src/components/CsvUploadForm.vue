@@ -216,7 +216,73 @@ onMounted(() => {
         <p v-for="err in preview.errors" :key="err.row">Ligne {{ err.row }} : {{ err.message }}</p>
       </div>
 
-      <div v-if="preview.sample_rows.length" class="overflow-x-auto">
+      <!-- Récapitulatif ROSTER (effectif complet) : 5 sections dans l'ordre
+           du plan du chantier. Chaque section au-delà d'un simple compte est
+           repliée par défaut (<details>, jamais de pagination) : la liste
+           complète (jusqu'à une centaine de noms) reste dans le DOM, juste
+           masquée tant qu'on ne l'ouvre pas -- évite le mur de texte sans
+           découper les données en pages. -->
+      <div v-if="preview.import_type === 'roster'" class="space-y-3">
+        <p class="rounded-lg bg-surface-info px-3 py-2 text-text-secondary">
+          <strong>{{ preview.matched_count }}</strong> joueur(s) rapproché(s) d'une ligne de statistiques N-1.
+        </p>
+
+        <details v-if="preview.unmatched.length" class="rounded-lg border border-border">
+          <summary class="flex min-h-11 cursor-pointer items-center px-3 py-2 font-medium text-text">
+            {{ preview.unmatched.length }} échec(s) de rapprochement
+          </summary>
+          <ul class="divide-y divide-border px-3 pb-2 text-text-secondary">
+            <li v-for="item in preview.unmatched" :key="item.name" class="py-1.5">
+              {{ item.name }}
+              <span v-if="item.closest_match">
+                — le plus proche en base : {{ item.closest_match }} (distance {{ item.distance }})
+              </span>
+              <span v-else>— aucune suggestion trouvée</span>
+            </li>
+          </ul>
+        </details>
+        <p v-else class="text-text-secondary">Aucun échec de rapprochement.</p>
+
+        <details v-if="preview.orphans.length" class="rounded-lg border border-border">
+          <summary class="flex min-h-11 cursor-pointer items-center px-3 py-2 font-medium text-text">
+            {{ preview.orphans.length }} joueur(s) en base absent(s) du fichier
+          </summary>
+          <div class="px-3 pb-2">
+            <p class="mb-2 rounded-lg bg-surface-info px-3 py-2 text-text-secondary">
+              Informatif uniquement — aucune action possible depuis cet écran, le statut actif d'un
+              joueur n'est modifiable par aucun formulaire admin aujourd'hui.
+            </p>
+            <ul class="divide-y divide-border text-text-secondary">
+              <li v-for="name in preview.orphans" :key="name" class="py-1.5">{{ name }}</li>
+            </ul>
+          </div>
+        </details>
+        <p v-else class="text-text-secondary">Aucun joueur en base absent du fichier.</p>
+
+        <details v-if="preview.moved.length" class="rounded-lg border border-border">
+          <summary class="flex min-h-11 cursor-pointer items-center px-3 py-2 font-medium text-text">
+            {{ preview.moved.length }} ligne(s) déplacée(s) d'une équipe à l'autre
+          </summary>
+          <ul class="divide-y divide-border px-3 pb-2 text-text-secondary">
+            <li v-for="item in preview.moved" :key="item.name" class="py-1.5">
+              {{ item.name }} : {{ item.from_team }} → {{ item.to_team }}
+            </li>
+          </ul>
+        </details>
+        <p v-else class="text-text-secondary">Aucune ligne déplacée.</p>
+
+        <details v-if="preview.no_prior_data.length" class="rounded-lg border border-border">
+          <summary class="flex min-h-11 cursor-pointer items-center px-3 py-2 font-medium text-text">
+            {{ preview.no_prior_data.length }} joueur(s) sans ligne N-1 ni draft_pick connu
+          </summary>
+          <ul class="divide-y divide-border px-3 pb-2 text-text-secondary">
+            <li v-for="name in preview.no_prior_data" :key="name" class="py-1.5">{{ name }}</li>
+          </ul>
+        </details>
+        <p v-else class="text-text-secondary">Aucun joueur à signaler.</p>
+      </div>
+
+      <div v-else-if="preview.sample_rows && preview.sample_rows.length" class="overflow-x-auto">
         <table class="w-full border-collapse text-left text-xs">
           <thead>
             <tr>
