@@ -2,6 +2,9 @@
 import { computed } from 'vue'
 import DivergentGauge from './DivergentGauge.vue'
 import { reliabilityTreatment } from '@/constants/reliability'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
 
 // Bandeau contextuel (docs/design-v1.md §9). Quatre états dans le document,
 // deux implémentés ici (vitrine / non révélé) -- passé (§9.3) réutilise le
@@ -61,13 +64,12 @@ const mention = computed(() =>
   showcaseGame.value ? reliabilityTreatment(showcaseGame.value.prediction.reliability).mention : null,
 )
 
-// Non révélé (§9.1) : deux raisons distinctes, mais un même traitement visuel
-// neutre -- priorité au message "aucun pronostic calculé" dès qu'au moins un
-// match de la journée en relève (§9.1, décision consignée). Corrigé le
-// 2026-08-30 : le message initial ("effectif en cours de chargement")
-// évoquait à tort une attente passagère, alors que c'est un état stable de
-// plusieurs semaines (§12) -- aligné sur le texte, déjà juste, de la carte.
-const hasNeverCalculated = computed(() => props.games.some((g) => !g.prediction))
+// Non révélé (§9.1) : deux compteurs indépendants, jamais mutuellement
+// exclusifs -- un match sans AUCUNE prédiction (missingPredictionsCount) et un
+// match calculé mais encore masqué avant sa date (upcomingCount) peuvent
+// coexister dans la même journée. Chacun pilote son propre message dans le
+// template, sans dépendre de l'autre ni de la présence d'une carte vitrine.
+const missingPredictionsCount = computed(() => props.games.filter((g) => !g.prediction).length)
 const upcomingCount = computed(() => props.games.filter((g) => g.prediction?.is_upcoming).length)
 </script>
 
@@ -126,21 +128,22 @@ const upcomingCount = computed(() => props.games.filter((g) => g.prediction?.is_
     </div>
   </div>
 
-  <div v-else-if="games.length > 0" class="mb-4 rounded-xl bg-surface-sunken p-4 text-sm text-text-secondary">
-    <template v-if="hasNeverCalculated">
-      <p>Aucun pronostic calculé — l'effectif de la saison courante doit être importé, puis un
-        recalcul lancé.</p>
-      <!-- Secondaire, en retrait de la phrase ci-dessus : un complément
-           d'information sur QUAND, pas une alerte. Distingue un état
-           d'attente connue d'un état d'erreur, voir docs/design-v1.md §9.1. -->
-      <p class="mt-1 text-xs text-text-disabled">
-        Les rosters NBA ne se stabilisent qu'après les coupes d'effectif de présaison, mi-septembre
-        — l'import ne sera possible qu'à partir de là.
-      </p>
-    </template>
-    <p v-else>
+  <div v-else-if="upcomingCount > 0" class="mb-4 rounded-xl bg-surface-sunken p-4 text-sm text-text-secondary">
+    <p>
       {{ upcomingCount }} match{{ upcomingCount > 1 ? 's' : '' }} programmé{{ upcomingCount > 1 ? 's' : '' }}
       — les pronostics seront révélés à l'approche de la date.
+    </p>
+  </div>
+
+  <!-- Indépendant de la carte vitrine et du message ci-dessus (conditionné
+       uniquement sur missingPredictionsCount) : un match sans pronostic reste
+       une information vraie que la vitrine existe ou non -- discret, pas un
+       encart d'alerte, c'est un fait sur la donnée, pas un problème. -->
+  <div v-if="missingPredictionsCount > 0" class="mb-4 text-xs text-text-secondary">
+    <p>{{ missingPredictionsCount }} match{{ missingPredictionsCount > 1 ? 's' : '' }} sur {{ games.length }}
+      sans pronostic pour cette date.</p>
+    <p v-if="authStore.isAuthenticated" class="mt-1">
+      Utilisez le bouton « Recalculer les pronostics de cette date » ci-dessous.
     </p>
   </div>
 </template>
