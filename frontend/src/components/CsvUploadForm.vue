@@ -43,6 +43,18 @@ watch(seasonType, (value) => {
   season.value = value === 'previous' ? previousSeason.value : currentSeason.value
 })
 
+// L'aperçu est calculé pour un jeu de paramètres précis (saison, équipe) --
+// le modifier après coup le rend caduc : un import confirmé sur un aperçu
+// obsolète écrirait dans la mauvaise table ou sous la mauvaise équipe (voir
+// discussion du chantier). Même geste que onFileChange pour un nouveau
+// fichier -- on aligne les deux plutôt que d'inventer un second
+// comportement. Réinitialisé même si la valeur revient à son état d'origine :
+// un aperçu perdu pour rien coûte un clic, un aperçu qui ne correspond plus
+// coûte un import dans la mauvaise table.
+watch([seasonType, season, teamId], () => {
+  preview.value = null
+})
+
 function onFileChange(event) {
   selectedFile.value = event.target.files[0] ?? null
   preview.value = null
@@ -116,11 +128,10 @@ onMounted(() => {
 
 <template>
   <div class="rounded-xl border border-border bg-surface p-4">
-    <h2 class="mb-1 text-sm font-semibold text-text">Importer un fichier CSV Basketball-Reference</h2>
+    <h2 class="mb-1 text-sm font-semibold text-text">Importer un fichier CSV (Basketball-Reference ou NBA.com)</h2>
     <p class="mb-3 text-xs text-text-secondary">
-      Classement (Expanded Standings), joueurs (Advanced — ligue entière ou roster d'une équipe),
-      draft ou calendrier de la saison. Le type de fichier est <strong>détecté automatiquement</strong>
-      à partir de ses colonnes — pas besoin de le préciser, dépose simplement le fichier tel quel.
+      Le type de fichier est <strong>détecté automatiquement</strong> à partir de ses colonnes.
+      Dépose simplement le fichier tel quel.
     </p>
 
     <!-- Encadré qui EXPLIQUE (docs/design-v1.md §11.1) : rôle "encadré informatif" (§5.2/§5.3),

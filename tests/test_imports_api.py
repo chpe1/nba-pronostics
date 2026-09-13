@@ -263,7 +263,7 @@ def test_download_template_unknown_key_returns_400(client, auth_headers):
 
 @pytest.mark.parametrize(
     "key",
-    ["teams_home_away", "players_advanced_league", "players_advanced_team", "draft", "schedule"],
+    ["teams_home_away", "players_advanced_league", "players_advanced_team", "draft", "schedule", "roster"],
 )
 def test_download_template_returns_csv_with_content_disposition(client, auth_headers, key):
     response = client.get("/api/imports/template", params={"type": key}, headers=auth_headers)

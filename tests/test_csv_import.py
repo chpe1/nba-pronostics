@@ -976,6 +976,7 @@ def test_generate_template_columns_match_required_columns_order():
         ("players_advanced_team", ImportType.PLAYERS_ADVANCED),
         ("draft", ImportType.DRAFT),
         ("schedule", ImportType.SCHEDULE),
+        ("roster", ImportType.ROSTER),
     ]:
         header = csv_import.generate_template_csv(key).splitlines()[0].split(",")
         assert header == list(csv_import.REQUIRED_COLUMNS[import_type])

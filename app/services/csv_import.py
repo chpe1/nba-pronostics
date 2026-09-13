@@ -191,7 +191,7 @@ def validate_columns(df: pd.DataFrame, import_type: ImportType) -> list[str]:
 
 
 # Modèles CSV téléchargeables (aide-mémoire du format attendu, back-office
-# Imports) : 5 clés pour les 4 types + les 2 variantes de players_advanced
+# Imports) : 6 clés pour les 5 types + les 2 variantes de players_advanced
 # (avec/sans colonne Team -- voir docstring du module).
 TEMPLATE_KEYS: tuple[str, ...] = (
     "teams_home_away",
@@ -199,6 +199,7 @@ TEMPLATE_KEYS: tuple[str, ...] = (
     "players_advanced_team",
     "draft",
     "schedule",
+    "roster",
 )
 
 _TEMPLATE_IMPORT_TYPE: dict[str, ImportType] = {
@@ -207,6 +208,7 @@ _TEMPLATE_IMPORT_TYPE: dict[str, ImportType] = {
     "players_advanced_team": ImportType.PLAYERS_ADVANCED,
     "draft": ImportType.DRAFT,
     "schedule": ImportType.SCHEDULE,
+    "roster": ImportType.ROSTER,
 }
 
 # Valeurs d'exemple UNIQUEMENT cosmétiques (pour que le modèle montre à quoi

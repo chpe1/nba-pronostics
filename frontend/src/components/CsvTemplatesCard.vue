@@ -8,13 +8,10 @@ const downloadingKey = ref(null)
 const TEMPLATES = [
   { key: 'teams_home_away', label: 'Classement (Expanded Standings)' },
   { key: 'players_advanced_league', label: 'Joueurs Advanced — ligue entière' },
-  {
-    key: 'players_advanced_team',
-    label: "Joueurs Advanced — roster d'une équipe",
-    note: "Modèle simplifié : seules les colonnes obligatoires sont indiquées, votre vrai fichier en contiendra d'autres, aucun souci.",
-  },
+  { key: 'players_advanced_team', label: "Joueurs Advanced — roster d'une équipe" },
   { key: 'draft', label: 'Draft' },
   { key: 'schedule', label: 'Calendrier' },
+  { key: 'roster', label: 'Effectif complet (NBA.com)' },
 ]
 
 async function download(key) {
@@ -58,17 +55,21 @@ async function download(key) {
          colonne ne peut plus jamais en pousser une autre : le bouton garde son plafond de 220px
          (max-w-[220px] sur le bouton, inchangé), la note reste libre de toute contrainte. -->
     <div class="flex flex-col items-start gap-2">
-      <div v-for="template in TEMPLATES" :key="template.key" class="flex flex-col gap-1">
-        <button
-          type="button"
-          class="min-h-11 max-w-[220px] rounded-lg border border-border px-3 py-2 text-xs font-medium text-text disabled:opacity-50"
-          :disabled="downloadingKey === template.key"
-          @click="download(template.key)"
-        >
-          {{ downloadingKey === template.key ? 'Téléchargement…' : template.label }}
-        </button>
-        <p v-if="template.note" class="text-[11px] leading-snug text-text-secondary">{{ template.note }}</p>
-      </div>
+      <button
+        v-for="template in TEMPLATES"
+        :key="template.key"
+        type="button"
+        class="min-h-11 max-w-[220px] rounded-lg border border-border px-3 py-2 text-xs font-medium text-text disabled:opacity-50"
+        :disabled="downloadingKey === template.key"
+        @click="download(template.key)"
+      >
+        {{ downloadingKey === template.key ? 'Téléchargement…' : template.label }}
+      </button>
     </div>
+
+    <p class="mt-2 text-[11px] leading-snug text-text-secondary">
+      Modèle simplifié : seules les colonnes obligatoires sont indiquées, votre vrai fichier en
+      contiendra d'autres, aucun souci.
+    </p>
   </div>
 </template>
