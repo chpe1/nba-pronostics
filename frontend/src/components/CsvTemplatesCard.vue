@@ -4,6 +4,14 @@ import { apiFetchBlob, ApiError } from '@/services/apiClient'
 
 const errorMessage = ref('')
 const downloadingKey = ref(null)
+// Retour visuel « lent » : n'apparaît qu'au-delà de SLOW_DOWNLOAD_MS. Un téléchargement local
+// dure ~10 ms : afficher l'état dès le clic ne produisait qu'un clignotement.
+const SLOW_DOWNLOAD_MS = 200
+// Une fois affiché, le retour reste visible au moins MIN_SPINNER_MS : sinon une réponse arrivée
+// juste après le délai ferait clignoter la roue à son tour.
+const MIN_SPINNER_MS = 300
+const slowKey = ref(null)
+let slowShownAt = 0
 
 const TEMPLATES = [
   { key: 'teams_home_away', label: 'Classement (Expanded Standings)' },
@@ -15,8 +23,13 @@ const TEMPLATES = [
 ]
 
 async function download(key) {
+  if (downloadingKey.value) return
   errorMessage.value = ''
   downloadingKey.value = key
+  const slowTimer = setTimeout(() => {
+    slowShownAt = performance.now()
+    slowKey.value = key
+  }, SLOW_DOWNLOAD_MS)
   try {
     const blob = await apiFetchBlob(`/api/imports/template?type=${key}`)
     const url = URL.createObjectURL(blob)
@@ -28,6 +41,12 @@ async function download(key) {
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : 'Échec du téléchargement.'
   } finally {
+    clearTimeout(slowTimer)
+    if (slowKey.value === key) {
+      const remaining = MIN_SPINNER_MS - (performance.now() - slowShownAt)
+      if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining))
+    }
+    slowKey.value = null
     downloadingKey.value = null
   }
 }
@@ -74,11 +93,39 @@ async function download(key) {
           v-for="template in TEMPLATES"
           :key="template.key"
           type="button"
-          class="flex min-h-11 w-full max-w-md items-center rounded-lg px-3 py-2 text-left text-xs font-medium text-accent-text underline underline-offset-2 hover:bg-surface-sunken disabled:opacity-50"
-          :disabled="downloadingKey === template.key"
+          class="group flex min-h-11 w-full max-w-md items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-text hover:bg-surface-sunken focus-visible:bg-surface-sunken"
+          :aria-busy="slowKey === template.key"
           @click="download(template.key)"
         >
-          {{ downloadingKey === template.key ? 'Téléchargement…' : template.label }}
+          <!-- Icônes décoratives : le libellé n'est jamais remplacé. La flèche est à gauche ; à
+               droite, un emplacement de largeur fixe réservé au retour « lent » (> 200 ms), pour
+               qu'il apparaisse sans rien décaler. -->
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            class="h-4 w-4 shrink-0 group-hover:text-accent-text group-focus-visible:text-accent-text"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M10 3v10M6 9l4 4 4-4M4 17h12" />
+          </svg>
+          <span>{{ template.label }}</span>
+          <span class="ml-auto flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+            <svg
+              v-if="slowKey === template.key"
+              viewBox="0 0 20 20"
+              class="h-4 w-4 animate-spin text-text-secondary motion-reduce:animate-none"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <path d="M10 3a7 7 0 1 0 7 7" />
+            </svg>
+          </span>
         </button>
       </div>
 
