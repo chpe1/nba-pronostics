@@ -16,6 +16,7 @@ from app.api.admin import router as admin_router  # noqa: E402
 from app.api.auth import router as auth_router  # noqa: E402
 from app.api.games import router as games_router  # noqa: E402
 from app.api.imports import router as imports_router  # noqa: E402
+from app.api.injuries import router as injuries_router  # noqa: E402
 from app.api.players import router as players_router  # noqa: E402
 from app.api.predictions import router as predictions_router  # noqa: E402
 from app.api.previous_season_stats import router as previous_season_stats_router  # noqa: E402
@@ -60,6 +61,7 @@ app.add_middleware(
 app.include_router(admin_router)
 app.include_router(auth_router)
 app.include_router(imports_router)
+app.include_router(injuries_router)
 app.include_router(settings_router)
 app.include_router(predictions_router)
 app.include_router(games_router)
