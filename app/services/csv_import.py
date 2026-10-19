@@ -981,16 +981,20 @@ def analyze_roster_import(db: Session, parsed: list[dict]) -> RosterImportAnalys
     active_players = db.query(Player).filter(Player.is_active.is_(True)).all()
     player_by_key: dict[str, Player] = {_roster_match_key(p.name): p for p in active_players}
 
-    orphans = sorted(p.name for key, p in player_by_key.items() if key not in csv_keys)
+    # Un agent libre (team_id NULL, Décision n°39) absent du fichier est déjà
+    # détaché : ne pas le reproposer à chaque import comme futur agent libre.
+    orphans = sorted(p.name for key, p in player_by_key.items() if key not in csv_keys and p.team_id is not None)
 
     moved: list[MovedRosterEntry] = []
     for item in parsed:
         player = player_by_key.get(_roster_match_key(item["name"]))
-        if player is not None and player.team.abbreviation != item["team_abbreviation"]:
+        # Un agent libre présent dans le fichier est « déplacé » depuis aucune
+        # équipe : player.team vaut None (Décision n°39).
+        if player is not None and (player.team is None or player.team.abbreviation != item["team_abbreviation"]):
             moved.append(
                 MovedRosterEntry(
                     name=item["name"],
-                    from_team=player.team.abbreviation,
+                    from_team=player.team.abbreviation if player.team is not None else "agent libre",
                     to_team=item["team_abbreviation"],
                 )
             )

@@ -44,7 +44,11 @@ class Player(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    # NULL = agent libre (détaché de son équipe, voir CLAUDE.md, Décision n°39) :
+    # le joueur reste en base (historique, retrouvé s'il réapparaît dans un
+    # effectif) mais ne pèse sur aucune équipe. UNIQUE(name, team_id) ne
+    # protège PAS deux agents libres homonymes (SQLite : NULL distincts).
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
     # Équipe précédente (transfert estival) : sert au report du PER lors des
     # 10 premiers matchs de saison.
     previous_team_id: Mapped[int | None] = mapped_column(
@@ -80,7 +84,7 @@ class Player(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
-    team: Mapped["Team"] = relationship(
+    team: Mapped["Team | None"] = relationship(
         "Team", back_populates="players", foreign_keys=[team_id]
     )
     previous_team: Mapped["Team | None"] = relationship(

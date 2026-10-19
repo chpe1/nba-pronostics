@@ -29,12 +29,14 @@ def _validate_mpg(mpg: float | None) -> None:
 
 
 def _to_read(player: Player) -> PlayerWithTeamRead:
+    # Un agent libre (team_id NULL, Décision n°39) n'a pas d'équipe : player.team vaut None.
+    team = player.team
     return PlayerWithTeamRead(
         id=player.id,
         name=player.name,
         team_id=player.team_id,
-        team_name=player.team.name,
-        team_abbreviation=player.team.abbreviation,
+        team_name=team.name if team is not None else None,
+        team_abbreviation=team.abbreviation if team is not None else None,
         draft_pick=player.draft_pick,
         per=player.per,
         mpg=player.mpg,
@@ -44,9 +46,17 @@ def _to_read(player: Player) -> PlayerWithTeamRead:
 
 
 @router.get("", response_model=list[PlayerWithTeamRead])
-def list_players(team_id: int | None = Query(default=None), db: Session = Depends(get_db)):
+def list_players(
+    team_id: int | None = Query(default=None),
+    free_agent: bool = Query(default=False, description="true : uniquement les agents libres (team_id NULL)"),
+    db: Session = Depends(get_db),
+):
+    if free_agent and team_id is not None:
+        raise HTTPException(status_code=400, detail="'team_id' et 'free_agent' sont exclusifs.")
     query = db.query(Player)
-    if team_id is not None:
+    if free_agent:
+        query = query.filter(Player.team_id.is_(None))
+    elif team_id is not None:
         query = query.filter(Player.team_id == team_id)
     players = query.order_by(Player.name).all()
     return [_to_read(p) for p in players]
@@ -133,6 +143,13 @@ def update_player(player_id: int, payload: PlayerManualUpdate, db: Session = Dep
         _validate_mpg(fields["mpg"])
 
     if "team_id" in fields:
+        if fields["team_id"] is None:
+            # Décision n°39 : un seul chemin pour détacher un joueur (l'aperçu d'import),
+            # jamais cette route -- et db.get(Team, None) émettrait un SAWarning.
+            raise HTTPException(
+                status_code=400,
+                detail="Détacher un joueur de son équipe n'est pas possible ici (agent libre : seulement via l'aperçu d'import).",
+            )
         team = db.get(Team, fields["team_id"])
         if team is None:
             raise HTTPException(status_code=404, detail="Équipe introuvable")

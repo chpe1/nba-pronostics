@@ -76,9 +76,10 @@ class PlayerWithTeamRead(BaseModel):
 
     id: int
     name: str
-    team_id: int
-    team_name: str
-    team_abbreviation: str
+    # None pour un agent libre (Décision d'architecture n°39) : aucune équipe.
+    team_id: int | None
+    team_name: str | None
+    team_abbreviation: str | None
     draft_pick: int | None
     per: float
     mpg: float
