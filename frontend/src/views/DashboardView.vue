@@ -18,13 +18,13 @@ const games = ref([])
 const isLoading = ref(true)
 const isRecalculating = ref(false)
 const errorMessage = ref('')
-// Matchs terminés ignorés par le dernier recalcul (leur pronostic d'avant-match est conservé).
+// Matchs DÉJÀ COMMENCÉS (terminés ou non) ignorés par le dernier recalcul : leur pronostic d'avant-match est conservé.
 // Jamais un silence : l'écran dit lesquels ont été laissés tels quels. Vidé au changement de date.
-const skippedFinished = ref([])
+const skippedStarted = ref([])
 const skippedSummary = computed(() =>
-  skippedFinished.value.length === 1
-    ? "1 match terminé n'a pas été recalculé"
-    : `${skippedFinished.value.length} matchs terminés n'ont pas été recalculés`,
+  skippedStarted.value.length === 1
+    ? "1 match déjà commencé n'a pas été recalculé"
+    : `${skippedStarted.value.length} matchs déjà commencés n'ont pas été recalculés`,
 )
 
 // Seuil d'apparition des cartes fantômes (§13). Mesuré le 2026-09-04 sur la
@@ -168,10 +168,10 @@ async function recalculate() {
   isRecalculating.value = true
   errorMessage.value = ''
   try {
-    skippedFinished.value = []
+    skippedStarted.value = []
     const result = await apiFetch(`/api/predictions/recalculate?date=${selectedDate.value}`, { method: 'POST' })
     await loadGames()
-    skippedFinished.value = result?.skipped_finished ?? []
+    skippedStarted.value = result?.skipped_started ?? []
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : 'Échec du recalcul des pronostics.'
   } finally {
@@ -197,7 +197,7 @@ const reservedPastilleCount = computed(() => maxRenderedPastilleCount(games.valu
 const skeletonCount = computed(() => games.value.length || 3)
 
 function onDateChange() {
-  skippedFinished.value = []
+  skippedStarted.value = []
   loadGames()
 }
 
@@ -262,18 +262,18 @@ onMounted(loadGames)
       </button>
     </div>
 
-    <!-- Matchs terminés que le recalcul a laissés intacts : ce n'est ni une erreur ni un
+    <!-- Matchs déjà commencés que le recalcul a laissés intacts : ce n'est ni une erreur ni un
          succès complet, et ce n'est pas un silence. Le pronostic d'origine est la seule
          trace de ce qui avait été annoncé avant le match. -->
     <p
-      v-if="skippedFinished.length"
-      data-testid="skipped-finished"
+      v-if="skippedStarted.length"
+      data-testid="skipped-started"
       role="status"
       class="mb-4 rounded-lg border border-border bg-surface-sunken px-3 py-2 text-sm text-text"
     >
       {{ skippedSummary }}
-      (leur pronostic d'avant-match est conservé) :
-      {{ skippedFinished.map((g) => `${g.away_team_name} @ ${g.home_team_name}`).join(', ') }}.
+      — leur pronostic d'avant-match est conservé, un pronostic calculé après le coup d'envoi n'en serait plus un :
+      {{ skippedStarted.map((g) => `${g.away_team_name} @ ${g.home_team_name}`).join(', ') }}.
     </p>
 
     <!-- Erreur qui ACCOMPAGNE des données encore valables : uniquement l'échec

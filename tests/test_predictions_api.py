@@ -381,7 +381,7 @@ def test_recalculate_creates_predictions_for_the_date(client, db_session, auth_h
     body = response.json()
     assert len(body["predictions"]) == 1
     assert body["predictions"][0]["game_id"] == game.id
-    assert body["skipped_finished_count"] == 0 and body["skipped_finished"] == []
+    assert body["skipped_started_count"] == 0 and body["skipped_started"] == []
     assert db_session.query(Prediction).filter(Prediction.game_id == game.id).count() == 1
 
 
@@ -405,7 +405,7 @@ def test_recalculate_ignores_games_on_other_dates(client, db_session, auth_heade
     )
 
     assert response.status_code == 200
-    assert response.json() == {"predictions": [], "skipped_finished_count": 0, "skipped_finished": []}
+    assert response.json() == {"predictions": [], "skipped_started_count": 0, "skipped_started": []}
 
 
 # --- recalcul et matchs terminés (le pronostic d'avant-match est la seule trace de ce qui était annoncé)
@@ -445,8 +445,8 @@ def test_recalculate_mixed_date_skips_finished_game_and_keeps_its_prediction(cli
     assert response.status_code == 200
     body = response.json()
     assert [p["game_id"] for p in body["predictions"]] == [upcoming.id]  # l'à-venir est traité normalement
-    assert body["skipped_finished_count"] == 1
-    assert body["skipped_finished"] == [{
+    assert body["skipped_started_count"] == 1
+    assert body["skipped_started"] == [{
         "game_id": played.id, "home_team_name": "Boston Celtics", "home_team_abbreviation": "BOS",
         "away_team_name": "Los Angeles Lakers", "away_team_abbreviation": "LAL",
     }]
@@ -465,7 +465,7 @@ def test_recalculate_finished_game_without_prediction_creates_none(client, db_se
 
     body = client.post("/api/predictions/recalculate", params={"date": game_date.isoformat()}, headers=auth_headers).json()
 
-    assert body["predictions"] == [] and body["skipped_finished_count"] == 1
+    assert body["predictions"] == [] and body["skipped_started_count"] == 1
     assert db_session.query(Prediction).filter(Prediction.game_id == played.id).count() == 0
 
 
@@ -479,7 +479,7 @@ def test_recalculate_postponed_game_is_still_recalculated(client, db_session, au
     body = client.post("/api/predictions/recalculate", params={"date": game_date.isoformat()}, headers=auth_headers).json()
 
     assert [p["game_id"] for p in body["predictions"]] == [postponed.id]
-    assert body["skipped_finished_count"] == 0
+    assert body["skipped_started_count"] == 0
 
 
 # --- GET /api/predictions/by-team/{team_id} (diagnostic par équipe) --------
@@ -584,3 +584,24 @@ def test_simulate_override_changes_result_without_persisting_anything(client, db
     assert settings.mpg_threshold == 15.0
     # ...et aucune Prediction n'a été créée (seul /simulate a été appelé, jamais /recalculate).
     assert db_session.query(Prediction).filter(Prediction.game_id == game.id).count() == 0
+
+
+def test_recalculate_skips_a_game_in_progress_but_not_one_starting_soon(client, db_session, auth_headers, monkeypatch):
+    from app.services import nba_calendar
+
+    home, away = _teams(db_session)
+    home2, away2 = _second_teams(db_session)
+    game_date = current_nba_date()
+    in_progress = _game(db_session, home, away, game_date)  # 19:00 ET, statut encore « scheduled »
+    in_progress.game_date = datetime.combine(game_date, datetime.min.time()).replace(hour=15)
+    soon = _game(db_session, home2, away2, game_date)  # 19:00 ET
+    frozen = _frozen_prediction(db_session, in_progress)
+    # 18:55 ET : le premier a commencé à 15:00 (statut non synchronisé), le second commence dans 5 minutes.
+    monkeypatch.setattr(nba_calendar, "utc_now", lambda: nba_calendar.game_start_utc(soon.game_date) - timedelta(minutes=5))
+
+    body = client.post("/api/predictions/recalculate", params={"date": game_date.isoformat()}, headers=auth_headers).json()
+
+    assert [p["game_id"] for p in body["predictions"]] == [soon.id]
+    assert body["skipped_started_count"] == 1 and body["skipped_started"][0]["game_id"] == in_progress.id
+    db_session.refresh(frozen)
+    assert (frozen.home_team_note, frozen.spread) == (71.0, 16.0)

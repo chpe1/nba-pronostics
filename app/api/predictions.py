@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
 from app.database import get_db
-from app.models import Game, GameStatus, Prediction, Settings
+from app.models import Game, Prediction, Settings
 from app.schemas.prediction import (
     CalendarStatusRead,
     GameWithPredictionRead,
@@ -17,7 +17,7 @@ from app.schemas.prediction import (
     PredictionRead,
     RecalculateResponse,
     RecentRecordRead,
-    SkippedFinishedGameRead,
+    SkippedStartedGameRead,
     TeamGamePredictionRead,
     TodayPredictionRead,
 )
@@ -27,6 +27,7 @@ from app.services.pronostic_calculator import (
     compute_calendar_flags,
     compute_matchup,
     compute_recent_record,
+    has_game_started,
     save_prediction,
 )
 
@@ -164,29 +165,30 @@ def recalculate_predictions(
     db: Session = Depends(get_db),
 ):
     """Route back-office (protégée) : recalcule et sauvegarde le pronostic des
-    matchs de la date donnée (aujourd'hui par défaut) -- SAUF les matchs terminés,
-    ignorés : leur pronostic d'origine est la seule trace de ce que le moteur avait
-    annoncé avant le match. La réponse dit combien ont été ignorés et lesquels.
-    (save_prediction refuse de toute façon d'écrire pour un match terminé.)"""
+    matchs de la date donnée (aujourd'hui par défaut) -- SAUF les matchs déjà
+    COMMENCÉS (coup d'envoi passé, terminés ou non), ignorés : leur pronostic
+    d'avant-match est la seule trace de ce que le moteur avait annoncé. La réponse
+    dit combien ont été ignorés et lesquels. (save_prediction refuse de toute façon
+    d'écrire pour un match commencé.)"""
     settings = _get_or_create_settings(db)
     games = _games_for_date(db, date_param)
-    finished = [g for g in games if g.status == GameStatus.FINISHED]
-    predictions = [save_prediction(db, game, settings) for game in games if game.status != GameStatus.FINISHED]
+    started = [g for g in games if has_game_started(g)]
+    predictions = [save_prediction(db, game, settings) for game in games if not has_game_started(game)]
     db.commit()
     for prediction in predictions:
         db.refresh(prediction)
     return RecalculateResponse(
         predictions=predictions,
-        skipped_finished_count=len(finished),
-        skipped_finished=[
-            SkippedFinishedGameRead(
+        skipped_started_count=len(started),
+        skipped_started=[
+            SkippedStartedGameRead(
                 game_id=g.id,
                 home_team_name=g.home_team.name,
                 home_team_abbreviation=g.home_team.abbreviation,
                 away_team_name=g.away_team.name,
                 away_team_abbreviation=g.away_team.abbreviation,
             )
-            for g in finished
+            for g in started
         ],
     )
 

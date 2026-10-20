@@ -32,7 +32,7 @@ async function mountDashboard() {
 }
 
 const recalcButton = (w) => w.findAll('button').find((b) => b.text().includes('Recalculer'))
-const notice = (w) => w.find('[data-testid="skipped-finished"]')
+const notice = (w) => w.find('[data-testid="skipped-started"]')
 
 // jsdom n'implémente pas scrollIntoView (la bande de dates l'appelle au montage) : stub, comme pour requestAnimationFrame.
 beforeEach(() => {
@@ -40,14 +40,14 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn()
 })
 
-describe('recalcul : matchs terminés ignorés', () => {
-  it('nomme le match terminé ignoré (jamais un silence)', async () => {
-    recalcResponse = { predictions: [], skipped_finished_count: 1, skipped_finished: SKIPPED }
+describe('recalcul : matchs déjà commencés ignorés', () => {
+  it('nomme le match commencé ignoré (jamais un silence)', async () => {
+    recalcResponse = { predictions: [], skipped_started_count: 1, skipped_started: SKIPPED }
     const wrapper = await mountDashboard()
     await recalcButton(wrapper).trigger('click')
     await flushPromises()
     expect(notice(wrapper).exists()).toBe(true)
-    expect(notice(wrapper).text()).toContain("1 match terminé n'a pas été recalculé")
+    expect(notice(wrapper).text()).toContain("1 match déjà commencé n'a pas été recalculé")
     expect(notice(wrapper).text()).toContain('Boston Celtics @ Detroit Pistons')
     expect(notice(wrapper).text()).toContain("pronostic d'avant-match est conservé")
   })
@@ -55,18 +55,18 @@ describe('recalcul : matchs terminés ignorés', () => {
   it('met au pluriel et nomme chaque match quand il y en a plusieurs', async () => {
     recalcResponse = {
       predictions: [],
-      skipped_finished_count: 2,
-      skipped_finished: [...SKIPPED, { ...SKIPPED[0], game_id: 2, home_team_name: 'New York Knicks', away_team_name: 'Philadelphia 76ers' }],
+      skipped_started_count: 2,
+      skipped_started: [...SKIPPED, { ...SKIPPED[0], game_id: 2, home_team_name: 'New York Knicks', away_team_name: 'Philadelphia 76ers' }],
     }
     const wrapper = await mountDashboard()
     await recalcButton(wrapper).trigger('click')
     await flushPromises()
-    expect(notice(wrapper).text()).toContain("2 matchs terminés n'ont pas été recalculés")
+    expect(notice(wrapper).text()).toContain("2 matchs déjà commencés n'ont pas été recalculés")
     expect(notice(wrapper).text()).toContain('Philadelphia 76ers @ New York Knicks')
   })
 
-  it("n'affiche rien quand aucun match terminé n'a été ignoré", async () => {
-    recalcResponse = { predictions: [], skipped_finished_count: 0, skipped_finished: [] }
+  it("n'affiche rien quand aucun match commencé n'a été ignoré", async () => {
+    recalcResponse = { predictions: [], skipped_started_count: 0, skipped_started: [] }
     const wrapper = await mountDashboard()
     await recalcButton(wrapper).trigger('click')
     await flushPromises()
@@ -74,12 +74,12 @@ describe('recalcul : matchs terminés ignorés', () => {
   })
 
   it('un nouveau recalcul sans match ignoré efface le message précédent', async () => {
-    recalcResponse = { predictions: [], skipped_finished_count: 1, skipped_finished: SKIPPED }
+    recalcResponse = { predictions: [], skipped_started_count: 1, skipped_started: SKIPPED }
     const wrapper = await mountDashboard()
     await recalcButton(wrapper).trigger('click')
     await flushPromises()
     expect(notice(wrapper).exists()).toBe(true)
-    recalcResponse = { predictions: [], skipped_finished_count: 0, skipped_finished: [] }
+    recalcResponse = { predictions: [], skipped_started_count: 0, skipped_started: [] }
     await recalcButton(wrapper).trigger('click')
     await flushPromises()
     expect(notice(wrapper).exists()).toBe(false)

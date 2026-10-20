@@ -36,6 +36,18 @@ def db_session(tmp_path):
         engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def frozen_clock_before_every_game(monkeypatch):
+    """« Maintenant » vaut l'an 2000 par défaut : aucun match de test n'est « commencé » à cause de l'horloge
+    réelle (sans cela, les tests qui calculent des pronostics seraient bons ou faux selon l'heure de lancement).
+    Les tests de la règle « match commencé » remplacent `nba_calendar.utc_now`."""
+    from datetime import datetime
+
+    from app.services import nba_calendar
+
+    monkeypatch.setattr(nba_calendar, "utc_now", lambda: datetime(2000, 1, 1))
+
+
 @pytest.fixture()
 def client(db_session):
     def override_get_db():

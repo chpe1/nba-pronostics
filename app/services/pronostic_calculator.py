@@ -26,6 +26,7 @@ from app.models import (
     Settings,
     Team,
 )
+from app.services import nba_calendar
 from app.services.player_matching import find_active_player_by_name, find_prev_season_stat_by_name
 
 # Statuts comptant pour la soustraction du PER (joueurs "absents majeurs").
@@ -451,19 +452,28 @@ def breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
     }
 
 
-class FinishedGameError(ValueError):
-    """Écriture d'un pronostic refusée pour un match terminé."""
+class GameAlreadyStartedError(ValueError):
+    """Écriture d'un pronostic refusée pour un match dont le coup d'envoi est passé."""
+
+
+def has_game_started(game: Game) -> bool:
+    """Le coup d'envoi est passé (heure de New York convertie en UTC, comparée à l'horloge `utc_now()`),
+    OU le match est déjà marqué terminé. Un match reporté (POSTPONED) n'a pas été joué : jamais « commencé »,
+    même si sa date d'origine est passée. Le coup d'envoi lui-même (égalité exacte) compte comme commencé."""
+    if game.status == GameStatus.POSTPONED:
+        return False
+    return game.status == GameStatus.FINISHED or nba_calendar.utc_now() >= nba_calendar.game_start_utc(game.game_date)
 
 
 def save_prediction(db: Session, game: Game, settings: Settings) -> Prediction:
-    # Défense de fond, au point d'écriture : un pronostic calculé APRÈS le match
-    # n'est pas une prédiction -- et un recalcul écraserait sur place (une seule
-    # ligne par match) la trace de ce que le moteur avait annoncé avant. Refusé en
-    # création comme en mise à jour, quelle que soit la route appelante. Seul
-    # FINISHED est concerné : un match reporté (POSTPONED) n'a pas été joué.
-    if game.status == GameStatus.FINISHED:
-        raise FinishedGameError(
-            f"Match {game.id} terminé : son pronostic n'est ni créé ni recalculé après coup."
+    # Défense de fond, au point d'écriture : un pronostic calculé APRÈS le coup d'envoi n'est pas une
+    # prédiction -- et un recalcul écraserait sur place (une seule ligne par match) la trace de ce que le
+    # moteur avait annoncé avant. Refusé en création comme en mise à jour, quelle que soit la route
+    # appelante, match terminé ou non (le statut « terminé » n'arrive qu'après la synchro des scores : il
+    # ne protège rien pendant la rencontre).
+    if has_game_started(game):
+        raise GameAlreadyStartedError(
+            f"Match {game.id} commencé : son pronostic d'avant-match n'est ni créé ni recalculé."
         )
     result = compute_matchup(db, game, settings)
 

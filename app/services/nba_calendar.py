@@ -12,7 +12,7 @@ déjà "America/New_York" pour la même raison côté planification).
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 NBA_TIMEZONE = ZoneInfo("America/New_York")
@@ -20,3 +20,15 @@ NBA_TIMEZONE = ZoneInfo("America/New_York")
 
 def current_nba_date() -> date:
     return datetime.now(NBA_TIMEZONE).date()
+
+
+def utc_now() -> datetime:
+    """Maintenant en UTC NAÏF (même convention que `Prediction.computed_at`). Point d'entrée unique de
+    l'horloge pour « le match a-t-il commencé ? » : les tests le remplacent."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def game_start_utc(game_date: datetime) -> datetime:
+    """Coup d'envoi d'un match en UTC naïf. `Game.game_date` est une heure murale US/ET naïve (Décision
+    n°3) : on la lit en `America/New_York` avant de convertir, jamais comme un UTC ni comme l'heure locale."""
+    return game_date.replace(tzinfo=NBA_TIMEZONE).astimezone(UTC).replace(tzinfo=None)

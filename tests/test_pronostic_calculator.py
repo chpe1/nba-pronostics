@@ -765,7 +765,7 @@ def test_save_prediction_refuses_to_create_for_a_finished_game(db_session):
     from app.models import GameStatus, Prediction
 
     game, settings = _finished_or(db_session, GameStatus.FINISHED)
-    with pytest.raises(calc.FinishedGameError):
+    with pytest.raises(calc.GameAlreadyStartedError):
         calc.save_prediction(db_session, game, settings)
     assert db_session.query(Prediction).filter(Prediction.game_id == game.id).count() == 0
 
@@ -780,7 +780,7 @@ def test_save_prediction_refuses_to_update_for_a_finished_game(db_session):
     before = (saved.home_team_note, saved.away_team_note, saved.spread, saved.computed_at)
     game.status = GameStatus.FINISHED
     settings.base_note_multiplier = 0.5  # un recalcul changerait les notes s'il avait lieu
-    with pytest.raises(calc.FinishedGameError):
+    with pytest.raises(calc.GameAlreadyStartedError):
         calc.save_prediction(db_session, game, settings)
     db_session.refresh(saved)
     assert (saved.home_team_note, saved.away_team_note, saved.spread, saved.computed_at) == before
@@ -790,4 +790,93 @@ def test_save_prediction_still_writes_for_a_postponed_game(db_session):
     from app.models import GameStatus
 
     game, settings = _finished_or(db_session, GameStatus.POSTPONED)
+    assert calc.save_prediction(db_session, game, settings).game_id == game.id
+
+
+# --- save_prediction refuse aussi d'écrire pour un match COMMENCÉ, terminé ou non ----------------
+# Coup d'envoi de _finished_or : 2026-10-20 19:00 heure de New York = 23:00 UTC.
+
+
+def _clock(monkeypatch, utc_naive):
+    from app.services import nba_calendar
+
+    monkeypatch.setattr(nba_calendar, "utc_now", lambda: utc_naive)
+
+
+def test_save_prediction_refuses_a_started_game_that_is_not_finished(db_session, monkeypatch):
+    import pytest
+
+    from app.models import GameStatus, Prediction
+
+    game, settings = _finished_or(db_session, GameStatus.SCHEDULED)
+    _clock(monkeypatch, datetime(2026, 10, 21, 0, 30))  # 1 h 30 après le coup d'envoi, statut encore « scheduled »
+    with pytest.raises(calc.GameAlreadyStartedError):
+        calc.save_prediction(db_session, game, settings)
+    assert db_session.query(Prediction).filter(Prediction.game_id == game.id).count() == 0
+
+
+def test_save_prediction_refuses_an_update_once_the_game_has_started(db_session, monkeypatch):
+    import pytest
+
+    from app.models import GameStatus
+
+    game, settings = _finished_or(db_session, GameStatus.SCHEDULED)
+    _clock(monkeypatch, datetime(2026, 10, 20, 22, 0))  # avant : création permise
+    saved = calc.save_prediction(db_session, game, settings)
+    before = (saved.home_team_note, saved.away_team_note, saved.spread, saved.computed_at)
+    settings.base_note_multiplier = 0.5  # un recalcul changerait les notes
+    _clock(monkeypatch, datetime(2026, 10, 20, 23, 30))
+    with pytest.raises(calc.GameAlreadyStartedError):
+        calc.save_prediction(db_session, game, settings)
+    db_session.refresh(saved)
+    assert (saved.home_team_note, saved.away_team_note, saved.spread, saved.computed_at) == before
+
+
+def test_save_prediction_refuses_a_started_and_finished_game(db_session, monkeypatch):
+    import pytest
+
+    from app.models import GameStatus
+
+    game, settings = _finished_or(db_session, GameStatus.FINISHED)
+    _clock(monkeypatch, datetime(2026, 10, 21, 3, 0))
+    with pytest.raises(calc.GameAlreadyStartedError):
+        calc.save_prediction(db_session, game, settings)
+
+
+def test_save_prediction_still_allows_a_game_starting_in_a_few_minutes(db_session, monkeypatch):
+    from app.models import GameStatus
+
+    game, settings = _finished_or(db_session, GameStatus.SCHEDULED)
+    _clock(monkeypatch, datetime(2026, 10, 20, 22, 55))  # 5 minutes avant
+    assert calc.save_prediction(db_session, game, settings).game_id == game.id
+
+
+def test_exact_kickoff_instant_counts_as_started_and_one_microsecond_before_does_not(db_session, monkeypatch):
+    import pytest
+
+    from app.models import GameStatus
+
+    game, settings = _finished_or(db_session, GameStatus.SCHEDULED)
+    _clock(monkeypatch, datetime(2026, 10, 20, 22, 59, 59, 999999))
+    assert calc.has_game_started(game) is False
+    _clock(monkeypatch, datetime(2026, 10, 20, 23, 0, 0))
+    assert calc.has_game_started(game) is True
+    with pytest.raises(calc.GameAlreadyStartedError):
+        calc.save_prediction(db_session, game, settings)
+
+
+def test_kickoff_uses_new_york_time_not_the_naive_wall_clock(db_session, monkeypatch):
+    from app.models import GameStatus
+
+    game, _ = _finished_or(db_session, GameStatus.SCHEDULED)
+    _clock(monkeypatch, datetime(2026, 10, 20, 19, 30))  # 19:30 UTC : le match de 19:00 ET n'a pas commencé
+    assert calc.has_game_started(game) is False
+
+
+def test_postponed_game_is_never_started_even_if_its_original_date_has_passed(db_session, monkeypatch):
+    from app.models import GameStatus
+
+    game, settings = _finished_or(db_session, GameStatus.POSTPONED)
+    _clock(monkeypatch, datetime(2026, 12, 1))
+    assert calc.has_game_started(game) is False
     assert calc.save_prediction(db_session, game, settings).game_id == game.id
