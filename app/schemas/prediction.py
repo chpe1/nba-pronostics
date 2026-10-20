@@ -21,6 +21,25 @@ class PredictionRead(BaseModel):
     computed_at: datetime
 
 
+class SkippedFinishedGameRead(BaseModel):
+    """Match terminé ignoré par un recalcul (son pronostic d'origine est conservé)."""
+
+    game_id: int
+    home_team_name: str
+    home_team_abbreviation: str
+    away_team_name: str
+    away_team_abbreviation: str
+
+
+class RecalculateResponse(BaseModel):
+    """Réponse de POST /api/predictions/recalculate : les pronostics (re)calculés
+    ET les matchs terminés ignorés -- jamais un silence sur ce qui n'a pas été fait."""
+
+    predictions: list[PredictionRead]
+    skipped_finished_count: int
+    skipped_finished: list[SkippedFinishedGameRead]
+
+
 class RecentRecordRead(BaseModel):
     wins: int
     losses: int

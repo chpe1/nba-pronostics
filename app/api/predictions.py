@@ -8,14 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
 from app.database import get_db
-from app.models import Game, Prediction, Settings
+from app.models import Game, GameStatus, Prediction, Settings
 from app.schemas.prediction import (
     CalendarStatusRead,
     GameWithPredictionRead,
     MatchupSimulationRead,
     MatchupSimulationRequest,
     PredictionRead,
+    RecalculateResponse,
     RecentRecordRead,
+    SkippedFinishedGameRead,
     TeamGamePredictionRead,
     TodayPredictionRead,
 )
@@ -154,22 +156,39 @@ def get_today_predictions(
 
 @router.post(
     "/recalculate",
-    response_model=list[PredictionRead],
+    response_model=RecalculateResponse,
     dependencies=[Depends(get_current_admin)],
 )
 def recalculate_predictions(
     date_param: date = Query(default_factory=current_nba_date, alias="date"),
     db: Session = Depends(get_db),
 ):
-    """Route back-office (protégée) : recalcule et sauvegarde le pronostic de
-    tous les matchs de la date donnée (aujourd'hui par défaut)."""
+    """Route back-office (protégée) : recalcule et sauvegarde le pronostic des
+    matchs de la date donnée (aujourd'hui par défaut) -- SAUF les matchs terminés,
+    ignorés : leur pronostic d'origine est la seule trace de ce que le moteur avait
+    annoncé avant le match. La réponse dit combien ont été ignorés et lesquels.
+    (save_prediction refuse de toute façon d'écrire pour un match terminé.)"""
     settings = _get_or_create_settings(db)
     games = _games_for_date(db, date_param)
-    predictions = [save_prediction(db, game, settings) for game in games]
+    finished = [g for g in games if g.status == GameStatus.FINISHED]
+    predictions = [save_prediction(db, game, settings) for game in games if game.status != GameStatus.FINISHED]
     db.commit()
     for prediction in predictions:
         db.refresh(prediction)
-    return predictions
+    return RecalculateResponse(
+        predictions=predictions,
+        skipped_finished_count=len(finished),
+        skipped_finished=[
+            SkippedFinishedGameRead(
+                game_id=g.id,
+                home_team_name=g.home_team.name,
+                home_team_abbreviation=g.home_team.abbreviation,
+                away_team_name=g.away_team.name,
+                away_team_abbreviation=g.away_team.abbreviation,
+            )
+            for g in finished
+        ],
+    )
 
 
 @router.get(

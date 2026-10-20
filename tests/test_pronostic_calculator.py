@@ -739,3 +739,55 @@ def test_transfer_adjustment_combines_with_draft_bonus(db_session):
     )
     assert breakdown.transfer_adjustment == pytest.approx(22.0)
     assert breakdown.draft_bonus == pytest.approx(8.0)
+
+
+# --- save_prediction refuse d'écrire pour un match terminé (défense de fond) ---
+
+
+def _finished_or(db_session, status):
+    from app.models import Game, GameStatus, Settings, Team
+
+    home = Team(name="Boston Celtics", abbreviation="BOS", win_pct_home_prev_season=0.6, win_pct_away_prev_season=0.5)
+    away = Team(name="Miami Heat", abbreviation="MIA", win_pct_home_prev_season=0.5, win_pct_away_prev_season=0.4)
+    db_session.add_all([home, away])
+    db_session.flush()
+    game = Game(season="2026-2027", game_date=datetime(2026, 10, 20, 19), home_team_id=home.id,
+                away_team_id=away.id, status=status)
+    settings = Settings()
+    db_session.add_all([game, settings])
+    db_session.flush()
+    return game, settings
+
+
+def test_save_prediction_refuses_to_create_for_a_finished_game(db_session):
+    import pytest
+
+    from app.models import GameStatus, Prediction
+
+    game, settings = _finished_or(db_session, GameStatus.FINISHED)
+    with pytest.raises(calc.FinishedGameError):
+        calc.save_prediction(db_session, game, settings)
+    assert db_session.query(Prediction).filter(Prediction.game_id == game.id).count() == 0
+
+
+def test_save_prediction_refuses_to_update_for_a_finished_game(db_session):
+    import pytest
+
+    from app.models import GameStatus
+
+    game, settings = _finished_or(db_session, GameStatus.SCHEDULED)
+    saved = calc.save_prediction(db_session, game, settings)
+    before = (saved.home_team_note, saved.away_team_note, saved.spread, saved.computed_at)
+    game.status = GameStatus.FINISHED
+    settings.base_note_multiplier = 0.5  # un recalcul changerait les notes s'il avait lieu
+    with pytest.raises(calc.FinishedGameError):
+        calc.save_prediction(db_session, game, settings)
+    db_session.refresh(saved)
+    assert (saved.home_team_note, saved.away_team_note, saved.spread, saved.computed_at) == before
+
+
+def test_save_prediction_still_writes_for_a_postponed_game(db_session):
+    from app.models import GameStatus
+
+    game, settings = _finished_or(db_session, GameStatus.POSTPONED)
+    assert calc.save_prediction(db_session, game, settings).game_id == game.id

@@ -451,7 +451,20 @@ def breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
     }
 
 
+class FinishedGameError(ValueError):
+    """Écriture d'un pronostic refusée pour un match terminé."""
+
+
 def save_prediction(db: Session, game: Game, settings: Settings) -> Prediction:
+    # Défense de fond, au point d'écriture : un pronostic calculé APRÈS le match
+    # n'est pas une prédiction -- et un recalcul écraserait sur place (une seule
+    # ligne par match) la trace de ce que le moteur avait annoncé avant. Refusé en
+    # création comme en mise à jour, quelle que soit la route appelante. Seul
+    # FINISHED est concerné : un match reporté (POSTPONED) n'a pas été joué.
+    if game.status == GameStatus.FINISHED:
+        raise FinishedGameError(
+            f"Match {game.id} terminé : son pronostic n'est ni créé ni recalculé après coup."
+        )
     result = compute_matchup(db, game, settings)
 
     prediction = db.query(Prediction).filter(Prediction.game_id == game.id).one_or_none()

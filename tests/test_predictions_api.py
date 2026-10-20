@@ -379,8 +379,9 @@ def test_recalculate_creates_predictions_for_the_date(client, db_session, auth_h
 
     assert response.status_code == 200
     body = response.json()
-    assert len(body) == 1
-    assert body[0]["game_id"] == game.id
+    assert len(body["predictions"]) == 1
+    assert body["predictions"][0]["game_id"] == game.id
+    assert body["skipped_finished_count"] == 0 and body["skipped_finished"] == []
     assert db_session.query(Prediction).filter(Prediction.game_id == game.id).count() == 1
 
 
@@ -404,7 +405,81 @@ def test_recalculate_ignores_games_on_other_dates(client, db_session, auth_heade
     )
 
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json() == {"predictions": [], "skipped_finished_count": 0, "skipped_finished": []}
+
+
+# --- recalcul et matchs terminés (le pronostic d'avant-match est la seule trace de ce qui était annoncé)
+
+
+def _second_teams(db_session) -> tuple[Team, Team]:
+    home = Team(name="Miami Heat", abbreviation="MIA", win_pct_home=0.5, win_pct_away=0.5,
+                win_pct_home_prev_season=0.5, win_pct_away_prev_season=0.5)
+    away = Team(name="Chicago Bulls", abbreviation="CHI", win_pct_home=0.5, win_pct_away=0.5,
+                win_pct_home_prev_season=0.5, win_pct_away_prev_season=0.5)
+    db_session.add_all([home, away])
+    db_session.flush()
+    return home, away
+
+
+def _frozen_prediction(db_session, game) -> Prediction:
+    prediction = Prediction(
+        game_id=game.id, home_team_note=71.0, away_team_note=55.0, predicted_winner_team_id=game.home_team_id,
+        spread=16.0, reliability=ReliabilityLevel.MOYENNE, breakdown={"home": {"final_note": 71.0}, "away": {"final_note": 55.0}},
+    )
+    db_session.add(prediction)
+    db_session.commit()
+    return prediction
+
+
+def test_recalculate_mixed_date_skips_finished_game_and_keeps_its_prediction(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    home2, away2 = _second_teams(db_session)
+    game_date = current_nba_date()
+    played = _game(db_session, home, away, game_date)
+    played.status, played.home_score, played.away_score = GameStatus.FINISHED, 110, 102
+    upcoming = _game(db_session, home2, away2, game_date)
+    frozen = _frozen_prediction(db_session, played)
+
+    response = client.post("/api/predictions/recalculate", params={"date": game_date.isoformat()}, headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [p["game_id"] for p in body["predictions"]] == [upcoming.id]  # l'à-venir est traité normalement
+    assert body["skipped_finished_count"] == 1
+    assert body["skipped_finished"] == [{
+        "game_id": played.id, "home_team_name": "Boston Celtics", "home_team_abbreviation": "BOS",
+        "away_team_name": "Los Angeles Lakers", "away_team_abbreviation": "LAL",
+    }]
+    db_session.refresh(frozen)
+    assert (frozen.home_team_note, frozen.away_team_note, frozen.spread, frozen.reliability) == (71.0, 55.0, 16.0, ReliabilityLevel.MOYENNE)
+    assert db_session.query(Prediction).filter(Prediction.game_id == played.id).count() == 1
+    assert db_session.query(Prediction).filter(Prediction.game_id == upcoming.id).count() == 1
+
+
+def test_recalculate_finished_game_without_prediction_creates_none(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    game_date = current_nba_date()
+    played = _game(db_session, home, away, game_date)
+    played.status = GameStatus.FINISHED
+    db_session.commit()
+
+    body = client.post("/api/predictions/recalculate", params={"date": game_date.isoformat()}, headers=auth_headers).json()
+
+    assert body["predictions"] == [] and body["skipped_finished_count"] == 1
+    assert db_session.query(Prediction).filter(Prediction.game_id == played.id).count() == 0
+
+
+def test_recalculate_postponed_game_is_still_recalculated(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    game_date = current_nba_date()
+    postponed = _game(db_session, home, away, game_date)
+    postponed.status = GameStatus.POSTPONED
+    db_session.commit()
+
+    body = client.post("/api/predictions/recalculate", params={"date": game_date.isoformat()}, headers=auth_headers).json()
+
+    assert [p["game_id"] for p in body["predictions"]] == [postponed.id]
+    assert body["skipped_finished_count"] == 0
 
 
 # --- GET /api/predictions/by-team/{team_id} (diagnostic par équipe) --------
@@ -468,7 +543,7 @@ def test_simulate_with_no_overrides_matches_real_settings(client, db_session, au
     game = _game(db_session, home, away, game_date)
 
     real = client.post("/api/predictions/recalculate", params={"date": game_date.isoformat()}, headers=auth_headers)
-    real_body = real.json()[0]
+    real_body = real.json()["predictions"][0]
 
     simulated = client.post("/api/predictions/simulate", json={"game_id": game.id}, headers=auth_headers)
     simulated_body = simulated.json()
