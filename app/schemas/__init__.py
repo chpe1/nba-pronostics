@@ -10,12 +10,17 @@ from app.schemas.player import (
 from app.schemas.game import GameCreate, GameManualUpdate, GameRead, GameUpdate, GameWithTeamsRead
 from app.schemas.settings import SettingsRead, SettingsUpdate
 from app.schemas.import_history import (
+    AssociationCandidateRead,
+    AssociationRead,
+    DetachablePlayerRead,
+    FileRowWithoutMatchRead,
     ImportErrorDetail,
     ImportHistoryRead,
     ImportPreviewResponse,
     ImportResultResponse,
     MovedRosterEntryRead,
     RosterImportPreviewResponse,
+    RosterRowErrorRead,
     UnmatchedRosterNameRead,
 )
 from app.schemas.auth import LoginRequest, TokenResponse
@@ -44,6 +49,11 @@ __all__ = [
     "ImportPreviewResponse",
     "ImportResultResponse",
     "RosterImportPreviewResponse",
+    "DetachablePlayerRead",
+    "AssociationCandidateRead",
+    "AssociationRead",
+    "RosterRowErrorRead",
+    "FileRowWithoutMatchRead",
     "UnmatchedRosterNameRead",
     "MovedRosterEntryRead",
 ]

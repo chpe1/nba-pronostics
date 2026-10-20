@@ -1,12 +1,23 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+import logging
+
+import json
+from typing import Literal
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_admin
 from app.database import get_db
 from app.models import ImportHistory, ImportStatus, ImportType, SeasonType, Team
 from app.schemas import (
+    AssociationCandidateRead,
+    AssociationRead,
+    RosterRowErrorRead,
+    DetachablePlayerRead,
+    FileRowWithoutMatchRead,
     ImportHistoryRead,
     ImportPreviewResponse,
     ImportResultResponse,
@@ -15,6 +26,29 @@ from app.schemas import (
     UnmatchedRosterNameRead,
 )
 from app.services import csv_import
+
+logger = logging.getLogger(__name__)
+
+
+class RowVerdictIn(BaseModel):
+    """Verdict envoyé par l'écran à la confirmation d'un import d'effectif (champ de
+    formulaire `verdicts`, liste JSON de ces objets) -- voir Décision n°39."""
+
+    file_name: str
+    verdict: Literal["recruit", "same_player"]
+    player_id: int | None = None
+
+
+def _parse_verdicts(raw: str | None) -> list[csv_import.RowVerdict]:
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+        if not isinstance(items, list):
+            raise ValueError("une liste est attendue")
+        return [csv_import.RowVerdict(**RowVerdictIn(**item).model_dump()) for item in items]
+    except (ValueError, TypeError, ValidationError) as exc:
+        raise HTTPException(status_code=400, detail=f"Verdicts illisibles : {exc}") from exc
 
 router = APIRouter(prefix="/api/imports", tags=["imports"], dependencies=[Depends(get_current_admin)])
 
@@ -38,6 +72,22 @@ async def import_stats(
         description=(
             "ID de l'équipe -- requis uniquement pour un roster Advanced "
             "d'une seule équipe (fichier sans colonne Team), quelle que soit la saison."
+        ),
+    ),
+    detach_player_ids: list[int] = Query(
+        default=[],
+        description=(
+            "Identifiants des joueurs à détacher de leur équipe (agents libres, Décision n°39) -- "
+            "UNIQUEMENT pour la confirmation (dry_run=false) d'un import d'effectif ROSTER. "
+            "Rien n'est jamais détaché par défaut : liste absente ou vide = aucun détachement."
+        ),
+    ),
+    verdicts: str | None = Form(
+        default=None,
+        description=(
+            "Verdicts sur les lignes du fichier sans correspondance (liste JSON de "
+            "{file_name, verdict: 'recruit'|'same_player', player_id}) -- confirmation d'un "
+            "import d'effectif uniquement (Décision n°39)."
         ),
     ),
     db: Session = Depends(get_db),
@@ -129,6 +179,33 @@ async def import_stats(
         parsed, errors = parser(df)
     filename = file.filename or "fichier.csv"
 
+    # Détachement (agents libres, Décision n°39) : réservé à la CONFIRMATION d'un
+    # import d'effectif. Gardes serveur évaluées AVANT toute écriture -- un refus
+    # laisse la base intacte (aucun commit n'a eu lieu).
+    players_to_detach: list = []
+    validated_verdicts = csv_import.ValidatedVerdicts(recruits=[], associations=[])
+    row_verdicts = _parse_verdicts(verdicts)
+    if (row_verdicts or detach_player_ids) and (dry_run or detected_type != ImportType.ROSTER):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "'detach_player_ids' et 'verdicts' ne sont acceptés que pour la confirmation "
+                "(dry_run=false) d'un import d'effectif."
+            ),
+        )
+    if not dry_run and detected_type == ImportType.ROSTER:
+        # Toute confirmation d'un effectif passe par ces gardes, avec ou sans verdicts envoyés : la
+        # règle « verdicts obligatoires quand une ligne sans correspondance ET un joueur absent
+        # côté base coexistent » doit tenir même si l'écran n'envoie rien.
+        try:
+            validated_verdicts = csv_import.validate_row_verdicts(db, parsed, row_verdicts)
+            csv_import.require_verdicts_when_risky(db, parsed, validated_verdicts)
+            players_to_detach = csv_import.validate_detach_request(
+                db, parsed, detach_player_ids, has_row_errors=bool(errors), verdicts=validated_verdicts
+            )
+        except (csv_import.DetachRefusedError, csv_import.VerdictRefusedError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     if dry_run:
         if detected_type == ImportType.ROSTER:
             # Récapitulatif AVANT toute écriture (plan du chantier, point a)
@@ -153,6 +230,42 @@ async def import_stats(
                     for item in analysis.moved
                 ],
                 no_prior_data=analysis.no_prior_data,
+                detachable=[
+                    DetachablePlayerRead(
+                        id=item.id,
+                        name=item.name,
+                        team_abbreviation=item.team_abbreviation,
+                        draft_pick=item.draft_pick,
+                        per_n1=item.per_n1,
+                        mpg_n1=item.mpg_n1,
+                    )
+                    for item in analysis.detachable
+                ],
+                association_candidates=[
+                    AssociationCandidateRead(id=c.id, name=c.name, team_abbreviation=c.team_abbreviation)
+                    for c in analysis.association_candidates
+                ],
+                verdicts_required=analysis.verdicts_required,
+                row_errors=[
+                    RosterRowErrorRead(**item) for item in csv_import.describe_roster_row_errors(df, errors)
+                ],
+                detachment_blocked=bool(errors),
+                detachment_blocked_reason=(
+                    f"{len(errors)} ligne(s) du fichier en erreur : tout détachement est bloqué tant que "
+                    "le fichier n'est pas corrigé (voir row_errors)."
+                    if errors
+                    else None
+                ),
+                file_rows_without_match_count=len(analysis.file_rows_without_match),
+                file_rows_without_match=[
+                    FileRowWithoutMatchRead(
+                        name=item.name,
+                        team_abbreviation=item.team_abbreviation,
+                        closest_absent_player=item.closest_absent_player,
+                        distance=item.distance,
+                    )
+                    for item in analysis.file_rows_without_match
+                ],
             )
         return ImportPreviewResponse(
             import_type=detected_type,
@@ -170,7 +283,7 @@ async def import_stats(
     if detected_type == ImportType.SCHEDULE:
         row_count = csv_import.apply_schedule(parsed, db, season)
     elif detected_type == ImportType.ROSTER:
-        row_count = csv_import.apply_roster(parsed, db)
+        row_count = csv_import.apply_roster(parsed, db, associations=validated_verdicts.association_map())
     elif effective_season_type == SeasonType.PREVIOUS:
         row_count = applier(parsed, db, season)
     else:
@@ -194,10 +307,44 @@ async def import_stats(
         season=season if detected_type == ImportType.SCHEDULE or effective_season_type == SeasonType.PREVIOUS else None,
     )
     db.add(history)
+
+    detached_names: list[str] = []
+    if players_to_detach:
+        detached_names = csv_import.detach_players(db, players_to_detach)
+        logger.info(
+            "Import d'effectif %s : %d joueur(s) détaché(s) (agents libres) : %s",
+            filename,
+            len(detached_names),
+            ", ".join(detached_names),
+        )
+
     db.commit()
     db.refresh(history)
 
-    return ImportResultResponse(import_history=history)
+    if validated_verdicts.resolved_count:
+        logger.info(
+            "Import d'effectif %s : %d ligne(s) tranchée(s) (%d recrue(s) : %s ; %d association(s) : %s)",
+            filename,
+            validated_verdicts.resolved_count,
+            len(validated_verdicts.recruits),
+            ", ".join(validated_verdicts.recruits),
+            len(validated_verdicts.associations),
+            ", ".join(f"{name} -> {player.name}" for name, player in validated_verdicts.associations),
+        )
+
+    return ImportResultResponse(
+        import_history=history,
+        resolved_rows_count=validated_verdicts.resolved_count,
+        recruit_count=len(validated_verdicts.recruits),
+        recruit_names=validated_verdicts.recruits,
+        association_count=len(validated_verdicts.associations),
+        associations=[
+            AssociationRead(file_name=name, player_id=player.id, player_name=player.name)
+            for name, player in validated_verdicts.associations
+        ],
+        detached_count=len(detached_names),
+        detached_names=detached_names,
+    )
 
 
 @router.get("/template")

@@ -1,14 +1,52 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
+import RosterImportReview from '@/components/RosterImportReview.vue'
+import {
+  buildVerdictPayload,
+  confirmLabel,
+  detachmentBlockReasons,
+  emptyVerdicts,
+  unresolvedRows,
+} from '@/utils/rosterVerdicts'
 
 const emit = defineEmits(['imported'])
+
+// Décision d'architecture n°35 (CLAUDE.md) : pas d'indicateur avant 200 ms, au moins 300 ms une fois
+// affiché, et le libellé d'un bouton n'est jamais remplacé par un état d'attente. Date.now() (pas
+// performance.now()) : même horloge que les minuteries simulées des tests.
+const SLOW_MS = 200
+const MIN_SPINNER_MS = 300
+const showSpinner = ref(false)
+const busyAction = ref(null) // 'preview' | 'confirm' | null
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// Import d'EFFECTIF (Décision n°39) : verdicts sur les lignes sans correspondance et joueurs à
+// détacher. Rien n'est jamais présélectionné : voir utils/rosterVerdicts.js.
+const rosterVerdicts = ref({})
+const selectedDetachIds = ref([])
+const importReport = ref(null)
 
 const fileInputRef = ref(null)
 const selectedFile = ref(null)
 const preview = ref(null)
 const errorMessage = ref('')
 const isLoading = ref(false)
+const isRoster = computed(() => preview.value?.import_type === 'roster')
+const rowsToDecide = computed(() => (isRoster.value ? preview.value.file_rows_without_match ?? [] : []))
+const unresolvedCount = computed(() => unresolvedRows(rowsToDecide.value, rosterVerdicts.value).length)
+const errorCount = computed(() => (isRoster.value ? preview.value.row_errors?.length ?? 0 : 0))
+const detachBlocked = computed(
+  () => detachmentBlockReasons({ unresolvedCount: unresolvedCount.value, errorCount: errorCount.value }).length > 0,
+)
+// Verdicts OBLIGATOIRES pour confirmer (règle du serveur, exposée par l'aperçu) : au moins une ligne sans
+// correspondance ET au moins un joueur de la base absent du fichier. La garde qui compte est celle du
+// serveur ; ce blocage évite seulement un aller-retour voué au refus.
+const confirmBlocked = computed(() => isRoster.value && preview.value.verdicts_required === true && unresolvedCount.value > 0)
+const confirmButtonLabel = computed(() => confirmLabel(isRoster.value ? selectedDetachIds.value.length : 0))
 const seasonType = ref('current')
 const season = ref('')
 const currentSeason = ref('')
@@ -55,9 +93,16 @@ watch([seasonType, season, teamId], () => {
   preview.value = null
 })
 
+// Chaque nouvel aperçu repart de zéro : aucun verdict, aucune case cochée.
+watch(preview, (value) => {
+  rosterVerdicts.value = value?.import_type === 'roster' ? emptyVerdicts(value.file_rows_without_match ?? []) : {}
+  selectedDetachIds.value = []
+})
+
 function onFileChange(event) {
   selectedFile.value = event.target.files[0] ?? null
   preview.value = null
+  importReport.value = null
   errorMessage.value = ''
 }
 
@@ -73,13 +118,33 @@ function resetFileInput() {
 
 async function upload(dryRun) {
   if (!selectedFile.value) return
+  if (isLoading.value) return // garde du double clic (pas de `disabled` : il ferait clignoter le bouton, décision n°35)
+  if (!dryRun && confirmBlocked.value) return
   if (seasonType.value === 'previous' && !season.value.trim()) {
     errorMessage.value = "Précisez la saison précédente (ex: \"2024-2025\")."
     return
   }
 
   isLoading.value = true
+  busyAction.value = dryRun ? 'preview' : 'confirm'
   errorMessage.value = ''
+  let shownAt = 0
+  const slowTimer = setTimeout(() => {
+    shownAt = Date.now()
+    showSpinner.value = true
+  }, SLOW_MS)
+  // Termine l'attente en respectant la durée minimale d'affichage (décision n°35). Appelée AVANT de
+  // démonter le bouton de confirmation (succès) -- sinon l'indicateur, qui vit dans ce bouton,
+  // disparaîtrait avec lui sans avoir été affiché 300 ms -- et de nouveau dans `finally` (sans effet
+  // quand elle a déjà eu lieu).
+  async function settleBusy() {
+    clearTimeout(slowTimer)
+    if (showSpinner.value) {
+      const remaining = MIN_SPINNER_MS - (Date.now() - shownAt)
+      if (remaining > 0) await sleep(remaining)
+    }
+    showSpinner.value = false
+  }
   try {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
@@ -95,6 +160,17 @@ async function upload(dryRun) {
     if (teamId.value) {
       params.set('team_id', teamId.value)
     }
+    // Import d'effectif, confirmation : les verdicts (champ de formulaire) et la liste EXPLICITE des
+    // identifiants à détacher (paramètre répété). Rien n'est jamais envoyé par défaut.
+    if (!dryRun && isRoster.value) {
+      const payload = buildVerdictPayload(rowsToDecide.value, rosterVerdicts.value)
+      if (payload.length) {
+        formData.append('verdicts', JSON.stringify(payload))
+      }
+      for (const id of selectedDetachIds.value) {
+        params.append('detach_player_ids', id)
+      }
+    }
     const result = await apiFetch(`/api/imports/stats?${params.toString()}`, {
       method: 'POST',
       body: formData,
@@ -104,7 +180,9 @@ async function upload(dryRun) {
     if (dryRun) {
       preview.value = result
     } else {
+      await settleBusy()
       preview.value = null
+      importReport.value = result.import_history?.import_type === 'roster' ? result : null
       resetFileInput()
       emit('imported')
     }
@@ -116,6 +194,8 @@ async function upload(dryRun) {
       resetFileInput()
     }
   } finally {
+    await settleBusy()
+    busyAction.value = null
     isLoading.value = false
   }
 }
@@ -185,26 +265,102 @@ onMounted(() => {
     <div class="flex gap-2">
       <button
         type="button"
-        class="min-h-11 rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:opacity-50"
-        :disabled="!selectedFile || isLoading"
+        class="flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:opacity-50"
+        :disabled="!selectedFile"
+        :aria-busy="busyAction === 'preview' && showSpinner"
         @click="upload(true)"
       >
-        Aperçu
+        <span>Aperçu</span>
+        <span class="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <svg
+            v-if="busyAction === 'preview' && showSpinner"
+            data-testid="import-spinner"
+            viewBox="0 0 20 20"
+            class="h-4 w-4 animate-spin motion-reduce:animate-none"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <path d="M10 3a7 7 0 1 0 7 7" />
+          </svg>
+        </span>
       </button>
       <button
         v-if="preview"
         type="button"
-        class="min-h-11 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
-        :disabled="isLoading"
+        data-testid="confirm-button"
+        class="flex min-h-11 items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-on disabled:opacity-50"
+        :disabled="confirmBlocked"
+        :aria-busy="busyAction === 'confirm' && showSpinner"
         @click="upload(false)"
       >
-        Confirmer l'import
+        <span>{{ confirmButtonLabel }}</span>
+        <span class="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <svg
+            v-if="busyAction === 'confirm' && showSpinner"
+            data-testid="import-spinner"
+            viewBox="0 0 20 20"
+            class="h-4 w-4 animate-spin motion-reduce:animate-none"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <path d="M10 3a7 7 0 1 0 7 7" />
+          </svg>
+        </span>
       </button>
     </div>
+
+    <!-- Confirmation impossible : l'explication est VISIBLE à côté du bouton, pas seulement au survol. -->
+    <p v-if="confirmBlocked" data-testid="confirm-blocked-notice" role="status" class="mt-2 text-sm text-text">
+      <strong>Confirmation impossible :</strong> {{ unresolvedCount }} ligne(s) du fichier sans correspondance n'ont
+      pas de verdict, alors que {{ preview.association_candidates.length }} joueur(s) de la base sont absents du
+      fichier. Une de ces lignes pourrait être l'un d'eux, écrit autrement, et serait dupliquée. Tranchez chaque ligne
+      ci-dessous.
+    </p>
+    <!-- N'existe que lorsque l'import est permis sans verdict (aucun joueur absent côté base) : une ligne sans
+         correspondance ne peut alors être qu'une recrue. -->
+    <p
+      v-else-if="preview && isRoster && unresolvedCount > 0"
+      data-testid="unresolved-import-warning"
+      class="mt-2 text-sm text-text"
+    >
+      {{ unresolvedCount }} ligne(s) sans verdict seront importées comme des recrues (joueurs créés) si vous confirmez
+      maintenant.
+    </p>
 
     <p v-if="errorMessage" class="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger-text">
       {{ errorMessage }}
     </p>
+
+    <div v-if="importReport" data-testid="import-report" role="status" class="mt-4 space-y-2 rounded-lg border border-border p-3 text-sm text-text">
+      <h3 class="font-semibold">Import d'effectif confirmé</h3>
+      <p>
+        {{ importReport.import_history.row_count }} ligne(s) importée(s) —
+        <strong>{{ importReport.resolved_rows_count }}</strong> ligne(s) tranchée(s) :
+        <strong>{{ importReport.recruit_count }}</strong> recrue(s),
+        <strong>{{ importReport.association_count }}</strong> association(s).
+      </p>
+      <p v-if="importReport.recruit_names.length" class="text-text-secondary">
+        Recrues : {{ importReport.recruit_names.join(', ') }}.
+      </p>
+      <ul v-if="importReport.associations.length" class="text-text-secondary">
+        <li v-for="item in importReport.associations" :key="item.file_name">
+          « {{ item.file_name }} » rattachée à {{ item.player_name }} (nom en base inchangé).
+        </li>
+      </ul>
+      <p>
+        <strong>{{ importReport.detached_count }}</strong> joueur(s) détaché(s) (agents libres)<template
+          v-if="importReport.detached_names.length"
+          >&nbsp;:</template
+        ><template v-else>.</template>
+      </p>
+      <ul v-if="importReport.detached_names.length" class="columns-1 text-text-secondary sm:columns-2">
+        <li v-for="name in importReport.detached_names" :key="name">{{ name }}</li>
+      </ul>
+    </div>
 
     <div v-if="preview" class="mt-4 text-sm">
       <!-- Encadré qui AVERTIT (docs/design-v1.md §11.1) : risque réel de mauvaise sélection avant
@@ -223,7 +379,10 @@ onMounted(() => {
         {{ preview.row_count }} ligne(s) valide(s), {{ preview.error_count }} erreur(s).
       </p>
 
-      <div v-if="preview.errors.length" class="mb-2 rounded-lg bg-warning/10 px-3 py-2 text-warning">
+      <div
+        v-if="preview.errors.length && preview.import_type !== 'roster'"
+        class="mb-2 rounded-lg bg-warning/10 px-3 py-2 text-warning"
+      >
         <p v-for="err in preview.errors" :key="err.row">Ligne {{ err.row }} : {{ err.message }}</p>
       </div>
 
@@ -234,6 +393,13 @@ onMounted(() => {
            masquée tant qu'on ne l'ouvre pas -- évite le mur de texte sans
            découper les données en pages. -->
       <div v-if="preview.import_type === 'roster'" class="space-y-3">
+        <!-- Dans l'ORDRE DES DÉCISIONS : lignes à trancher, lignes en erreur, joueurs à détacher. -->
+        <RosterImportReview
+          v-model:verdicts="rosterVerdicts"
+          v-model:selected-ids="selectedDetachIds"
+          :preview="preview"
+        />
+
         <p class="rounded-lg bg-surface-info px-3 py-2 text-text-secondary">
           <strong>{{ preview.matched_count }}</strong> joueur(s) rapproché(s) d'une ligne de statistiques N-1.
         </p>
@@ -253,22 +419,6 @@ onMounted(() => {
           </ul>
         </details>
         <p v-else class="text-text-secondary">Aucun échec de rapprochement.</p>
-
-        <details v-if="preview.orphans.length" class="rounded-lg border border-border">
-          <summary class="flex min-h-11 cursor-pointer items-center px-3 py-2 font-medium text-text">
-            {{ preview.orphans.length }} joueur(s) en base absent(s) du fichier
-          </summary>
-          <div class="px-3 pb-2">
-            <p class="mb-2 rounded-lg bg-surface-info px-3 py-2 text-text-secondary">
-              Informatif uniquement — aucune action possible depuis cet écran, le statut actif d'un
-              joueur n'est modifiable par aucun formulaire admin aujourd'hui.
-            </p>
-            <ul class="divide-y divide-border text-text-secondary">
-              <li v-for="name in preview.orphans" :key="name" class="py-1.5">{{ name }}</li>
-            </ul>
-          </div>
-        </details>
-        <p v-else class="text-text-secondary">Aucun joueur en base absent du fichier.</p>
 
         <details v-if="preview.moved.length" class="rounded-lg border border-border">
           <summary class="flex min-h-11 cursor-pointer items-center px-3 py-2 font-medium text-text">

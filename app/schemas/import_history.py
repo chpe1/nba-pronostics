@@ -43,8 +43,26 @@ class ImportPreviewResponse(BaseModel):
     resolved_team_abbreviation: str | None = None
 
 
+class AssociationRead(BaseModel):
+    file_name: str
+    player_id: int
+    player_name: str
+
+
 class ImportResultResponse(BaseModel):
     import_history: ImportHistoryRead
+    # Verdicts sur les lignes du fichier sans correspondance (Décision n°39, étape 4) :
+    # combien ont été tranchées, en recrues, en associations -- et lesquelles.
+    resolved_rows_count: int = 0
+    recruit_count: int = 0
+    recruit_names: list[str] = []
+    association_count: int = 0
+    associations: list[AssociationRead] = []
+    # Agents libres créés par cet import (Décision n°39) : joueurs détachés de
+    # leur équipe, sur demande explicite. 0 / [] pour tout import qui n'en
+    # détache pas.
+    detached_count: int = 0
+    detached_names: list[str] = []
 
 
 class UnmatchedRosterNameRead(BaseModel):
@@ -57,6 +75,36 @@ class MovedRosterEntryRead(BaseModel):
     name: str
     from_team: str
     to_team: str
+
+
+class DetachablePlayerRead(BaseModel):
+    id: int
+    name: str
+    team_abbreviation: str
+    draft_pick: int | None
+    per_n1: float | None
+    mpg_n1: float | None
+
+
+class FileRowWithoutMatchRead(BaseModel):
+    name: str
+    team_abbreviation: str
+    # Simple suggestion (ressemblance de noms) pour traiter la ligne -- ne commande jamais le garde-fou.
+    closest_absent_player: str | None
+    distance: int | None
+
+
+class AssociationCandidateRead(BaseModel):
+    id: int
+    name: str
+    team_abbreviation: str | None
+
+
+class RosterRowErrorRead(BaseModel):
+    row: int
+    player_name: str | None
+    team: str | None
+    message: str
 
 
 class RosterImportPreviewResponse(BaseModel):
@@ -94,3 +142,24 @@ class RosterImportPreviewResponse(BaseModel):
     # sans ligne N-1 mais déjà drafté (draft_pick renseigné) est un rookie
     # normal, jamais listé ici.
     no_prior_data: list[str]
+    # Futurs agents libres (Décision n°39), avec de quoi décider ; les mêmes joueurs
+    # que `orphans`, hors agents libres déjà détachés.
+    detachable: list["DetachablePlayerRead"]
+    # Garde-fou du détachement : lignes du fichier qu'aucun joueur actif de la base
+    # ne reconnaît (recrue, ou joueur déjà en base sous un autre nom). Tant qu'il en
+    # reste, le geste global « tout détacher » doit être interdit côté écran.
+    file_rows_without_match_count: int
+    file_rows_without_match: list["FileRowWithoutMatchRead"]
+    # Cibles possibles d'un verdict « c'est le même joueur que… » : les joueurs actifs
+    # qu'aucune ligne du fichier ne désigne (agents libres compris).
+    association_candidates: list["AssociationCandidateRead"]
+    # Verdicts obligatoires pour CONFIRMER : au moins une ligne sans correspondance ET au moins
+    # un joueur actif de la base absent du fichier (Décision n°39). Même règle que la garde
+    # serveur de la confirmation -- l'écran s'y fie plutôt que de la recalculer.
+    verdicts_required: bool
+    # Lignes en erreur du fichier : elles BLOQUENT tout détachement (un nom illisible
+    # pourrait être un joueur « absent » à tort). Avec ce que le fichier contient
+    # réellement à cette ligne, pour savoir quoi corriger sans deviner.
+    row_errors: list["RosterRowErrorRead"]
+    detachment_blocked: bool
+    detachment_blocked_reason: str | None

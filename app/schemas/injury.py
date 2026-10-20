@@ -13,6 +13,9 @@ class InjuryUnmatchedEntry(BaseModel):
     # base alors que le rapport l'indique ailleurs : le signe qu'un joueur a
     # changé d'équipe sans que la base le sache (voir CLAUDE.md, limitation n°25).
     exists_in_database_on_teams: list[str]
+    # Un joueur de même nom existe en base mais comme AGENT LIBRE (team_id NULL, Décision n°39) : cas
+    # distinct du précédent -- il n'a pas changé d'équipe « à l'insu de la base », il a été détaché.
+    exists_in_database_as_free_agent: bool = False
 
 
 class InjuryWeighingPlayer(BaseModel):

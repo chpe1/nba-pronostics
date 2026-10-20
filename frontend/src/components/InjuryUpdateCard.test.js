@@ -40,6 +40,15 @@ const REPORT = {
       reason: 'Injury',
       exists_in_database_on_teams: [],
     },
+    {
+      player_name_raw: 'Detached,Dan',
+      team_abbreviation: 'LAL',
+      team_raw: 'LosAngelesLakers',
+      status_raw: 'Out',
+      reason: 'Injury',
+      exists_in_database_on_teams: [],
+      exists_in_database_as_free_agent: true,
+    },
   ],
   status_counts: { out: 1, questionable: 1 },
   absent_count: 1,
@@ -96,6 +105,12 @@ describe('InjuryUpdateCard -- compte-rendu', () => {
     expect(text).toContain('en base sous : BOS')
     expect(text).toContain('Gilbert,Keshon — ATL')
     expect(text).toContain('Dont 1 existent en base mais sous une autre')
+    // Deux cas DISTINCTS : un agent libre n'a pas été « transféré sans que la base le sache »
+    expect(text).toContain('Dont 1 existent en base comme agent(s) libre(s)')
+    expect(text).toContain('Detached,Dan — LAL')
+    expect(text).toContain('en base comme agent libre')
+    const summary = wrapper.get('[data-testid="unmatched-summary"]').text()
+    expect(summary.match(/transféré sans que la base le sache/g)).toHaveLength(1)
     expect(text).not.toContain('Rapport non encore soumis')
   })
 

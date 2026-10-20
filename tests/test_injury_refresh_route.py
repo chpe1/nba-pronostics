@@ -78,6 +78,7 @@ def test_success_applies_statuses_and_reports_everything(client, auth_headers, d
     bryant = unmatched["Bryant,Thomas"]
     assert bryant["team_abbreviation"] == "CLE"
     assert bryant["exists_in_database_on_teams"] == ["BOS"]
+    assert bryant["exists_in_database_as_free_agent"] is False
     assert unmatched["Gilbert,Keshon"]["exists_in_database_on_teams"] == []
 
     db_session.expire_all()

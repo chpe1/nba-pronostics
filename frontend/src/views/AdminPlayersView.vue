@@ -2,8 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { apiFetch, ApiError } from '@/services/apiClient'
 
+// Valeur du filtre : '' (toutes les équipes), FREE_AGENT_FILTER (agents libres : joueurs sans équipe,
+// Décision d'architecture n°39) ou l'identifiant d'une équipe.
+const FREE_AGENT_FILTER = 'free-agent'
 const teams = ref([])
-const selectedTeamId = ref('')
+const filterValue = ref('')
+let lastConfirmedFilter = ''
+const infoMessage = ref('')
 const players = ref([])
 const forms = ref({})
 const isLoading = ref(false)
@@ -28,7 +33,8 @@ function toNumberOrNull(value) {
 function buildForm(player) {
   return {
     name: player.name,
-    team_id: player.team_id,
+    // Un agent libre n'a pas d'équipe : '' (l'option « agent libre » du sélecteur, non choisissable).
+    team_id: player.team_id ?? '',
     draft_pick: player.draft_pick,
     per: player.per,
     mpg: player.mpg,
@@ -43,12 +49,24 @@ async function loadTeams() {
   }
 }
 
+function playersPath() {
+  if (filterValue.value === FREE_AGENT_FILTER) return '/api/players?free_agent=true'
+  return filterValue.value ? `/api/players?team_id=${filterValue.value}` : '/api/players'
+}
+
+function matchesFilter(player) {
+  if (filterValue.value === '') return true
+  if (filterValue.value === FREE_AGENT_FILTER) return player.team_id === null
+  return String(player.team_id) === String(filterValue.value)
+}
+
 async function loadPlayers() {
   isLoading.value = true
   errorMessage.value = ''
+  infoMessage.value = ''
   loadFailed.value = false
   try {
-    const path = selectedTeamId.value ? `/api/players?team_id=${selectedTeamId.value}` : '/api/players'
+    const path = playersPath()
     players.value = await apiFetch(path)
     forms.value = Object.fromEntries(players.value.map((p) => [p.id, buildForm(p)]))
   } catch (error) {
@@ -63,6 +81,46 @@ async function loadPlayers() {
   }
 }
 
+// Une fiche est modifiée si sa saisie diffère de la dernière valeur connue du serveur -- même comparaison
+// normalisée que l'enregistrement (un champ numérique touché puis remis à sa valeur d'origine ne compte pas).
+function isDirty(player) {
+  const form = forms.value[player.id]
+  if (!form) return false
+  return (
+    form.name !== player.name ||
+    String(form.team_id ?? '') !== String(player.team_id ?? '') ||
+    toNumberOrNull(form.draft_pick) !== player.draft_pick ||
+    toNumberOrNull(form.per) !== player.per ||
+    toNumberOrNull(form.mpg) !== player.mpg
+  )
+}
+
+// Changer de filtre recharge la liste et PERD les saisies non enregistrées : avertir avant, jamais après.
+function confirmDiscardUnsavedEdits() {
+  const dirtyCount = players.value.filter((p) => isDirty(p)).length
+  if (dirtyCount === 0) return true
+  const message =
+    dirtyCount === 1
+      ? 'Une fiche a une saisie non enregistrée, qui sera perdue.\n\nContinuer ?'
+      : `${dirtyCount} fiches ont une saisie non enregistrée, qui sera perdue.\n\nContinuer ?`
+  return window.confirm(message)
+}
+
+// PAS de v-model sur ce <select> (Décision d'architecture n°31, limitation n°23) : sur un <select>,
+// v-model et @change partagent le MÊME événement natif `change` et se disputent la valeur. Sur annulation,
+// l'option AFFICHÉE doit revenir à la dernière valeur confirmée -- affectation DOM explicite, car le
+// navigateur a déjà commis le choix avant que `change` ne se déclenche.
+function onFilterChange(event) {
+  const newValue = event.target.value
+  if (!confirmDiscardUnsavedEdits()) {
+    event.target.value = lastConfirmedFilter
+    return
+  }
+  filterValue.value = newValue
+  lastConfirmedFilter = newValue
+  loadPlayers()
+}
+
 async function save(player) {
   const form = forms.value[player.id]
   errorMessage.value = ''
@@ -73,16 +131,26 @@ async function save(player) {
       method: 'PATCH',
       body: {
         name: form.name,
-        team_id: Number(form.team_id),
+        // Un agent libre dont l'équipe n'est pas choisie : team_id n'est PAS envoyé (jamais 0, jamais null --
+        // détacher est impossible depuis cet écran, Décision n°39) ; seul un vrai choix replace le joueur.
+        ...(form.team_id === '' || form.team_id === null ? {} : { team_id: Number(form.team_id) }),
         draft_pick: toNumberOrNull(form.draft_pick),
         per: toNumberOrNull(form.per),
         mpg: toNumberOrNull(form.mpg),
       },
     })
-    const idx = players.value.findIndex((p) => p.id === player.id)
-    players.value[idx] = updated
-    forms.value[player.id] = buildForm(updated)
-    savedId.value = player.id
+    if (matchesFilter(updated)) {
+      const idx = players.value.findIndex((p) => p.id === player.id)
+      players.value[idx] = updated
+      forms.value[player.id] = buildForm(updated)
+      savedId.value = player.id
+    } else {
+      // Replacé dans une équipe depuis la liste des agents libres (ou changé d'équipe sous un filtre
+      // d'équipe) : la fiche n'appartient plus à cette liste -- on le dit au lieu de la laisser mentir.
+      players.value = players.value.filter((p) => p.id !== player.id)
+      delete forms.value[player.id]
+      infoMessage.value = `${updated.name} est maintenant à ${updated.team_name} : il n'apparaît plus dans cette liste.`
+    }
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : "Échec de l'enregistrement."
   } finally {
@@ -92,7 +160,7 @@ async function save(player) {
 
 async function deletePlayer(player) {
   const confirmed = window.confirm(
-    `Supprimer définitivement ${player.name} (${player.team_abbreviation}) ? Cette action est irréversible.`
+    `Supprimer définitivement ${player.name} (${player.team_abbreviation ?? 'agent libre'}) ? Cette action est irréversible.`
   )
   if (!confirmed) return
 
@@ -130,7 +198,8 @@ async function createPlayer() {
     })
     createMessage.value = 'Joueur enregistré.'
     newPlayer.value = { name: '', team_id: newPlayer.value.team_id, draft_pick: '', per: '', mpg: '' }
-    if (!selectedTeamId.value || Number(selectedTeamId.value) === created.team_id) {
+    // (jamais pour le filtre « agents libres » : un joueur qu'on vient de créer a une équipe)
+    if (filterValue.value === '' || filterValue.value === String(created.team_id)) {
       await loadPlayers()
     }
   } catch (error) {
@@ -202,14 +271,19 @@ onMounted(async () => {
       <label for="team-filter" class="text-sm font-medium text-text">Équipe</label>
       <select
         id="team-filter"
-        v-model="selectedTeamId"
+        :value="filterValue"
         class="min-h-11 rounded-lg border border-border px-3 py-2 text-sm"
-        @change="loadPlayers"
+        @change="onFilterChange"
       >
         <option value="">Toutes les équipes</option>
+        <option :value="FREE_AGENT_FILTER">Agents libres</option>
         <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
       </select>
     </div>
+
+    <p v-if="infoMessage" role="status" class="rounded-lg bg-surface-info px-3 py-2 text-sm text-text-secondary">
+      {{ infoMessage }}
+    </p>
 
     <p v-if="isLoading" class="text-sm text-text-secondary">Chargement…</p>
     <!-- L'échec prend la PLACE des données, il ne se superpose pas à elles
@@ -231,9 +305,14 @@ onMounted(async () => {
 
     <p v-else-if="players.length === 0" class="text-sm text-text-secondary">Aucun joueur.</p>
 
-    <div v-for="player in players" :key="player.id" class="space-y-3 rounded-xl border border-border bg-surface p-4">
+    <div
+      v-for="player in players"
+      :key="player.id"
+      data-testid="player-card"
+      class="space-y-3 rounded-xl border border-border bg-surface p-4"
+    >
       <div class="text-sm font-medium text-text">
-        {{ player.team_abbreviation }} — {{ player.injury_status }}<span v-if="!player.is_active"> — inactif</span>
+        {{ player.team_abbreviation ?? 'agent libre' }} — {{ player.injury_status }}<span v-if="!player.is_active"> — inactif</span>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
@@ -244,8 +323,17 @@ onMounted(async () => {
         <div class="col-span-2">
           <label class="mb-1 block text-xs font-medium text-text">Équipe</label>
           <select v-model="forms[player.id].team_id" class="min-h-11 w-full rounded-lg border border-border px-3 py-2 text-sm">
+            <!-- État COURANT d'un agent libre : affiché mais NON choisissable (disabled). On peut replacer un
+                 agent libre dans une équipe, jamais détacher depuis cet écran (Décision n°39). -->
+            <option v-if="player.team_id === null" value="" disabled>— Agent libre —</option>
             <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.name }}</option>
           </select>
+          <!-- La consigne vit ICI, sous le champ, où elle passe à la ligne : une option de <select> est
+               coupée en plein mot sur petit écran. -->
+          <p v-if="player.team_id === null" data-testid="free-agent-help" class="mt-1 text-xs text-text-secondary">
+            Aucune équipe : choisissez-en une pour replacer ce joueur. On ne peut pas détacher un joueur depuis
+            cet écran (seulement via l'aperçu d'import d'effectif).
+          </p>
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-text">Pick draft</label>

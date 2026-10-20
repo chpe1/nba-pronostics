@@ -221,4 +221,5 @@ def test_injury_button_does_not_crash_on_a_name_matching_a_free_agent(client, au
     assert response.status_code == 200
     unmatched = {e["player_name_raw"]: e for e in response.json()["unmatched"]}
     assert unmatched["Bryant,Thomas"]["team_abbreviation"] == "CLE"
-    assert unmatched["Bryant,Thomas"]["exists_in_database_on_teams"] == ["agent libre"]
+    assert unmatched["Bryant,Thomas"]["exists_in_database_on_teams"] == []  # aucune équipe...
+    assert unmatched["Bryant,Thomas"]["exists_in_database_as_free_agent"] is True  # ... c'est un agent libre

@@ -38,7 +38,6 @@ from app.services.pronostic_calculator import ABSENT_STATUSES, _effective_per_mp
 from app.services.season import previous_season_label
 
 PARIS_TIMEZONE = ZoneInfo("Europe/Paris")
-FREE_AGENT_LABEL = "agent libre"
 _NOT_YET_SUBMITTED = "NOTYETSUBMITTED"
 # Dates de match du rapport (année à 4 chiffres) ; le titre, lui, a une année à 2 chiffres.
 _FULL_DATE = re.compile(r"\b(\d{2})/(\d{2})/(\d{4})\b")
@@ -131,15 +130,16 @@ def run_injury_update(db: Session, client=None, now: datetime | None = None) -> 
                 team_raw=entry.team_raw,
                 status_raw=entry.status_raw,
                 reason=entry.reason,
-                # Un agent libre (team_id NULL, Décision n°39) n'a pas d'abréviation :
-                # il est indiqué par FREE_AGENT_LABEL plutôt que de lever une KeyError.
+                # Un agent libre (team_id NULL, Décision n°39) n'a pas d'abréviation : il n'entre pas dans cette
+                # liste (jamais de KeyError) et fait l'objet de son propre drapeau.
                 exists_in_database_on_teams=sorted(
                     {
-                        team_abbreviation[p.team_id] if p.team_id is not None else FREE_AGENT_LABEL
+                        team_abbreviation[p.team_id]
                         for p in others
-                        if p.team_id is None or team_abbreviation[p.team_id] != entry.team_abbreviation
+                        if p.team_id is not None and team_abbreviation[p.team_id] != entry.team_abbreviation
                     }
                 ),
+                exists_in_database_as_free_agent=any(p.team_id is None for p in others),
             )
         )
 

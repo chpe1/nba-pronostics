@@ -921,6 +921,44 @@ class MovedRosterEntry:
 
 
 @dataclass
+class DetachablePlayer:
+    """Futur agent libre (Décision n°39) : joueur actif rattaché à une équipe
+    qu'aucune ligne du fichier ne désigne. Le PER/MPG N-1 est celui de sa ligne
+    PreviousSeasonPlayerStat retrouvée par _roster_match_key (None sans ligne)."""
+
+    id: int
+    name: str
+    team_abbreviation: str
+    draft_pick: int | None
+    per_n1: float | None
+    mpg_n1: float | None
+
+
+@dataclass
+class FileRowWithoutMatch:
+    """Ligne du fichier qu'aucun joueur actif de la base ne reconnaît : une
+    recrue, OU un joueur déjà en base sous un autre nom (cas « Ronald Holland II »
+    contre « Ron Holland »). `closest_absent_player` n'est qu'une SUGGESTION
+    (ressemblance de noms, jamais appliquée) parmi les futurs agents libres."""
+
+    name: str
+    team_abbreviation: str
+    closest_absent_player: str | None
+    distance: int | None
+
+
+@dataclass
+class AssociationCandidate:
+    """Joueur actif de la base qu'aucune ligne du fichier ne désigne : cible
+    possible d'un verdict « c'est le même joueur que… » (agents libres compris,
+    d'où l'équipe optionnelle)."""
+
+    id: int
+    name: str
+    team_abbreviation: str | None
+
+
+@dataclass
 class RosterImportAnalysis:
     """Les 5 sections du récapitulatif (plan du chantier, point b) --
     produites par analyze_roster_import, jamais persistées (comme
@@ -932,6 +970,15 @@ class RosterImportAnalysis:
     orphans: list[str]
     moved: list[MovedRosterEntry]
     no_prior_data: list[str]
+    # Garde-fou du détachement (Décision n°39) : si le fichier ne laisse AUCUNE
+    # ligne sans correspondance, tout joueur absent est réellement parti.
+    detachable: list[DetachablePlayer]
+    file_rows_without_match: list[FileRowWithoutMatch]
+    association_candidates: list[AssociationCandidate]
+    # Verdicts OBLIGATOIRES pour confirmer (Décision n°39) : il existe au moins une ligne
+    # sans correspondance ET au moins un joueur actif de la base absent du fichier --
+    # la seule configuration où une ligne peut être un joueur déjà en base sous un autre nom.
+    verdicts_required: bool
 
 
 def analyze_roster_import(db: Session, parsed: list[dict]) -> RosterImportAnalysis:
@@ -1010,16 +1057,73 @@ def analyze_roster_import(db: Session, parsed: list[dict]) -> RosterImportAnalys
             continue
         no_prior_data.append(name)
 
+    # Futurs agents libres : les mêmes joueurs que `orphans`, avec de quoi décider
+    # (identifiant, équipe, draft_pick, PER/MPG N-1). Les agents libres déjà
+    # détachés n'en font pas partie (rien à détacher).
+    detachable: list[DetachablePlayer] = []
+    for key, player in player_by_key.items():
+        if key in csv_keys or player.team_id is None:
+            continue
+        stat = n1_by_key.get(key)
+        detachable.append(
+            DetachablePlayer(
+                id=player.id,
+                name=player.name,
+                team_abbreviation=player.team.abbreviation,
+                draft_pick=player.draft_pick,
+                per_n1=stat.per if stat is not None else None,
+                mpg_n1=stat.mpg if stat is not None else None,
+            )
+        )
+    detachable.sort(key=lambda d: (d.team_abbreviation, d.name))
+
+    association_candidates = sorted(
+        (
+            AssociationCandidate(
+                id=player.id,
+                name=player.name,
+                team_abbreviation=player.team.abbreviation if player.team is not None else None,
+            )
+            for key, player in player_by_key.items()
+            if key not in csv_keys
+        ),
+        key=lambda c: (c.team_abbreviation or "", c.name),
+    )
+
+    # Lignes du fichier sans correspondance dans les joueurs actifs (mesure
+    # exacte : la même que celle de l'import, pas une ressemblance de noms).
+    detachable_names = [d.name for d in detachable]
+    file_rows_without_match: list[FileRowWithoutMatch] = []
+    seen_keys: set[str] = set()
+    for item in parsed:
+        key = _roster_match_key(item["name"])
+        if key in player_by_key or key in seen_keys:
+            continue
+        seen_keys.add(key)
+        suggestion = _closest_name(item["name"], detachable_names)
+        file_rows_without_match.append(
+            FileRowWithoutMatch(
+                name=item["name"],
+                team_abbreviation=item["team_abbreviation"],
+                closest_absent_player=suggestion[0] if suggestion else None,
+                distance=suggestion[1] if suggestion else None,
+            )
+        )
+
     return RosterImportAnalysis(
         matched_count=matched_count,
         unmatched=unmatched,
         orphans=orphans,
         moved=moved,
         no_prior_data=sorted(no_prior_data),
+        detachable=detachable,
+        file_rows_without_match=file_rows_without_match,
+        association_candidates=association_candidates,
+        verdicts_required=bool(file_rows_without_match) and bool(association_candidates),
     )
 
 
-def apply_roster(parsed: list[dict], db: Session) -> int:
+def apply_roster(parsed: list[dict], db: Session, associations: dict[str, Player] | None = None) -> int:
     """N'écrit jamais per/mpg/is_active/previous_team_id/draft_pick/
     games_played_this_season -- seuls `name` (à la création) et `team_id`
     sont modifiés. Le rapprochement PER N-1 se fait au moment du calcul
@@ -1042,12 +1146,259 @@ def apply_roster(parsed: list[dict], db: Session) -> int:
     flush par création)."""
     count = 0
     player_by_key = build_active_player_index(db)
+    associations = associations or {}
     for item in parsed:
         team = _get_or_create_team(db, item["team_abbreviation"])
-        find_or_create_player_league_wide(db, player_by_key, item["name"], team)
+        associated = associations.get(_roster_match_key(item["name"]))
+        if associated is not None:
+            # Verdict « c'est le même joueur que… » (Décision n°39) : rapprochement
+            # normal avec ce joueur -- son équipe est mise à jour, aucun doublon
+            # n'est créé, et SON NOM EN BASE N'EST PAS MODIFIÉ (il doit continuer
+            # de retrouver sa ligne N-1).
+            if associated.team_id != team.id:
+                associated.team_id = team.id
+        else:
+            find_or_create_player_league_wide(db, player_by_key, item["name"], team)
         count += 1
     db.flush()
     return count
+
+
+class DetachRefusedError(Exception):
+    """Demande de détachement refusée (message destiné à l'utilisateur) : rien
+    n'a été appliqué."""
+
+
+class VerdictRefusedError(Exception):
+    """Verdict sur une ligne sans correspondance refusé : rien n'a été appliqué."""
+
+
+@dataclass
+class RowVerdict:
+    """Verdict explicite, ligne par ligne, sur une ligne du fichier sans
+    correspondance (Décision n°39) : `recruit` (le joueur est créé) ou
+    `same_player` (rattachée au joueur existant `player_id`)."""
+
+    file_name: str
+    verdict: str
+    player_id: int | None = None
+
+
+@dataclass
+class ValidatedVerdicts:
+    recruits: list[str]  # noms (tels qu'écrits dans le fichier)
+    associations: list[tuple[str, Player]]  # (nom dans le fichier, joueur existant)
+
+    @property
+    def resolved_count(self) -> int:
+        return len(self.recruits) + len(self.associations)
+
+    def association_map(self) -> dict[str, Player]:
+        return {_roster_match_key(name): player for name, player in self.associations}
+
+
+def _unmatched_file_row_names(parsed: list[dict], db: Session) -> dict[str, str]:
+    """clé -> nom (première occurrence) des lignes du fichier qu'aucun joueur
+    ACTIF de la base ne reconnaît -- la même mesure que l'import et que
+    l'aperçu (analyze_roster_import)."""
+    index = build_active_player_index(db)
+    unmatched: dict[str, str] = {}
+    for item in parsed:
+        key = _roster_match_key(item["name"])
+        if key not in index and key not in unmatched:
+            unmatched[key] = item["name"]
+    return unmatched
+
+
+def validate_row_verdicts(db: Session, parsed: list[dict], verdicts: list[RowVerdict]) -> ValidatedVerdicts:
+    """Gardes SERVEUR sur les verdicts, avant toute écriture. Lève
+    VerdictRefusedError (rien n'est appliqué) si :
+      - un verdict ne vise pas une ligne réellement SANS correspondance du fichier soumis ;
+      - deux verdicts visent la même ligne ;
+      - une association n'a pas de joueur, vise un joueur inexistant ou inactif ;
+      - un `recruit` porte un joueur (ambigu) ;
+      - deux lignes sont associées au même joueur ;
+      - le joueur visé est déjà rapproché par une AUTRE ligne du fichier."""
+    if not verdicts:
+        return ValidatedVerdicts(recruits=[], associations=[])
+    unmatched = _unmatched_file_row_names(parsed, db)
+    csv_keys = {_roster_match_key(item["name"]) for item in parsed}
+    seen_keys: set[str] = set()
+    recruits: list[str] = []
+    associations: list[tuple[str, Player]] = []
+    target_ids: dict[int, str] = {}
+    for verdict in verdicts:
+        key = _roster_match_key(verdict.file_name)
+        if key not in unmatched:
+            raise VerdictRefusedError(
+                f"Verdict refusé : « {verdict.file_name} » n'est pas une ligne sans correspondance du fichier "
+                "(absente du fichier, ou déjà rapprochée d'un joueur de la base)."
+            )
+        if key in seen_keys:
+            raise VerdictRefusedError(f"Verdict refusé : deux verdicts pour la ligne « {verdict.file_name} ».")
+        seen_keys.add(key)
+        file_name = unmatched[key]
+        if verdict.verdict == "recruit":
+            if verdict.player_id is not None:
+                raise VerdictRefusedError(
+                    f"Verdict refusé : « {file_name} » est déclarée recrue mais désigne aussi un joueur."
+                )
+            recruits.append(file_name)
+        elif verdict.verdict == "same_player":
+            if verdict.player_id is None:
+                raise VerdictRefusedError(f"Verdict refusé : « {file_name} » : le joueur de la base n'est pas désigné.")
+            player = db.get(Player, verdict.player_id)
+            if player is None:
+                raise VerdictRefusedError(
+                    f"Verdict refusé : « {file_name} » désigne un joueur inexistant (identifiant {verdict.player_id})."
+                )
+            if not player.is_active:
+                raise VerdictRefusedError(
+                    f"Verdict refusé : « {file_name} » désigne un joueur inactif ({player.name})."
+                )
+            if player.id in target_ids:
+                raise VerdictRefusedError(
+                    f"Verdict refusé : « {target_ids[player.id]} » et « {file_name} » sont associées au même "
+                    f"joueur ({player.name})."
+                )
+            if _roster_match_key(player.name) in csv_keys:
+                raise VerdictRefusedError(
+                    f"Verdict refusé : « {file_name} » désigne {player.name}, déjà rapproché par une autre "
+                    "ligne du fichier."
+                )
+            target_ids[player.id] = file_name
+            associations.append((file_name, player))
+        else:
+            raise VerdictRefusedError(f"Verdict refusé : verdict inconnu {verdict.verdict!r} pour « {verdict.file_name} ».")
+    return ValidatedVerdicts(recruits=recruits, associations=associations)
+
+
+def require_verdicts_when_risky(db: Session, parsed: list[dict], verdicts: ValidatedVerdicts) -> None:
+    """Garde SERVEUR de la confirmation d'un import d'effectif (Décision n°39) : les verdicts
+    sont OBLIGATOIRES quand les DEUX ensembles sont non vides --
+      - au moins une ligne du fichier sans correspondance,
+      - ET au moins un joueur actif de la base absent du fichier.
+    C'est la seule configuration où une ligne sans correspondance peut être, en réalité, un joueur
+    déjà en base sous un autre nom (« Ronald Holland II » pour « Ron Holland ») : sans verdict,
+    elle serait importée comme recrue et créerait un doublon. Si aucun joueur n'est absent côté
+    base, une ligne sans correspondance ne peut être qu'une recrue : pas de verdict exigé.
+    Lève VerdictRefusedError (rien n'est écrit) en disant combien de lignes, et lesquelles."""
+    unmatched = _unmatched_file_row_names(parsed, db)
+    if not unmatched:
+        return
+    csv_keys = {_roster_match_key(item["name"]) for item in parsed}
+    absent = [p for p in db.query(Player).filter(Player.is_active.is_(True)).all() if _roster_match_key(p.name) not in csv_keys]
+    if not absent:
+        return
+    resolved_keys = {_roster_match_key(name) for name in verdicts.recruits} | {
+        _roster_match_key(name) for name, _ in verdicts.associations
+    }
+    without_verdict = [name for key, name in unmatched.items() if key not in resolved_keys]
+    if without_verdict:
+        raise VerdictRefusedError(
+            f"Confirmation refusée : {len(without_verdict)} ligne(s) du fichier sans correspondance n'ont pas "
+            f"de verdict ({', '.join(without_verdict)}) alors que {len(absent)} joueur(s) de la base sont absents "
+            "du fichier : une de ces lignes pourrait être l'un d'eux, écrit autrement. Chaque ligne doit être "
+            "tranchée (recrue, ou même joueur qu'un joueur de la base) avant de confirmer."
+        )
+
+
+def describe_roster_row_errors(df: pd.DataFrame, errors: list[dict]) -> list[dict]:
+    """Enrichit les erreurs de parse_roster (n° de ligne + message) avec ce que le
+    fichier contient réellement à cette ligne (nom et équipe tels qu'écrits) :
+    ces lignes bloquent tout détachement, il faut savoir quoi corriger sans deviner."""
+    described: list[dict] = []
+    for error in errors:
+        position = error["row"] - 2  # parse_roster : row_num = index + 2 (en-tête = ligne 1)
+        name = team = None
+        if 0 <= position < len(df):
+            record = df.iloc[position]
+            name = str(record.get("Player", "")).strip() or None
+            team = str(record.get("Team", "")).strip() or None
+        described.append({"row": error["row"], "player_name": name, "team": team, "message": error["message"]})
+    return described
+
+def validate_detach_request(
+    db: Session,
+    parsed: list[dict],
+    player_ids: list[int],
+    has_row_errors: bool,
+    verdicts: ValidatedVerdicts | None = None,
+) -> list[Player]:
+    """Gardes SERVEUR du détachement (Décision n°39), à appeler AVANT toute
+    écriture de l'import : ne retourne que des joueurs explicitement demandés,
+    toujours absents du fichier au moment de la confirmation. Liste vide ou
+    absente -> aucun joueur (jamais de détachement par défaut). Lève
+    DetachRefusedError (rien appliqué) si :
+      - le fichier a des lignes en erreur (un nom illisible rendrait « absent du
+        fichier » non fiable) ;
+      - un identifiant n'existe pas, ou désigne un joueur inactif (jamais proposé) ;
+      - un identifiant désigne un joueur PRÉSENT dans le fichier.
+    Un joueur déjà agent libre est accepté (idempotence) mais ne sera pas recompté."""
+    ids = list(dict.fromkeys(player_ids))
+    if not ids:
+        return []
+    if has_row_errors:
+        raise DetachRefusedError(
+            "Détachement refusé : le fichier contient des lignes en erreur, donc la liste des joueurs "
+            "absents n'est pas fiable. Corrigez le fichier d'abord."
+        )
+    players = {p.id: p for p in db.query(Player).filter(Player.id.in_(ids)).all()}
+    unknown = [i for i in ids if i not in players]
+    if unknown:
+        raise DetachRefusedError(f"Détachement refusé : identifiant(s) de joueur inconnu(s) : {unknown}.")
+    inactive = [players[i].name for i in ids if not players[i].is_active]
+    if inactive:
+        raise DetachRefusedError(
+            f"Détachement refusé : joueur(s) inactif(s), jamais proposé(s) : {', '.join(inactive)}."
+        )
+    csv_keys = {_roster_match_key(item["name"]) for item in parsed}
+    present = [players[i].name for i in ids if _roster_match_key(players[i].name) in csv_keys]
+    if present:
+        raise DetachRefusedError(
+            f"Détachement refusé : {', '.join(present)} figure(nt) dans le fichier (un joueur présent "
+            "dans le fichier n'est jamais détaché)."
+        )
+    # Cœur du garde-fou (Décision n°39) : aucun détachement tant qu'une ligne sans
+    # correspondance n'a pas reçu de verdict -- pour détacher ne serait-ce qu'un
+    # joueur, il faut avoir regardé TOUTES ces lignes.
+    verdicts = verdicts or ValidatedVerdicts(recruits=[], associations=[])
+    resolved_keys = {_roster_match_key(name) for name in verdicts.recruits} | {
+        _roster_match_key(name) for name, _ in verdicts.associations
+    }
+    without_verdict = [name for key, name in _unmatched_file_row_names(parsed, db).items() if key not in resolved_keys]
+    if without_verdict:
+        raise DetachRefusedError(
+            f"Détachement refusé : {len(without_verdict)} ligne(s) du fichier sans correspondance n'ont pas "
+            f"de verdict ({', '.join(without_verdict)}). Chaque ligne doit être tranchée (recrue, ou même "
+            "joueur qu'un joueur de la base) avant tout détachement."
+        )
+    # Contradiction : un joueur associé à une ligne du fichier est présent dans le fichier.
+    associated_ids = {player.id for _, player in verdicts.associations}
+    contradictory = [players[i].name for i in ids if i in associated_ids]
+    if contradictory:
+        raise DetachRefusedError(
+            f"Détachement refusé : {', '.join(contradictory)} est associé à une ligne du fichier ; un joueur "
+            "associé est présent dans le fichier et ne peut pas être détaché."
+        )
+    return [players[i] for i in ids]
+
+
+def detach_players(db: Session, players: list[Player]) -> list[str]:
+    """Détache les joueurs validés par validate_detach_request : `team_id` passe à
+    NULL (agent libre) et RIEN d'autre -- `is_active` reste vrai (il doit rester
+    dans l'index de l'import et être retrouvable par le malus de départ) et
+    `previous_team_id` n'est pas écrit (colonne morte, limitation n°31). Un
+    joueur déjà agent libre est ignoré (idempotence). Retourne les noms
+    réellement détachés, dans l'ordre demandé."""
+    detached: list[str] = []
+    for player in players:
+        if player.team_id is None:
+            continue
+        player.team_id = None
+        detached.append(player.name)
+    db.flush()
+    return detached
 
 
 # NB: comme apply_schedule/DRAFT ci-dessous, PLAYERS_ADVANCED n'est appelé

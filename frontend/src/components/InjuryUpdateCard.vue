@@ -58,8 +58,14 @@ const statusLines = computed(() =>
     count,
   })),
 )
+// Deux cas DISTINCTS, jamais mêlés : un joueur rattaché à une AUTRE équipe en base (transféré sans que la base
+// le sache) ; un AGENT LIBRE en base (détaché de son équipe, Décision n°39 -- il n'a pas été « transféré à
+// l'insu de la base », la phrase serait fausse pour lui).
 const unmatchedOnOtherTeam = computed(
   () => (report.value?.unmatched ?? []).filter((u) => u.exists_in_database_on_teams.length > 0).length,
+)
+const unmatchedAsFreeAgent = computed(
+  () => (report.value?.unmatched ?? []).filter((u) => u.exists_in_database_as_free_agent === true).length,
 )
 
 function formatDate(iso) {
@@ -174,9 +180,19 @@ const gameDatesLabel = computed(() => (report.value?.game_dates ?? []).map(forma
         <h3 class="font-medium">
           {{ report.unmatched.length }} entrée(s) non rattachée(s) à un joueur de la base
         </h3>
-        <p class="mt-1 text-text-secondary">
-          Dont <strong>{{ unmatchedOnOtherTeam }}</strong> existent en base mais sous une autre
-          équipe que celle du rapport (joueur transféré sans que la base le sache).
+        <p class="mt-1 text-text-secondary" data-testid="unmatched-summary">
+          <span v-if="unmatchedOnOtherTeam">
+            Dont <strong>{{ unmatchedOnOtherTeam }}</strong> existent en base mais sous une autre
+            équipe que celle du rapport (joueur transféré sans que la base le sache).
+          </span>
+          <span v-if="unmatchedAsFreeAgent">
+            Dont <strong>{{ unmatchedAsFreeAgent }}</strong> existent en base comme agent(s) libre(s)
+            (détaché(s) de leur équipe lors d'un import d'effectif : à replacer dans une équipe depuis
+            l'écran Joueurs pour que leur statut s'applique).
+          </span>
+          <span v-if="!unmatchedOnOtherTeam && !unmatchedAsFreeAgent">
+            Aucun n'existe en base sous un autre nom d'équipe ni comme agent libre.
+          </span>
         </p>
         <ul class="mt-2 space-y-0.5">
           <li v-for="(entry, index) in report.unmatched" :key="index">
@@ -184,6 +200,9 @@ const gameDatesLabel = computed(() => (report.value?.game_dates ?? []).map(forma
             <span class="text-text-secondary">({{ entry.status_raw }})</span>
             <span v-if="entry.exists_in_database_on_teams.length" class="text-text-secondary">
               — en base sous : {{ entry.exists_in_database_on_teams.join(', ') }}
+            </span>
+            <span v-if="entry.exists_in_database_as_free_agent" class="text-text-secondary">
+              — en base comme agent libre
             </span>
           </li>
         </ul>
