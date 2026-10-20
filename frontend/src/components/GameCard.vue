@@ -160,7 +160,10 @@ const awayPastilles = computed(() =>
   <article class="rounded-xl border border-border bg-surface p-4 shadow-sm">
     <div class="mb-3 flex items-center justify-between text-sm">
       <span v-if="scoreLine" class="font-mono tabular-nums text-text">{{ scoreLine }}</span>
-      <span v-else class="text-text-secondary">{{ gameTime }}</span>
+      <!-- Heure de New York (US/ET), affichée telle quelle : aucune conversion, voir limitation n°35. -->
+      <span v-else class="text-text-secondary">
+        {{ gameTime }}<span class="text-xs" data-testid="game-time-zone"> · New York</span>
+      </span>
       <span
         v-if="isRevealed"
         class="rounded-full px-2.5 py-1 text-xs font-medium"
