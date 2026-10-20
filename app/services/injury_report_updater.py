@@ -16,13 +16,17 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.models import Player, Team
+from app.services.csv_import import fold_diacritics
 from app.services.injury_report_parser import InjuryReportEntry
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
 
 
 def _normalize(s: str) -> str:
-    return _NON_ALNUM.sub("", s.lower())
+    # Le PDF de la NBA écrit les noms sans diacritiques ("Topic,Nikola"), la base
+    # les contient ("Nikola Topić") : on replie AVANT de retirer le non-alphanumérique,
+    # sinon "ć" est simplement supprimé ("topi"). Portée locale à cette source.
+    return _NON_ALNUM.sub("", fold_diacritics(s.lower()))
 
 
 def build_match_key(player_name_raw: str) -> str:
@@ -39,10 +43,10 @@ def resolve_player(db: Session, entry: InjuryReportEntry) -> Player | None:
     if team is None:
         return None
     key = build_match_key(entry.player_name_raw)
-    for player in db.query(Player).filter(Player.team_id == team.id).all():
-        if _normalize(player.name) == key:
-            return player
-    return None
+    matches = [p for p in db.query(Player).filter(Player.team_id == team.id).all() if _normalize(p.name) == key]
+    # Deux joueurs d'une même équipe dont les noms ne diffèrent que par un accent ou une
+    # ponctuation : on ne choisit pas au hasard, l'entrée reste non rattachée.
+    return matches[0] if len(matches) == 1 else None
 
 
 @dataclass
