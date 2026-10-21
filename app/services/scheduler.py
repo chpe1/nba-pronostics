@@ -83,9 +83,9 @@ def run_scores_sync_job() -> None:
                 logger.info(
                     "Scores synchronisés pour %s : %d récupéré(s), %d mis à jour, %d ignoré(s)",
                     target_date,
-                    result["fetched"],
-                    result["updated"],
-                    result["skipped"],
+                    result.found,
+                    result.updated,  # uniquement les matchs dont une valeur a changé (limitation n°36)
+                    result.skipped_count,
                 )
             except Exception:
                 logger.exception("Échec de la synchronisation des scores pour %s", target_date)

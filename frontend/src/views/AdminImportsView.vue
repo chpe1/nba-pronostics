@@ -5,6 +5,7 @@ import CsvUploadForm from '@/components/CsvUploadForm.vue'
 import CsvTemplatesCard from '@/components/CsvTemplatesCard.vue'
 import ImportHistoryTable from '@/components/ImportHistoryTable.vue'
 import InjuryUpdateCard from '@/components/InjuryUpdateCard.vue'
+import ScoresSyncCard from '@/components/ScoresSyncCard.vue'
 
 const history = ref([])
 const errorMessage = ref('')
@@ -32,6 +33,7 @@ onMounted(loadHistory)
     <CsvTemplatesCard />
     <CsvUploadForm @imported="loadHistory" />
     <InjuryUpdateCard />
+    <ScoresSyncCard />
     <ImportHistoryTable :history="history" />
   </section>
 </template>
