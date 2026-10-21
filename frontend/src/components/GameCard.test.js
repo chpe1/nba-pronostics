@@ -53,3 +53,46 @@ describe("libellé de l'heure du match", () => {
     expect(wrapper.text()).toContain('105-112')
   })
 })
+
+describe('plafond de la fiabilité en début de saison', () => {
+  const prediction = (capCap) => ({
+    id: 1,
+    game_id: 1,
+    is_upcoming: false,
+    home_team_note: 70,
+    away_team_note: 20,
+    predicted_winner_team_id: 1,
+    spread: 50,
+    reliability: 'moyenne',
+    breakdown: {
+      home: { absent_players: [], questionable_players: [] },
+      away: { absent_players: [], questionable_players: [] },
+      ...(capCap === undefined ? {} : { reliability_cap: capCap }),
+    },
+    computed_at: '2026-10-21T19:31:37',
+  })
+  const note = (w) => w.find('[data-testid="reliability-cap-note"]')
+
+  it('dit POURQUOI la confiance est limitée quand le serveur a plafonné l\'étiquette', () => {
+    const wrapper = mount(GameCard, {
+      props: { game: { ...BASE, prediction: prediction({ capped: true, uncapped: 'forte', reason: 'early_season' }) } },
+    })
+    expect(note(wrapper).text()).toBe('Confiance limitée : début de saison, notes basées sur la saison précédente.')
+    expect(wrapper.text()).toContain('Confiance modérée') // l'étiquette affichée est celle du serveur
+  })
+
+  it('ne dit rien quand rien n\'a été plafonné, ni pour un ancien pronostic sans cette information', () => {
+    const notCapped = mount(GameCard, {
+      props: { game: { ...BASE, prediction: prediction({ capped: false, uncapped: 'moyenne', reason: null }) } },
+    })
+    expect(note(notCapped).exists()).toBe(false)
+    const legacy = mount(GameCard, { props: { game: { ...BASE, prediction: prediction(undefined) } } })
+    expect(note(legacy).exists()).toBe(false)
+  })
+
+  it('ne l\'affiche pas pour un pronostic non révélé (match trop lointain)', () => {
+    const hidden = { ...prediction({ capped: true, uncapped: 'forte', reason: 'early_season' }), is_upcoming: true, breakdown: null }
+    const wrapper = mount(GameCard, { props: { game: { ...BASE, prediction: hidden } } })
+    expect(note(wrapper).exists()).toBe(false)
+  })
+})

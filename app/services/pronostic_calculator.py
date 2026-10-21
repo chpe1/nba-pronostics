@@ -95,6 +95,24 @@ class QuestionablePlayerInfo:
 
 
 @dataclass
+class DraftBonusEntry:
+    name: str
+    rank: int
+    points: float
+
+
+@dataclass
+class DraftBonusDetail:
+    """Détail du bonus draft d'une équipe : joueurs, total AVANT plafond, plafond appliqué ou non."""
+
+    players: list[DraftBonusEntry] = field(default_factory=list)
+    raw_total: float = 0.0  # somme des barèmes, avant plafonnement
+    cap: float | None = None  # valeur du rang 1 dans draft_bonus_config (None : pas de rang 1 dans le barème)
+    capped: bool = False  # True seulement si le plafond a RETRANCHÉ quelque chose
+    total: float = 0.0  # ce qui entre dans la note
+
+
+@dataclass
 class TeamNoteBreakdown:
     team_id: int
     team_name: str
@@ -111,6 +129,12 @@ class TeamNoteBreakdown:
     final_note: float
     questionable_players: list[QuestionablePlayerInfo] = field(default_factory=list)
     absent_players: list[QuestionablePlayerInfo] = field(default_factory=list)
+    # Détail du bonus draft (plafond par équipe) : total AVANT plafonnement et plafond appliqué, pour que
+    # les chiffres restent explicables.
+    draft_bonus_raw: float = 0.0
+    draft_bonus_cap: float | None = None
+    draft_bonus_capped: bool = False
+    draft_players: list[DraftBonusEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -121,6 +145,10 @@ class MatchupResult:
     spread: float
     predicted_winner_team_id: int
     reliability: ReliabilityLevel
+    # Niveau d'après le seul écart, avant plafonnement de début de saison ; `reliability_capped` dit si
+    # l'étiquette a été abaissée parce que la note de base d'au moins une équipe vient de la saison précédente.
+    reliability_uncapped: ReliabilityLevel | None = None
+    reliability_capped: bool = False
 
 
 def count_finished_games_this_season(
@@ -266,17 +294,34 @@ def compute_calendar_penalty(db: Session, team: Team, game_date: date, settings:
     return {**flags, "penalty": penalty}
 
 
-def compute_draft_bonus(db: Session, team: Team, settings: Settings) -> float:
-    """Somme des bonus de TOUS les rookies draftés dans l'effectif actif."""
-    rookies = db.query(Player).filter(
-        Player.team_id == team.id,
-        Player.is_active.is_(True),
-        Player.draft_pick.is_not(None),
+def compute_draft_bonus_detail(db: Session, team: Team, settings: Settings) -> DraftBonusDetail:
+    """Bonus de TOUS les rookies draftés de l'effectif actif, PLAFONNÉ par équipe à la valeur du rang 1
+    lue dans `draft_bonus_config` (jamais codée en dur : le plafond suit le barème). Le barème a été
+    calibré par choix, jamais par équipe : l'accumulation n'a jamais été décidée (constat du 2026-10-21 :
+    13,15 points pour trois rookies sans une minute jouée). Sans rang 1 dans le barème, pas de plafond."""
+    rookies = (
+        db.query(Player)
+        .filter(Player.team_id == team.id, Player.is_active.is_(True), Player.draft_pick.is_not(None))
+        .order_by(Player.draft_pick, Player.name)
+        .all()
     )
-    total = 0.0
-    for player in rookies.all():
-        total += settings.draft_bonus_config.get(str(player.draft_pick), 0.0)
-    return total
+    entries = [
+        DraftBonusEntry(p.name, p.draft_pick, settings.draft_bonus_config.get(str(p.draft_pick), 0.0)) for p in rookies
+    ]
+    raw_total = sum(e.points for e in entries)
+    cap = settings.draft_bonus_config.get("1")
+    capped = cap is not None and raw_total > cap + 1e-9
+    return DraftBonusDetail(
+        players=entries,
+        raw_total=raw_total,
+        cap=cap,
+        capped=capped,
+        total=cap if capped else raw_total,
+    )
+
+
+def compute_draft_bonus(db: Session, team: Team, settings: Settings) -> float:
+    return compute_draft_bonus_detail(db, team, settings).total
 
 
 def previous_season_label(season: str) -> str:
@@ -358,7 +403,8 @@ def compute_team_note(
     note_de_base = compute_note_de_base(team, is_home, in_early_season)
     injury_penalty = compute_injury_penalty(db, team, settings, prev_season)
     calendar = compute_calendar_penalty(db, team, game_date, settings)
-    draft_bonus = compute_draft_bonus(db, team, settings) if in_early_season else 0.0
+    draft_detail = compute_draft_bonus_detail(db, team, settings) if in_early_season else DraftBonusDetail()
+    draft_bonus = draft_detail.total
     if in_early_season:
         transfer_adjustment = (
             compute_transfer_bonus(db, team, settings, prev_season)
@@ -393,6 +439,10 @@ def compute_team_note(
         final_note=final_note,
         questionable_players=questionable_players,
         absent_players=absent_players,
+        draft_bonus_raw=draft_detail.raw_total,
+        draft_bonus_cap=draft_detail.cap,
+        draft_bonus_capped=draft_detail.capped,
+        draft_players=draft_detail.players,
     )
 
 
@@ -412,7 +462,15 @@ def compute_matchup(db: Session, game: Game, settings: Settings) -> MatchupResul
 
     spread = home.final_note - away.final_note
     predicted_winner_team_id = game.home_team_id if spread >= 0 else game.away_team_id
-    reliability = _reliability_level(abs(spread), settings)
+    uncapped = _reliability_level(abs(spread), settings)
+    # Tant que la note de base d'AU MOINS UNE des deux équipes vient du classement de la saison précédente
+    # (moins de EARLY_SEASON_GAME_THRESHOLD matchs joués), le moteur ignore les changements d'effectif de
+    # l'intersaison : pas de « forte confiance », quel que soit l'écart. L'écart, lui, n'est pas modifié --
+    # seule l'étiquette est plafonnée. Une seule équipe sous le seuil suffit : l'écart compare alors une
+    # note issue de l'an dernier à une autre, il reste en partie un écart de saison passée.
+    early_season_match = home.in_early_season or away.in_early_season
+    capped = early_season_match and uncapped == ReliabilityLevel.FORTE
+    reliability = ReliabilityLevel.MOYENNE if capped else uncapped
 
     return MatchupResult(
         game_id=game.id,
@@ -421,7 +479,18 @@ def compute_matchup(db: Session, game: Game, settings: Settings) -> MatchupResul
         spread=spread,
         predicted_winner_team_id=predicted_winner_team_id,
         reliability=reliability,
+        reliability_uncapped=uncapped,
+        reliability_capped=capped,
     )
+
+
+def reliability_cap_to_dict(result: MatchupResult) -> dict:
+    """Pourquoi l'étiquette a pu être abaissée (stocké dans Prediction.breakdown["reliability_cap"], lu par l'écran)."""
+    return {
+        "capped": result.reliability_capped,
+        "uncapped": result.reliability_uncapped.value if result.reliability_uncapped else None,
+        "reason": "early_season" if result.reliability_capped else None,
+    }
 
 
 def breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
@@ -449,6 +518,10 @@ def breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
         "absent_players": [
             {"name": p.name, "per": p.per, "reason": p.reason} for p in breakdown.absent_players
         ],
+        "draft_bonus_raw": breakdown.draft_bonus_raw,
+        "draft_bonus_cap": breakdown.draft_bonus_cap,
+        "draft_bonus_capped": breakdown.draft_bonus_capped,
+        "draft_players": [{"name": e.name, "rank": e.rank, "points": e.points} for e in breakdown.draft_players],
     }
 
 
@@ -490,6 +563,7 @@ def save_prediction(db: Session, game: Game, settings: Settings) -> Prediction:
     prediction.breakdown = {
         "home": breakdown_to_dict(result.home),
         "away": breakdown_to_dict(result.away),
+        "reliability_cap": reliability_cap_to_dict(result),
     }
 
     db.flush()

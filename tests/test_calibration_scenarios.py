@@ -113,7 +113,10 @@ def test_star_injury_does_not_overwhelm_large_talent_gap(db_session, league, set
     result = compute_matchup(db_session, game, settings)
 
     assert result.predicted_winner_team_id == league.teams["BOS"].id  # toujours favori
-    assert result.reliability == ReliabilityLevel.FORTE  # écart toujours large
+    # Écart toujours large : « forte » d'après l'écart seul. Ce scénario est en début de saison (aucun match joué, note de
+    # base de la saison précédente) : l'étiquette affichée est plafonnée à « moyenne » (2026-10-21), l'écart n'est pas touché.
+    assert result.reliability_uncapped == ReliabilityLevel.FORTE
+    assert result.reliability == ReliabilityLevel.MOYENNE and result.reliability_capped is True
 
 
 # --- 4/5. Malus calendrier isolés -------------------------------------------

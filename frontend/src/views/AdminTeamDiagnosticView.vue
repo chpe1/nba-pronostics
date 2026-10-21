@@ -197,6 +197,7 @@ onMounted(loadTeams)
         :reliability="selectedGame.prediction.reliability"
         :home="selectedGame.prediction.breakdown.home"
         :away="selectedGame.prediction.breakdown.away"
+        :reliability-cap="selectedGame.prediction.breakdown.reliability_cap ?? null"
       />
 
       <div class="space-y-3 rounded-xl border border-border bg-surface p-4">
@@ -254,6 +255,7 @@ onMounted(loadTeams)
         :reliability="simulationResult.reliability"
         :home="simulationResult.home"
         :away="simulationResult.away"
+        :reliability-cap="simulationResult.reliability_cap ?? null"
       />
     </template>
   </section>

@@ -28,6 +28,7 @@ from app.services.pronostic_calculator import (
     compute_matchup,
     compute_recent_record,
     has_game_started,
+    reliability_cap_to_dict,
     save_prediction,
 )
 
@@ -275,4 +276,5 @@ def simulate_prediction(payload: MatchupSimulationRequest, db: Session = Depends
         reliability=result.reliability,
         home=breakdown_to_dict(result.home),
         away=breakdown_to_dict(result.away),
+        reliability_cap=reliability_cap_to_dict(result),
     )

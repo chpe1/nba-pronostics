@@ -401,18 +401,18 @@ def test_draft_bonus_sums_all_rookies(db_session):
     team = _team()
     db_session.add(team)
     db_session.flush()
-    settings = _settings(draft_bonus_config={"1": 5.0, "2": 3.0})
+    settings = _settings(draft_bonus_config={"1": 10.0, "2": 3.0, "3": 2.0})  # somme 5 < plafond 10 : rien n'est retranché
 
     db_session.add_all(
         [
-            Player(name="Pick 1", team_id=team.id, draft_pick=1),
             Player(name="Pick 2", team_id=team.id, draft_pick=2),
+            Player(name="Pick 3", team_id=team.id, draft_pick=3),
             Player(name="Undrafted Vet", team_id=team.id, draft_pick=None),
         ]
     )
     db_session.flush()
 
-    assert calc.compute_draft_bonus(db_session, team, settings) == pytest.approx(8.0)
+    assert calc.compute_draft_bonus(db_session, team, settings) == pytest.approx(5.0)
 
 
 def test_draft_bonus_zero_without_config_entry(db_session):

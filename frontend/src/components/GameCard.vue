@@ -52,6 +52,12 @@ const isRevealed = computed(() => Boolean(prediction.value) && !prediction.value
 const isUpcoming = computed(() => Boolean(prediction.value) && prediction.value.is_upcoming)
 const isNeverCalculated = computed(() => !prediction.value)
 
+// Début de saison : l'étiquette « forte » est plafonnée à « modérée » tant que la note de base d'au moins une équipe
+// vient de la saison précédente (le serveur le dit dans breakdown.reliability_cap ; l'écart affiché, lui, ne change pas).
+const reliabilityCapped = computed(
+  () => isRevealed.value && prediction.value.breakdown?.reliability_cap?.capped === true,
+)
+
 // "Journée passée" (§10.3) : détecté via `status`, jamais via la seule
 // présence d'un score (voir docstring GameWithPredictionRead côté backend --
 // un match FINISHED sans score renseigné reste théoriquement possible).
@@ -292,6 +298,9 @@ const awayPastilles = computed(() =>
            (corrigé en recette, 2026-08-30 : 13 répétitions identiques sur une
            journée de 12 matchs). -->
       <span v-else class="text-text-disabled">Pronostic indisponible</span>
+      <p v-if="reliabilityCapped" data-testid="reliability-cap-note" class="mt-1 text-xs text-text-secondary">
+        Confiance limitée : début de saison, notes basées sur la saison précédente.
+      </p>
     </div>
   </article>
 </template>

@@ -162,3 +162,5 @@ class MatchupSimulationRead(BaseModel):
     reliability: ReliabilityLevel
     home: dict
     away: dict
+    # Même contenu que Prediction.breakdown["reliability_cap"] : l'étiquette a-t-elle été plafonnée (début de saison) ?
+    reliability_cap: dict | None = None

@@ -8,6 +8,8 @@ const props = defineProps({
   reliability: { type: String, required: true },
   home: { type: Object, required: true },
   away: { type: Object, required: true },
+  // { capped, uncapped, reason } : l'étiquette a-t-elle été plafonnée en début de saison ? (absent des anciens pronostics)
+  reliabilityCap: { type: Object, default: null },
 })
 
 const teams = computed(() => [props.home, props.away])
@@ -37,6 +39,14 @@ const reliabilityLabel = {
         Fiabilité {{ reliabilityLabel[reliability] || reliability }}
       </span>
     </div>
+    <p
+      v-if="reliabilityCap && reliabilityCap.capped"
+      data-testid="reliability-cap-detail"
+      class="-mt-2 text-xs text-text-secondary"
+    >
+      Fiabilité plafonnée : d'après l'écart seul, « {{ reliabilityLabel[reliabilityCap.uncapped] || reliabilityCap.uncapped }} » ;
+      limitée à « Moyenne » car, en début de saison, la note de base d'au moins une équipe vient de la saison précédente.
+    </p>
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div v-for="team in teams" :key="team.team_id" class="space-y-2 text-sm">
@@ -68,9 +78,17 @@ const reliabilityLabel = {
             <dd class="tabular-nums">{{ team.calendar_penalty.toFixed(1) }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt>Bonus draft</dt>
+            <dt>
+              Bonus draft
+              <span v-if="team.draft_bonus_capped" class="text-text-disabled" data-testid="draft-capped"
+                >(plafonné à {{ team.draft_bonus_cap.toFixed(2) }}, somme {{ team.draft_bonus_raw.toFixed(2) }})</span
+              >
+            </dt>
             <dd class="tabular-nums">{{ team.draft_bonus.toFixed(1) }}</dd>
           </div>
+          <ul v-if="team.draft_players && team.draft_players.length" class="ml-2 list-disc space-y-0.5 pl-3" data-testid="draft-players">
+            <li v-for="p in team.draft_players" :key="p.name">{{ p.name }} — choix n°{{ p.rank }} : {{ p.points.toFixed(2) }}</li>
+          </ul>
           <div class="flex justify-between">
             <dt>Bonus/Malus transferts</dt>
             <dd class="tabular-nums">{{ team.transfer_adjustment.toFixed(1) }}</dd>
