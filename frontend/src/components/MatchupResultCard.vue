@@ -94,6 +94,16 @@ const reliabilityLabel = {
             <dd class="tabular-nums">{{ team.transfer_adjustment.toFixed(1) }}</dd>
           </div>
 
+          <div class="flex justify-between">
+            <dt>Crédit joueurs sans saison N-1</dt>
+            <dd class="tabular-nums" data-testid="no-prev-credit">{{ (team.no_prev_season_credit ?? 0).toFixed(1) }}</dd>
+          </div>
+          <ul v-if="team.no_prev_season_players && team.no_prev_season_players.length" class="ml-2 list-disc space-y-0.5 pl-3" data-testid="no-prev-players">
+            <li v-for="p in team.no_prev_season_players" :key="p.name">
+              {{ p.name }} — PER {{ p.per.toFixed(1) }}, MPG {{ p.mpg.toFixed(1) }} : +{{ p.points.toFixed(2) }}<span v-if="p.injury_status !== 'healthy'"> ({{ p.injury_status }})</span>
+            </li>
+          </ul>
+
           <ul v-if="team.questionable_players.length" class="space-y-0.5 text-warning">
             <li v-for="p in team.questionable_players" :key="p.name">
               Incertain : {{ p.name }} — PER {{ p.per.toFixed(1) }}<span v-if="p.reason"> ({{ p.reason }})</span>

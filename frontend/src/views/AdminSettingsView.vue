@@ -47,6 +47,7 @@ async function save() {
         reliability_threshold_low: settings.value.reliability_threshold_low,
         reliability_threshold_high: settings.value.reliability_threshold_high,
         transfer_impact_multiplier: settings.value.transfer_impact_multiplier,
+        no_prev_season_impact_multiplier: settings.value.no_prev_season_impact_multiplier,
         draft_bonus_config: draftBonusConfig,
         current_season: settings.value.current_season,
       },
@@ -109,6 +110,14 @@ onMounted(loadSettings)
         :max="5"
         :step="0.05"
         :help="SETTINGS_HELP.transfer_impact_multiplier"
+      />
+      <SettingsSlider
+        v-model="settings.no_prev_season_impact_multiplier"
+        label="Multiplicateur joueurs sans saison précédente"
+        :min="0"
+        :max="5"
+        :step="0.05"
+        :help="SETTINGS_HELP.no_prev_season_impact_multiplier"
       />
       <SettingsSlider
         v-model="settings.back_to_back_penalty"

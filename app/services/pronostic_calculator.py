@@ -6,6 +6,7 @@ Formule (cahier des charges) :
                 - Malus Calendrier
                 + Bonus Draft (règle des 10 premiers matchs)
                 + Bonus/Malus Transferts (règle des 10 premiers matchs, Étape 6bis)
+                + Crédit des joueurs présents sans ligne N-1 (règle des 10 premiers matchs)
 """
 from __future__ import annotations
 
@@ -113,6 +114,24 @@ class DraftBonusDetail:
 
 
 @dataclass
+class NoPrevSeasonEntry:
+    """Un joueur crédité par la composante « sans ligne N-1 » : tout ce qu'il faut pour vérifier d'où vient
+    chaque point (le PER et le MPG sont souvent saisis à la main)."""
+
+    name: str
+    per: float
+    mpg: float
+    injury_status: str
+    points: float  # per × multiplicateur
+
+
+@dataclass
+class NoPrevSeasonDetail:
+    players: list[NoPrevSeasonEntry] = field(default_factory=list)
+    total: float = 0.0  # ce qui entre dans la note (somme des points)
+
+
+@dataclass
 class TeamNoteBreakdown:
     team_id: int
     team_name: str
@@ -135,6 +154,9 @@ class TeamNoteBreakdown:
     draft_bonus_cap: float | None = None
     draft_bonus_capped: bool = False
     draft_players: list[DraftBonusEntry] = field(default_factory=list)
+    # Crédit des joueurs présents sans ligne N-1 (composante distincte des transferts).
+    no_prev_season_credit: float = 0.0
+    no_prev_season_players: list[NoPrevSeasonEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -324,6 +346,45 @@ def compute_draft_bonus(db: Session, team: Team, settings: Settings) -> float:
     return compute_draft_bonus_detail(db, team, settings).total
 
 
+def compute_no_prev_season_credit_detail(
+    db: Session, team: Team, settings: Settings, prev_season: str
+) -> NoPrevSeasonDetail:
+    """Crédit des joueurs PRÉSENTS que le bilan N-1 de l'équipe ne reflète pas (retour d'une saison blanche,
+    recrue étrangère). Symétrique de la pénalité des absents : crédit = PER × no_prev_season_impact_multiplier.
+
+    Crédité si et seulement si : rattaché à l'équipe, actif, pas OUT ni DOUBTFUL (QUESTIONABLE est crédité :
+    approximation assumée et optimiste, comme la pénalité qui ne retranche pas non plus un QUESTIONABLE) ;
+    sans `draft_pick` (le bonus draft est déjà la valeur de remplacement d'un joueur de niveau inconnu : les
+    cumuler estimerait deux fois la même incertitude) ; sans aucune ligne N-1 ; PER non nul ; MPG au-dessus de
+    mpg_threshold. La condition « début de saison » est posée par l'appelant. Les PER/MPG lus sont ceux du
+    joueur (saisis à la main ou importés) : sans ligne N-1, il n'existe pas d'autre valeur (voir
+    _effective_per_mpg)."""
+    players = (
+        db.query(Player)
+        .filter(Player.team_id == team.id, Player.is_active.is_(True), Player.draft_pick.is_(None))
+        .order_by(Player.name)
+        .all()
+    )
+    entries = []
+    for player in players:
+        if player.injury_status in ABSENT_STATUSES:
+            continue
+        if not player.per or player.mpg <= settings.mpg_threshold:
+            continue
+        if find_prev_season_stat_by_name(db, prev_season, player.name) is not None:
+            continue
+        entries.append(
+            NoPrevSeasonEntry(
+                name=player.name,
+                per=player.per,
+                mpg=player.mpg,
+                injury_status=player.injury_status.value,
+                points=player.per * settings.no_prev_season_impact_multiplier,
+            )
+        )
+    return NoPrevSeasonDetail(players=entries, total=sum(e.points for e in entries))
+
+
 def previous_season_label(season: str) -> str:
     """"2025-2026" -> "2024-2025" """
     start, end = season.split("-")
@@ -412,6 +473,9 @@ def compute_team_note(
         ) * settings.transfer_impact_multiplier
     else:
         transfer_adjustment = 0.0
+    no_prev_detail = (
+        compute_no_prev_season_credit_detail(db, team, settings, prev_season) if in_early_season else NoPrevSeasonDetail()
+    )
     questionable_players = get_questionable_players(db, team, settings, prev_season)
     absent_players = get_absent_players(db, team, settings, prev_season)
 
@@ -421,6 +485,7 @@ def compute_team_note(
         - calendar["penalty"]
         + draft_bonus
         + transfer_adjustment
+        + no_prev_detail.total
     )
 
     return TeamNoteBreakdown(
@@ -443,6 +508,8 @@ def compute_team_note(
         draft_bonus_cap=draft_detail.cap,
         draft_bonus_capped=draft_detail.capped,
         draft_players=draft_detail.players,
+        no_prev_season_credit=no_prev_detail.total,
+        no_prev_season_players=no_prev_detail.players,
     )
 
 
@@ -522,6 +589,11 @@ def breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
         "draft_bonus_cap": breakdown.draft_bonus_cap,
         "draft_bonus_capped": breakdown.draft_bonus_capped,
         "draft_players": [{"name": e.name, "rank": e.rank, "points": e.points} for e in breakdown.draft_players],
+        "no_prev_season_credit": breakdown.no_prev_season_credit,
+        "no_prev_season_players": [
+            {"name": e.name, "per": e.per, "mpg": e.mpg, "injury_status": e.injury_status, "points": e.points}
+            for e in breakdown.no_prev_season_players
+        ],
     }
 
 

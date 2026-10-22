@@ -264,6 +264,7 @@ def simulate_prediction(payload: MatchupSimulationRequest, db: Session = Depends
         reliability_threshold_low=real_settings.reliability_threshold_low,
         reliability_threshold_high=real_settings.reliability_threshold_high,
         transfer_impact_multiplier=real_settings.transfer_impact_multiplier,
+        no_prev_season_impact_multiplier=real_settings.no_prev_season_impact_multiplier,
         current_season=real_settings.current_season,
     )
     for field, value in payload.overrides.model_dump(exclude_unset=True).items():

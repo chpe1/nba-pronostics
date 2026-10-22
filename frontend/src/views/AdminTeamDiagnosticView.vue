@@ -21,6 +21,7 @@ const OVERRIDE_FIELDS = [
   { key: 'base_note_multiplier', label: 'Multiplicateur note de base (Curseur A)', help: SETTINGS_HELP.base_note_multiplier },
   { key: 'per_impact_multiplier', label: 'Multiplicateur impact PER (Curseur B)', help: SETTINGS_HELP.per_impact_multiplier },
   { key: 'transfer_impact_multiplier', label: 'Multiplicateur Bonus/Malus Transferts', help: SETTINGS_HELP.transfer_impact_multiplier },
+  { key: 'no_prev_season_impact_multiplier', label: 'Multiplicateur joueurs sans saison précédente', help: SETTINGS_HELP.no_prev_season_impact_multiplier },
   { key: 'back_to_back_penalty', label: 'Malus Back-to-Back', help: SETTINGS_HELP.back_to_back_penalty },
   { key: 'three_in_four_penalty', label: 'Malus 3 matchs en 4 nuits', help: SETTINGS_HELP.three_in_four_penalty },
   { key: 'mpg_threshold', label: 'Seuil MPG minimum', help: SETTINGS_HELP.mpg_threshold },

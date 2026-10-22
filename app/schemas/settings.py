@@ -14,6 +14,7 @@ class SettingsUpdate(BaseModel):
     reliability_threshold_low: float | None = None
     reliability_threshold_high: float | None = None
     transfer_impact_multiplier: float | None = None
+    no_prev_season_impact_multiplier: float | None = None
     current_season: str | None = None
 
 
@@ -31,6 +32,7 @@ class SettingsRead(BaseModel):
     reliability_threshold_low: float
     reliability_threshold_high: float
     transfer_impact_multiplier: float
+    no_prev_season_impact_multiplier: float
     current_season: str
     # Dérivée de current_season (Settings.previous_season, propriété calculée
     # -- jamais stockée séparément), pour que le frontend n'ait pas à

@@ -55,6 +55,26 @@ describe('détail du bonus draft (plafond par équipe)', () => {
   })
 })
 
+describe('crédit des joueurs sans saison N-1', () => {
+  it('nomme chaque joueur crédité avec son PER, son MPG et ses points', () => {
+    const credited = team({
+      no_prev_season_credit: 7.8,
+      no_prev_season_players: [{ name: 'Tyrese Haliburton', per: 19.5, mpg: 33, injury_status: 'questionable', points: 7.8 }],
+    })
+    const wrapper = mountCard(credited, team({ team_id: 2 }))
+    expect(wrapper.get('[data-testid="no-prev-credit"]').text()).toBe('7.8')
+    const list = wrapper.get('[data-testid="no-prev-players"]').text()
+    expect(list).toContain('Tyrese Haliburton — PER 19.5, MPG 33.0 : +7.80')
+    expect(list).toContain('(questionable)')
+  })
+
+  it('reste lisible pour un ancien pronostic sans ce détail', () => {
+    const wrapper = mountCard(team(), team({ team_id: 2 }))
+    expect(wrapper.get('[data-testid="no-prev-credit"]').text()).toBe('0.0')
+    expect(wrapper.find('[data-testid="no-prev-players"]').exists()).toBe(false)
+  })
+})
+
 describe('fiabilité plafonnée', () => {
   it('explique le plafonnement quand il a eu lieu', () => {
     const wrapper = mountCard(team(), team({ team_id: 2 }), { reliability: 'moyenne', reliabilityCap: { capped: true, uncapped: 'forte', reason: 'early_season' } })

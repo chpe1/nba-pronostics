@@ -24,6 +24,7 @@ def test_get_settings_creates_default_row_if_missing(client, db_session, auth_he
     assert body["reliability_threshold_low"] == 7.0
     assert body["reliability_threshold_high"] == 30.0
     assert body["transfer_impact_multiplier"] == 0.4
+    assert body["no_prev_season_impact_multiplier"] == 0.4
     assert body["current_season"] == "2026-2027"
     assert body["previous_season"] == "2025-2026"
     assert db_session.query(Settings).count() == 1

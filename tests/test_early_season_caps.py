@@ -24,6 +24,7 @@ def _settings(**overrides) -> Settings:
         base_note_multiplier=100.0, per_impact_multiplier=0.0, back_to_back_penalty=0.0, three_in_four_penalty=0.0,
         mpg_threshold=15.0, player_sample_size_threshold=5, draft_bonus_config={"1": 8.0, "2": 7.0, "8": 7.0, "23": 5.0, "52": 1.0},
         reliability_threshold_low=7.0, reliability_threshold_high=30.0, transfer_impact_multiplier=0.0,
+        no_prev_season_impact_multiplier=0.0,
     )
     defaults.update(overrides)
     return Settings(**defaults)

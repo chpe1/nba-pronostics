@@ -51,6 +51,12 @@ class Settings(Base):
     # non validé par simulation (voir docs/calibrage-v1.md).
     transfer_impact_multiplier: Mapped[float] = mapped_column(Float, default=0.4)
 
+    # Curseur « joueur sans ligne N-1 » : pondère le PER courant d'un joueur présent
+    # que le bilan de la saison précédente ne reflète pas (retour de saison blanche,
+    # recrue étrangère). Symétrique de per_impact_multiplier (pénalité des absents) ;
+    # actif uniquement dans la fenêtre de début de saison. Non calibré par simulation.
+    no_prev_season_impact_multiplier: Mapped[float] = mapped_column(Float, default=0.4)
+
     # Seuils de l'Indice de Fiabilité, sur l'écart absolu entre les deux
     # notes finales : < low -> Faible, [low, high) -> Moyenne, >= high -> Forte.
     # Calibrés (V1) sur la distribution réelle des |spread| obtenue sur un

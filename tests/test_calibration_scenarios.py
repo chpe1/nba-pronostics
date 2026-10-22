@@ -36,6 +36,7 @@ def _calibrated_settings(**overrides) -> Settings:
         reliability_threshold_low=7.0,
         reliability_threshold_high=30.0,
         transfer_impact_multiplier=0.4,
+        no_prev_season_impact_multiplier=0.0,
     )
     defaults.update(overrides)
     return Settings(**defaults)

@@ -9,6 +9,8 @@ export const SETTINGS_HELP = {
     'Pondère le PER des joueurs absents (Out/Doubtful) avant de le soustraire à la note de base -- un PER brut (échelle ~10-30) écraserait sinon totalement une note calibrée sur 0-100.',
   transfer_impact_multiplier:
     "Pondère le PER (saison précédente) des joueurs arrivés ou partis cet été avant de l'ajouter ou de le retrancher à la note -- même principe que le Curseur B, actif uniquement pendant les 10 premiers matchs de la saison de l'équipe.",
+  no_prev_season_impact_multiplier:
+    "Pondère le PER d'un joueur présent et en état de jouer qui n'a aucune ligne dans la saison précédente (retour après une saison blanche, recrue arrivée de l'étranger) avant de l'ajouter à la note de son équipe -- à l'inverse du Curseur B, qui retranche le PER des absents. Actif uniquement pendant les 10 premiers matchs de l'équipe, et seulement pour un joueur sans choix de draft (le bonus draft tient déjà ce rôle), avec un PER saisi non nul et un temps de jeu au-dessus du seuil MPG. Un joueur incertain (Questionable) est crédité, comme il n'est pas pénalisé.",
   back_to_back_penalty:
     "Points retirés à la note d'une équipe qui joue un match au lendemain immédiat d'un précédent, sans jour de repos.",
   three_in_four_penalty:

@@ -38,6 +38,7 @@ def league(db_session):
         current_season="2026-2027",
         mpg_threshold=15.0,
         transfer_impact_multiplier=0.4,
+        no_prev_season_impact_multiplier=0.0,
         draft_bonus_config={"1": 8.0, "2": 7.0},
     )
     bos = Team(name="Boston Celtics", abbreviation="BOS")
