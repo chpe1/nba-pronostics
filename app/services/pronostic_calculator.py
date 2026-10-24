@@ -28,7 +28,10 @@ from app.models import (
     Team,
 )
 from app.services import nba_calendar
-from app.services.player_matching import find_active_player_by_name, find_prev_season_stat_by_name
+from app.services.player_matching import (
+    find_active_player_by_name_tolerant,
+    find_prev_season_stat_by_name_tolerant,
+)
 
 # Statuts comptant pour la soustraction du PER (joueurs "absents majeurs").
 ABSENT_STATUSES = {InjuryStatus.OUT, InjuryStatus.DOUBTFUL}
@@ -211,7 +214,7 @@ def _effective_per_mpg(
     d'autre à quoi se raccrocher."""
     if player.games_played_this_season >= settings.player_sample_size_threshold:
         return player.per, player.mpg
-    stat = find_prev_season_stat_by_name(db, prev_season, player.name)
+    stat = find_prev_season_stat_by_name_tolerant(db, prev_season, player.name)
     if stat is None or stat.per is None or stat.mpg is None:
         return player.per, player.mpg
     return stat.per, stat.mpg
@@ -371,7 +374,7 @@ def compute_no_prev_season_credit_detail(
             continue
         if not player.per or player.mpg <= settings.mpg_threshold:
             continue
-        if find_prev_season_stat_by_name(db, prev_season, player.name) is not None:
+        if find_prev_season_stat_by_name_tolerant(db, prev_season, player.name) is not None:
             continue
         entries.append(
             NoPrevSeasonEntry(
@@ -406,7 +409,7 @@ def compute_transfer_bonus(db: Session, team: Team, settings: Settings, prev_sea
     total = 0.0
     current_players = db.query(Player).filter(Player.team_id == team.id, Player.is_active.is_(True)).all()
     for player in current_players:
-        stat = find_prev_season_stat_by_name(db, prev_season, player.name)
+        stat = find_prev_season_stat_by_name_tolerant(db, prev_season, player.name)
         if stat is None or stat.per is None or stat.mpg is None:
             continue  # pas de donnée N-1 (rookie, etc.) -> pas un transfert
         if stat.team_abbreviation == team.abbreviation:
@@ -443,7 +446,7 @@ def compute_transfer_malus(db: Session, team: Team, settings: Settings, prev_sea
     for stat in prev_roster:
         if stat.per is None or stat.mpg is None or stat.mpg <= settings.mpg_threshold:
             continue
-        current_player = find_active_player_by_name(db, stat.player_name)
+        current_player = find_active_player_by_name_tolerant(db, stat.player_name)
         if current_player is None or current_player.team_id == team.id:
             continue
         total += stat.per

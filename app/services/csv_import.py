@@ -27,7 +27,6 @@ from __future__ import annotations
 import csv
 import io
 import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
@@ -45,7 +44,12 @@ from app.models import (
     Team,
 )
 from app.services.nba_teams import ABBREVIATION_TO_NAME, NBA_TEAMS, normalize_abbreviation, resolve_team_name
-from app.services.player_matching import find_prev_season_stat_by_name, normalize_player_name
+from app.services.player_matching import (  # noqa: F401 -- fold_diacritics et _roster_match_key restent importables d'ici
+    fold_diacritics,
+    find_prev_season_stat_by_name,
+    normalize_player_name,
+    tolerant_name_key as _roster_match_key,
+)
 
 # Ordre figé (pas juste un ensemble) : c'est aussi la source de vérité pour
 # l'ordre des colonnes des modèles CSV téléchargeables (generate_template_csv
@@ -823,32 +827,6 @@ def apply_schedule(parsed: list[dict], db: Session, season: str) -> int:
 # qu'aperçu et confirmation ne puissent jamais diverger sur une même ligne
 # (même principe que la source de vérité unique retenue pour
 # compute_calendar_flags, voir CLAUDE.md, Décision d'architecture n°13).
-
-_ROSTER_NAME_SUFFIX_PATTERN = re.compile(r"\b(jr\.?|sr\.?|ii|iii|iv|v)\.?$", re.IGNORECASE)
-
-
-def fold_diacritics(text: str) -> str:
-    """Retire les diacritiques (NFD puis suppression des marques combinantes) :
-    "Topić" -> "Topic". Ne touche ni à la casse ni à la ponctuation. Partagée par
-    _roster_match_key et par le rapprochement du rapport de blessures
-    (injury_report_updater._normalize), deux sources qui écrivent les noms
-    différemment -- portée locale à ces deux sites, pas une règle du projet."""
-    return "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c))
-
-
-def _roster_match_key(name: str) -> str:
-    """Replie diacritiques + ponctuation + suffixes générationnels, en plus
-    du strip().casefold() habituel. Mesuré sur le vrai fichier (voir plan du
-    chantier) : résout les seuls échecs "cosmétiques" (accents, ponctuation,
-    Jr./Sr./II/III) sans rapprocher à tort deux joueurs différents -- le faux
-    positif mesuré par ailleurs (distance de Levenshtein entre "Caleb Wilson"
-    et "Jalen Wilson") ne partage aucun de ces éléments et reste un échec ici
-    aussi, comme attendu."""
-    without_diacritics = fold_diacritics(name.strip().casefold())
-    without_punct = re.sub(r"[^\w\s]", "", without_diacritics)
-    without_suffix = _ROSTER_NAME_SUFFIX_PATTERN.sub("", without_punct).strip()
-    return re.sub(r"\s+", " ", without_suffix).strip()
-
 
 def _levenshtein_distance(a: str, b: str) -> int:
     if a == b:

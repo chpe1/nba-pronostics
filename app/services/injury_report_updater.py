@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.models import Player, Team
-from app.services.csv_import import fold_diacritics
+from app.services.player_matching import fold_diacritics
 from app.services.injury_report_parser import InjuryReportEntry
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
