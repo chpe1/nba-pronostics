@@ -11,6 +11,7 @@ import AdminTeamDiagnosticView from '@/views/AdminTeamDiagnosticView.vue'
 import AdminDatabaseView from '@/views/AdminDatabaseView.vue'
 import AdminTeamsView from '@/views/AdminTeamsView.vue'
 import AdminPreviousSeasonStatsView from '@/views/AdminPreviousSeasonStatsView.vue'
+import AdminOddsView from '@/views/AdminOddsView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
 
 const routes = [
@@ -62,6 +63,12 @@ const routes = [
     path: '/admin/previous-season-stats',
     name: 'admin-previous-season-stats',
     component: AdminPreviousSeasonStatsView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/odds',
+    name: 'admin-odds',
+    component: AdminOddsView,
     meta: { requiresAuth: true },
   },
   {

@@ -9,6 +9,7 @@ const ADMIN_LINKS = [
   { name: 'admin-players', label: 'Joueurs' },
   { name: 'admin-teams', label: 'Équipes' },
   { name: 'admin-previous-season-stats', label: 'Stats N-1' },
+  { name: 'admin-odds', label: 'Cotes' },
   { name: 'admin-team-diagnostic', label: 'Diagnostic équipes' },
   { name: 'admin-database', label: 'Base de données' },
   { name: 'admin-settings', label: "Réglages généraux de l'algorithme" },

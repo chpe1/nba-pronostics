@@ -24,6 +24,15 @@ from app.schemas.import_history import (
     UnmatchedRosterNameRead,
 )
 from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.odds import (
+    OddsBatchResult,
+    OddsBatchResultEntry,
+    OddsBatchWrite,
+    OddsCellRead,
+    OddsDayRead,
+    OddsEntryWrite,
+    OddsGameRead,
+)
 
 __all__ = [
     "LoginRequest",
@@ -56,4 +65,11 @@ __all__ = [
     "FileRowWithoutMatchRead",
     "UnmatchedRosterNameRead",
     "MovedRosterEntryRead",
+    "OddsEntryWrite",
+    "OddsBatchWrite",
+    "OddsBatchResultEntry",
+    "OddsBatchResult",
+    "OddsCellRead",
+    "OddsGameRead",
+    "OddsDayRead",
 ]

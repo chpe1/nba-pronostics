@@ -20,6 +20,7 @@ from app.api.injuries import router as injuries_router  # noqa: E402
 from app.api.players import router as players_router  # noqa: E402
 from app.api.predictions import router as predictions_router  # noqa: E402
 from app.api.scores import router as scores_router  # noqa: E402
+from app.api.odds import router as odds_router  # noqa: E402
 from app.api.previous_season_stats import router as previous_season_stats_router  # noqa: E402
 from app.api.settings import router as settings_router  # noqa: E402
 from app.api.teams import router as teams_router  # noqa: E402
@@ -64,6 +65,7 @@ app.include_router(auth_router)
 app.include_router(imports_router)
 app.include_router(injuries_router)
 app.include_router(scores_router)
+app.include_router(odds_router)
 app.include_router(settings_router)
 app.include_router(predictions_router)
 app.include_router(games_router)
