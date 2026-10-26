@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.models import Player, Team
-from app.services.player_matching import fold_diacritics
+from app.services.player_matching import fold_diacritics, tolerant_name_key
 from app.services.injury_report_parser import InjuryReportEntry
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
@@ -29,11 +29,32 @@ def _normalize(s: str) -> str:
     return _NON_ALNUM.sub("", fold_diacritics(s.lower()))
 
 
+def _reordered_name(player_name_raw: str) -> str:
+    """Le PDF écrit "Nom,Prénom" (2 champs, un éventuel suffixe COLLÉ au nom : "LivelyII,Dereck")
+    -- mais parfois "Nom,Suffixe,Prénom" (3 champs, le suffixe est son PROPRE champ :
+    "Udeh,Jr.,Ernest"). Les deux formes cohabitent dans un même rapport (mesuré le 2026-10-26).
+    Un découpage à la première virgule seulement (l'ancien comportement) fabrique, pour la forme
+    à 3 champs, un prénom "Jr.,Ernest" qui ne correspond plus à rien -- le joueur n'était pas
+    retrouvé, en silence.
+
+    Reconstruit "Prénom Nom [Suffixe]" dans tous les cas, pour que le suffixe, quand il existe,
+    se retrouve TOUJOURS en fin de chaîne -- condition nécessaire pour que tolerant_name_key
+    (qui ne replie un suffixe qu'en fin de chaîne, voir player_matching.py) le reconnaisse."""
+    fields = [f.strip() for f in player_name_raw.split(",")]
+    if len(fields) == 3:
+        last, suffix, first = fields
+        return f"{first} {last} {suffix}"
+    if len(fields) == 2:
+        last, first = fields
+        return f"{first} {last}"
+    return player_name_raw  # forme jamais rencontrée (1 ou 4+ champs) : repli sur le texte brut
+
+
 def build_match_key(player_name_raw: str) -> str:
-    """"Last,First" (format du rapport PDF) -> clé normalisée comparable à
-    un nom "First Last" issu d'un import CSV (ordre Prénom puis Nom)."""
-    last, _, first = player_name_raw.partition(",")
-    return _normalize(first) + _normalize(last)
+    """"Last,First" ou "Last,Suffixe,First" (les deux formes réelles du rapport PDF, voir
+    _reordered_name) -> clé normalisée STRICTE, comparable à un nom "First Last[ Suffixe]"
+    issu d'un import CSV (ordre Prénom puis Nom)."""
+    return _normalize(_reordered_name(player_name_raw))
 
 
 def resolve_player(db: Session, entry: InjuryReportEntry) -> Player | None:
@@ -42,11 +63,26 @@ def resolve_player(db: Session, entry: InjuryReportEntry) -> Player | None:
     team = db.query(Team).filter(Team.abbreviation == entry.team_abbreviation).one_or_none()
     if team is None:
         return None
+    candidates = db.query(Player).filter(Player.team_id == team.id).all()
+
     key = build_match_key(entry.player_name_raw)
-    matches = [p for p in db.query(Player).filter(Player.team_id == team.id).all() if _normalize(p.name) == key]
-    # Deux joueurs d'une même équipe dont les noms ne diffèrent que par un accent ou une
-    # ponctuation : on ne choisit pas au hasard, l'entrée reste non rattachée.
-    return matches[0] if len(matches) == 1 else None
+    strict_matches = [p for p in candidates if _normalize(p.name) == key]
+    if len(strict_matches) == 1:
+        return strict_matches[0]
+    if strict_matches:
+        # Deux joueurs d'une même équipe dont les noms STRICTS coïncident déjà : ambigu,
+        # on ne choisit pas au hasard, l'entrée reste non rattachée.
+        return None
+
+    # Repli TOLÉRANT (accents, ponctuation, suffixe absent d'un seul des deux côtés) -- la
+    # même clé tolérante que le moteur de calcul (player_matching.tolerant_name_key), jamais
+    # une troisième normalisation réécrite ici. Même garde contre la confusion que partout
+    # ailleurs où elle est utilisée (pronostic_calculator.py, csv_import.py) : si la clé
+    # tolérante désigne plusieurs joueurs de l'équipe (ex. "Gary Payton" et "Gary Payton II"),
+    # aucun résultat plutôt qu'un choix au hasard.
+    tolerant_key = tolerant_name_key(_reordered_name(entry.player_name_raw))
+    tolerant_matches = [p for p in candidates if tolerant_name_key(p.name) == tolerant_key]
+    return tolerant_matches[0] if len(tolerant_matches) == 1 else None
 
 
 @dataclass

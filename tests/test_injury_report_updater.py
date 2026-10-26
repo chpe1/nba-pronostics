@@ -113,3 +113,65 @@ def test_two_players_differing_only_by_an_accent_are_left_unmatched_not_guessed(
     assert result.matched_count == 0 and len(result.unmatched_entries) == 1
     db_session.refresh(a); db_session.refresh(b)
     assert a.injury_status == InjuryStatus.HEALTHY and b.injury_status == InjuryStatus.HEALTHY
+
+
+# ----------------------------------------------------------------------------- suffixes (2026-10-26)
+# Les deux formes réelles observées le 2026-10-26 sur le même rapport : suffixe COLLÉ au nom
+# ("LivelyII,Dereck", 2 champs) et suffixe en CHAMP SÉPARÉ ("Udeh,Jr.,Ernest", 3 champs).
+
+
+def test_glued_suffix_form_already_worked_and_still_does_no_regression(db_session):
+    (lively,) = _team_with(db_session, "Dereck Lively II")
+    result = apply_injury_report(db_session, [_okc_entry("LivelyII,Dereck")])
+    assert result.matched_count == 1
+    db_session.refresh(lively)
+    assert lively.injury_status == InjuryStatus.OUT
+
+
+def test_separate_field_suffix_form_now_matches_the_real_udeh_case(db_session):
+    """Le cas réel du 2026-10-24/26 : "Udeh,Jr.,Ernest" (3 champs) ne retrouvait pas
+    "Ernest Udeh, Jr." en base -- un découpage à la première virgule fabriquait la clé
+    "jrernestudeh" au lieu de "ernestudehjr"."""
+    (udeh,) = _team_with(db_session, "Ernest Udeh, Jr.")
+    result = apply_injury_report(db_session, [_okc_entry("Udeh,Jr.,Ernest")])
+    assert result.matched_count == 1 and result.unmatched_entries == []
+    db_session.refresh(udeh)
+    assert udeh.injury_status == InjuryStatus.OUT
+
+
+def test_build_match_key_handles_the_three_field_form():
+    assert build_match_key("Udeh,Jr.,Ernest") == "ernestudehjr"
+
+
+def test_report_suffix_missing_on_one_side_falls_back_to_tolerant(db_session):
+    """Le rapport omet parfois un suffixe que la base porte (ou l'inverse) -- strict échoue,
+    la clé tolérante (celle du moteur, suffixes repliés des deux côtés) retrouve le joueur."""
+    (butler,) = _team_with(db_session, "Jimmy Butler III")
+    result = apply_injury_report(db_session, [_okc_entry("Butler,Jimmy")])  # rapport SANS le "III"
+    assert result.matched_count == 1
+    db_session.refresh(butler)
+    assert butler.injury_status == InjuryStatus.OUT
+
+
+def test_two_players_distinguished_only_by_a_suffix_are_left_unmatched_not_guessed(db_session):
+    """La garde contre la confusion, reprise de la clé tolérante du moteur : si elle désigne
+    plusieurs joueurs (ex. Gary Payton et Gary Payton II dans la même équipe), on ne choisit pas
+    au hasard. Le rapport écrit ici un suffixe ("Jr.") qu'aucun des deux ne porte réellement --
+    0 correspondance stricte (ni "garypayton" ni "garypaytonii"), donc repli tolérant ; une fois
+    le suffixe replié des DEUX côtés, père et fils deviennent indiscernables ("gary payton")."""
+    father, son = _team_with(db_session, "Gary Payton", "Gary Payton II")
+    result = apply_injury_report(db_session, [_okc_entry("PaytonJr.,Gary")])
+    assert result.matched_count == 0 and len(result.unmatched_entries) == 1
+    db_session.refresh(father); db_session.refresh(son)
+    assert father.injury_status == InjuryStatus.HEALTHY and son.injury_status == InjuryStatus.HEALTHY
+
+
+def test_two_players_distinguished_only_by_a_suffix_each_still_matches_their_own_exact_form(db_session):
+    """Mais quand le rapport ÉCRIT le suffixe, le strict suffit à départager -- pas besoin du
+    repli tolérant, donc pas d'ambiguïté : chacun retrouve SA ligne, jamais l'autre."""
+    father, son = _team_with(db_session, "Gary Payton", "Gary Payton II")
+    result = apply_injury_report(db_session, [_okc_entry("PaytonII,Gary")])
+    assert result.matched_count == 1
+    db_session.refresh(father); db_session.refresh(son)
+    assert father.injury_status == InjuryStatus.HEALTHY
+    assert son.injury_status == InjuryStatus.OUT
