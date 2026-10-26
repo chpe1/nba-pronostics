@@ -146,6 +146,36 @@ const homeQuestionablePlayers = computed(() => prediction.value?.breakdown?.home
 const awayAbsentPlayers = computed(() => prediction.value?.breakdown?.away?.absent_players ?? [])
 const awayQuestionablePlayers = computed(() => prediction.value?.breakdown?.away?.questionable_players ?? [])
 
+// Probabilité de victoire (modèle d'écart de points), calculée À CÔTÉ de la note par le serveur
+// (app/services/win_probability.py) : affichée dans son propre bloc, sans accent (l'accent reste à la note).
+// Trois règles d'honnêteté : au-delà du seuil ci-dessous, elle n'est pas mesurée (et l'écran le dit) ; aucune
+// comparaison aux cotes ni « value » ; elle ignore les absents (et l'écran le dit, avec leur nombre).
+// Seuil comparé à la valeur ARRONDIE affichée : une probabilité affichée « 90 % » porte la mention, jamais
+// un « 90 % » sans elle à côté d'un « 90 % » avec.
+const UNMEASURED_FROM_PERCENT = 90
+
+const probabilityInputs = computed(() => (isRevealed.value ? prediction.value.probability_inputs ?? null : null))
+const homeProbability = computed(() => (isRevealed.value ? prediction.value.home_win_probability ?? null : null))
+const hasProbability = computed(() => homeProbability.value !== null)
+const homePercent = computed(() => Math.round(homeProbability.value * 100))
+const awayPercent = computed(() => 100 - homePercent.value)
+const isUnmeasuredLevel = computed(
+  () => hasProbability.value && Math.max(homePercent.value, awayPercent.value) >= UNMEASURED_FROM_PERCENT,
+)
+// Écart N-1 non renseigné : le serveur n'a PAS calculé (jamais remplacé par 0) et dit pour quelle(s) équipe(s).
+const missingPrevAbbreviations = computed(() => {
+  const ids = probabilityInputs.value?.missing_prev_point_diff ?? []
+  return ids.map((id) => (id === props.game.home_team_id ? props.game.home_team_abbreviation : props.game.away_team_abbreviation))
+})
+const gamesUsed = computed(() =>
+  probabilityInputs.value
+    ? { home: probabilityInputs.value.home.games_used, away: probabilityInputs.value.away.games_used }
+    : null,
+)
+// Les absents de la carte sont ceux que la NOTE compte (au-dessus du seuil de minutes) ; la probabilité n'en
+// compte aucun.
+const absentCount = computed(() => homeAbsentPlayers.value.length + awayAbsentPlayers.value.length)
+
 const homePastilles = computed(() =>
   buildPastilles(
     isRevealed.value ? homeAbsentPlayers.value : [],
@@ -300,6 +330,43 @@ const awayPastilles = computed(() =>
       <span v-else class="text-text-disabled">Pronostic indisponible</span>
       <p v-if="reliabilityCapped" data-testid="reliability-cap-note" class="mt-1 text-xs text-text-secondary">
         Confiance limitée : début de saison, notes basées sur la saison précédente.
+      </p>
+    </div>
+
+    <div v-if="isRevealed" class="mt-3 border-t border-border pt-2" data-testid="win-probability">
+      <p class="text-xs font-medium text-text-secondary">Probabilité de victoire · modèle expérimental, distinct de la note</p>
+      <template v-if="hasProbability">
+        <!-- Espacements portés par gap (une espace en tête de balise est supprimée au rendu : « CHA8 % » vu en
+             recette) ; espace insécable avant « % », qui ne doit jamais partir seul à la ligne. -->
+        <p class="mt-1 flex flex-wrap items-baseline gap-x-4 text-sm text-text" data-testid="win-probability-values">
+          <span class="inline-flex items-baseline gap-1.5">
+            <span class="font-title">{{ game.away_team_abbreviation }}</span>
+            <span class="font-mono tabular-nums">{{ awayPercent }}&nbsp;%</span>
+          </span>
+          <span class="inline-flex items-baseline gap-1.5">
+            <span class="font-title">{{ game.home_team_abbreviation }}</span>
+            <span class="font-mono tabular-nums">{{ homePercent }}&nbsp;%</span>
+          </span>
+        </p>
+        <p v-if="isUnmeasuredLevel" data-testid="win-probability-unmeasured" class="mt-1 text-xs text-text-secondary">
+          À 90 % et au-delà, ce niveau n'est pas mesuré : 45 matchs seulement sur deux saisons, aux résultats
+          contradictoires.
+        </p>
+        <p v-if="absentCount > 0" data-testid="win-probability-absents" class="mt-1 text-xs text-text-secondary">
+          Ne tient pas compte des absents : {{ absentCount }} joueur{{ absentCount > 1 ? 's' : '' }}
+          absent{{ absentCount > 1 ? 's' : '' }} sur ce match (la note, elle, les compte).
+        </p>
+      </template>
+      <p v-else-if="missingPrevAbbreviations.length" data-testid="win-probability-missing" class="mt-1 text-xs text-text-secondary">
+        Probabilité indisponible : écart de points de la saison précédente non renseigné pour
+        {{ missingPrevAbbreviations.join(' et ') }}.
+      </p>
+      <p v-else data-testid="win-probability-legacy" class="mt-1 text-xs text-text-secondary">
+        Probabilité non calculée pour ce pronostic (calculé avant son introduction).
+      </p>
+      <p v-if="gamesUsed" data-testid="win-probability-games" class="mt-1 text-xs text-text-secondary">
+        Matchs terminés de la saison pris en compte : {{ game.away_team_abbreviation }} {{ gamesUsed.away }} ·
+        {{ game.home_team_abbreviation }} {{ gamesUsed.home }}, plus la saison précédente.
       </p>
     </div>
   </article>

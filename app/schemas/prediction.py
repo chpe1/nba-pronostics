@@ -18,6 +18,12 @@ class PredictionRead(BaseModel):
     spread: float
     reliability: ReliabilityLevel
     breakdown: dict
+    # Probabilité de victoire (modèle d'écart de points, à côté de la note) : None pour un pronostic calculé
+    # avant son introduction, ou quand un écart N-1 manque (alors `probability_inputs` dit lequel).
+    probability_model_version: str | None = None
+    expected_margin: float | None = None
+    home_win_probability: float | None = None
+    probability_inputs: dict | None = None
     computed_at: datetime
 
 
@@ -65,6 +71,11 @@ class TodayPredictionRead(BaseModel):
     spread: float | None = None
     reliability: ReliabilityLevel | None = None
     breakdown: dict | None = None
+    # Masqués avec le reste du résultat quand `is_upcoming` est vrai.
+    probability_model_version: str | None = None
+    expected_margin: float | None = None
+    home_win_probability: float | None = None
+    probability_inputs: dict | None = None
     computed_at: datetime
 
 

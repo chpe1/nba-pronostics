@@ -27,7 +27,7 @@ from app.models import (
     Settings,
     Team,
 )
-from app.services import nba_calendar
+from app.services import nba_calendar, win_probability
 from app.services.player_matching import (
     find_active_player_by_name_tolerant,
     find_prev_season_stat_by_name_tolerant,
@@ -640,6 +640,15 @@ def save_prediction(db: Session, game: Game, settings: Settings) -> Prediction:
         "away": breakdown_to_dict(result.away),
         "reliability_cap": reliability_cap_to_dict(result),
     }
+
+    # Probabilité de victoire, À CÔTÉ de la note : calculée après elle, sans rien lui emprunter ni lui
+    # rendre (services/win_probability.py). Même protection que la note (refus ci-dessus après le coup
+    # d'envoi), même gel des valeurs (Décision n°24).
+    probability = win_probability.compute_win_probability(db, game)
+    prediction.probability_model_version = probability.version
+    prediction.expected_margin = probability.expected_margin
+    prediction.home_win_probability = probability.home_win_probability
+    prediction.probability_inputs = win_probability.inputs_to_dict(probability)
 
     db.flush()
     return prediction

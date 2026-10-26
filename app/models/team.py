@@ -28,6 +28,11 @@ class Team(Base):
     win_pct_home_prev_season: Mapped[float] = mapped_column(Float, default=0.0)
     win_pct_away_prev_season: Mapped[float] = mapped_column(Float, default=0.0)
 
+    # Écart de points moyen de l'équipe sur la saison précédente (marge par match, saison régulière), saisi à
+    # la main (écran Équipes). Ne sert QU'À la probabilité de victoire (services/win_probability.py), jamais à
+    # la note. NULL = inconnu : la probabilité n'est alors pas calculée -- jamais remplacée par 0.
+    point_diff_prev_season: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()

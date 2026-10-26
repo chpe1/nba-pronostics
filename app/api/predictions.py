@@ -90,6 +90,10 @@ def _to_today_prediction_read(prediction: Prediction, game: Game) -> TodayPredic
         spread=prediction.spread,
         reliability=prediction.reliability,
         breakdown=prediction.breakdown,
+        probability_model_version=prediction.probability_model_version,
+        expected_margin=prediction.expected_margin,
+        home_win_probability=prediction.home_win_probability,
+        probability_inputs=prediction.probability_inputs,
         computed_at=prediction.computed_at,
     )
 

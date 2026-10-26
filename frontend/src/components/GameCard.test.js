@@ -96,3 +96,90 @@ describe('plafond de la fiabilité en début de saison', () => {
     expect(note(wrapper).exists()).toBe(false)
   })
 })
+
+describe('probabilité de victoire (à côté de la note)', () => {
+  const inputs = (homeGames = 3, awayGames = 4, missing = []) => ({
+    params: { w: 8, c: 0.7, home_advantage: 1.84, sigma: 14.13 },
+    home: { team_id: 1, prev_point_diff: 8.16, games_used: homeGames, margin_sum: 10, force: 6 },
+    away: { team_id: 2, prev_point_diff: 7.7, games_used: awayGames, margin_sum: 5, force: 5 },
+    missing_prev_point_diff: missing,
+  })
+  const revealed = (extra = {}, absents = { home: [], away: [] }) => ({
+    ...BASE,
+    prediction: {
+      id: 1,
+      game_id: 1,
+      is_upcoming: false,
+      home_team_note: 70,
+      away_team_note: 60,
+      predicted_winner_team_id: 1,
+      spread: 10,
+      reliability: 'moyenne',
+      breakdown: {
+        home: { absent_players: absents.home, questionable_players: [] },
+        away: { absent_players: absents.away, questionable_players: [] },
+      },
+      probability_model_version: 'ecart1/w=8/c=0.7/hca=1.84/sigma=14.13',
+      expected_margin: 2.6,
+      home_win_probability: 0.573,
+      probability_inputs: inputs(),
+      computed_at: '2026-10-26T19:00:00',
+      ...extra,
+    },
+  })
+  const block = (w) => w.get('[data-testid="win-probability"]')
+  const find = (w, id) => w.find(`[data-testid="win-probability-${id}"]`)
+
+  it('affiche les deux probabilités dans un bloc distinct de la note, et les matchs utilisés', () => {
+    const w = mount(GameCard, { props: { game: revealed() } })
+    expect(block(w).text()).toContain('distinct de la note')
+    // Chaque équipe et son pourcentage sont deux éléments distincts (l'espace entre eux est portée par la mise
+    // en page : un texte collé « BOS43 % » ne serait pas attrapé par une simple lecture du texte de la carte).
+    const pairs = find(w, 'values').findAll(':scope > span').map((s) => s.findAll('span').map((x) => x.text()))
+    expect(pairs).toEqual([['BOS', '43 %'], ['DET', '57 %']])
+    expect(find(w, 'games').text()).toContain('BOS 4')
+    expect(find(w, 'games').text()).toContain('DET 3')
+    expect(find(w, 'unmeasured').exists()).toBe(false)
+    expect(find(w, 'absents').exists()).toBe(false)
+  })
+
+  it("n'affiche aucune cote ni value : seulement des probabilités", () => {
+    const text = block(mount(GameCard, { props: { game: revealed() } })).text().toLowerCase()
+    for (const word of ['cote', 'value', 'pari', 'mise']) expect(text).not.toContain(word)
+  })
+
+  it('porte la mention « non mesuré » dès que la probabilité AFFICHÉE atteint 90 %, des deux côtés', () => {
+    expect(find(mount(GameCard, { props: { game: revealed({ home_win_probability: 0.896 }) } }), 'unmeasured').exists()).toBe(true)
+    expect(find(mount(GameCard, { props: { game: revealed({ home_win_probability: 0.08 }) } }), 'unmeasured').exists()).toBe(true)
+    expect(find(mount(GameCard, { props: { game: revealed({ home_win_probability: 0.894 }) } }), 'unmeasured').exists()).toBe(false)
+  })
+
+  it('dit que les absents sont ignorés, avec leur nombre sur les deux équipes', () => {
+    const absents = { home: [{ name: 'A', per: 20 }], away: [{ name: 'B', per: 15 }, { name: 'C', per: 12 }] }
+    const w = mount(GameCard, { props: { game: revealed({}, absents) } })
+    expect(find(w, 'absents').text()).toMatch(/Ne tient pas compte des absents : 3\s+joueurs\s+absents/)
+    const one = mount(GameCard, { props: { game: revealed({}, { home: [{ name: 'A', per: 20 }], away: [] }) } })
+    expect(find(one, 'absents').text()).toMatch(/1\s+joueur\s+absent\s+sur/)
+  })
+
+  it("écart N-1 manquant : pas de pourcentage, et l'équipe en cause est nommée (jamais un 0)", () => {
+    const w = mount(GameCard, {
+      props: { game: revealed({ home_win_probability: null, expected_margin: null, probability_inputs: inputs(0, 0, [2]) }) },
+    })
+    expect(find(w, 'values').exists()).toBe(false)
+    expect(find(w, 'missing').text()).toContain('non renseigné pour BOS')
+    expect(block(w).text()).not.toMatch(/\d+ %/)
+  })
+
+  it('ancien pronostic sans probabilité : le dit, sans inventer de chiffre', () => {
+    const legacy = revealed({ home_win_probability: undefined, expected_margin: undefined, probability_inputs: undefined, probability_model_version: undefined })
+    const w = mount(GameCard, { props: { game: legacy } })
+    expect(find(w, 'legacy').exists()).toBe(true)
+    expect(find(w, 'games').exists()).toBe(false)
+  })
+
+  it("n'affiche rien pour un pronostic non révélé (match trop lointain)", () => {
+    const hidden = { ...BASE, prediction: { id: 1, game_id: 1, is_upcoming: true, computed_at: '2026-10-21T19:31:37' } }
+    expect(mount(GameCard, { props: { game: hidden } }).find('[data-testid="win-probability"]').exists()).toBe(false)
+  })
+})

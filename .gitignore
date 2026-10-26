@@ -47,3 +47,7 @@ screenshots/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Études hors production (données balldontlie, scripts de mesure) : jamais publiées. Ici plutôt que dans
+# .git/info/exclude, qui est local et disparaîtrait à un nouveau clone (2026-10-26).
+/Tools/
