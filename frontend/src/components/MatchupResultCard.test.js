@@ -83,6 +83,18 @@ describe('fiabilité plafonnée', () => {
     expect(detail).toContain('limitée à « Moyenne »')
   })
 
+  it('dit que la note repose sur peu de matchs de la saison en cours quand le motif est « few_games »', () => {
+    const wrapper = mountCard(team(), team({ team_id: 2 }), {
+      reliability: 'moyenne',
+      reliabilityCap: { capped: true, uncapped: 'forte', reason: 'few_games', games_threshold: 40, fewest_games: 14 },
+    })
+    const detail = wrapper.get('[data-testid="reliability-cap-detail"]').text()
+    expect(detail).toContain('peu de matchs de la saison en cours')
+    expect(detail).toContain('en a 14')
+    expect(detail).toContain("jusqu'à 40")
+    expect(detail).not.toContain('vient de la saison précédente')
+  })
+
   it("n'explique rien sans plafonnement", () => {
     const wrapper = mountCard(team(), team({ team_id: 2 }), { reliabilityCap: { capped: false, uncapped: 'moyenne', reason: null } })
     expect(wrapper.find('[data-testid="reliability-cap-detail"]').exists()).toBe(false)

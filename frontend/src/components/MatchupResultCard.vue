@@ -8,7 +8,7 @@ const props = defineProps({
   reliability: { type: String, required: true },
   home: { type: Object, required: true },
   away: { type: Object, required: true },
-  // { capped, uncapped, reason } : l'étiquette a-t-elle été plafonnée en début de saison ? (absent des anciens pronostics)
+  // { capped, uncapped, reason, games_threshold, fewest_games } : l'étiquette a-t-elle été plafonnée, et pourquoi ? (absent des anciens pronostics)
   reliabilityCap: { type: Object, default: null },
 })
 
@@ -45,7 +45,13 @@ const reliabilityLabel = {
       class="-mt-2 text-xs text-text-secondary"
     >
       Fiabilité plafonnée : d'après l'écart seul, « {{ reliabilityLabel[reliabilityCap.uncapped] || reliabilityCap.uncapped }} » ;
-      limitée à « Moyenne » car, en début de saison, la note de base d'au moins une équipe vient de la saison précédente.
+      <template v-if="reliabilityCap.reason === 'few_games'">
+        limitée à « Moyenne » car la note repose sur peu de matchs de la saison en cours : l'équipe la moins avancée en a
+        {{ reliabilityCap.fewest_games }}, le plafond tient jusqu'à {{ reliabilityCap.games_threshold ?? 40 }}.
+      </template>
+      <template v-else>
+        limitée à « Moyenne » car, en début de saison, la note de base d'au moins une équipe vient de la saison précédente.
+      </template>
     </p>
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

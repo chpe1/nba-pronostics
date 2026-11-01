@@ -183,3 +183,126 @@ describe('probabilité de victoire (à côté de la note)', () => {
     expect(mount(GameCard, { props: { game: hidden } }).find('[data-testid="win-probability"]').exists()).toBe(false)
   })
 })
+
+describe('mesure sur laquelle repose la note (bascule au 11e match, bases différentes)', () => {
+  const withBasis = (homeEarly, awayEarly, extra = {}) => ({
+    ...BASE,
+    prediction: {
+      id: 1,
+      game_id: 1,
+      is_upcoming: false,
+      home_team_note: 70,
+      away_team_note: 20,
+      predicted_winner_team_id: 1,
+      spread: 50,
+      reliability: 'moyenne',
+      breakdown: {
+        home: { absent_players: [], questionable_players: [], in_early_season: homeEarly },
+        away: { absent_players: [], questionable_players: [], in_early_season: awayEarly },
+        ...extra,
+      },
+      computed_at: '2026-11-07T19:00:00',
+    },
+  })
+  const switchNote = (w) => w.find('[data-testid="basis-switch-note"]')
+  const mixedNote = (w) => w.find('[data-testid="basis-mixed-note"]')
+
+  it('ne dit rien tant que les deux équipes sont sur la saison précédente', () => {
+    const w = mount(GameCard, { props: { game: withBasis(true, true) } })
+    expect(switchNote(w).exists()).toBe(false)
+    expect(mixedNote(w).exists()).toBe(false)
+  })
+
+  it("quand une seule a basculé : UNE phrase dit qui est sur quelle mesure, bascule comprise (pas de paragraphe en double)", () => {
+    const w = mount(GameCard, { props: { game: withBasis(false, true) } }) // DET (domicile) a basculé, BOS non
+    expect(mixedNote(w).text()).toBe(
+      "Les deux équipes ne sont pas évaluées sur la même base : BOS sur la saison précédente, DET sur la saison en cours depuis son 11e match. L'écart compare deux mesures différentes.",
+    )
+    expect(switchNote(w).exists()).toBe(false)
+  })
+
+  it("nomme l'équipe de l'extérieur quand c'est elle qui a basculé", () => {
+    const w = mount(GameCard, { props: { game: withBasis(true, false) } })
+    expect(mixedNote(w).text()).toContain('DET sur la saison précédente, BOS sur la saison en cours depuis son 11e match')
+  })
+
+  it('quand les deux ont basculé : une mention au pluriel, et PAS de « bases différentes »', () => {
+    const w = mount(GameCard, { props: { game: withBasis(false, false) } })
+    expect(switchNote(w).text()).toBe('BOS et DET : note basée sur la saison en cours depuis leur 11e match.')
+    expect(mixedNote(w).exists()).toBe(false)
+  })
+
+  it("ne devine rien pour un ancien pronostic sans l'information, ni pour un pronostic non révélé", () => {
+    const legacy = withBasis(undefined, undefined)
+    expect(mixedNote(mount(GameCard, { props: { game: legacy } })).exists()).toBe(false)
+    expect(switchNote(mount(GameCard, { props: { game: legacy } })).exists()).toBe(false)
+    const hidden = { ...BASE, prediction: { id: 1, game_id: 1, is_upcoming: true, computed_at: '2026-11-07T19:00:00' } }
+    expect(switchNote(mount(GameCard, { props: { game: hidden } })).exists()).toBe(false)
+  })
+})
+
+describe("plafond tenu jusqu'à 40 matchs : un motif qui dit la vérité", () => {
+  const capped = (cap, flags = { home: false, away: false }) => ({
+    ...BASE,
+    prediction: {
+      id: 1,
+      game_id: 1,
+      is_upcoming: false,
+      home_team_note: 70,
+      away_team_note: 20,
+      predicted_winner_team_id: 1,
+      spread: 50,
+      reliability: 'moyenne',
+      breakdown: {
+        home: { absent_players: [], questionable_players: [], in_early_season: flags.home },
+        away: { absent_players: [], questionable_players: [], in_early_season: flags.away },
+        reliability_cap: cap,
+      },
+      computed_at: '2026-11-09T19:00:00',
+    },
+  })
+  const note = (w) => w.get('[data-testid="reliability-cap-note"]').text()
+
+  it("« peu de matchs de la saison en cours » quand les deux ont basculé mais qu'une a moins de 40 matchs", () => {
+    const w = mount(GameCard, {
+      props: { game: capped({ capped: true, uncapped: 'forte', reason: 'few_games', games_threshold: 40, fewest_games: 14 }) },
+    })
+    expect(note(w)).toBe(
+      'Confiance limitée : la note repose sur peu de matchs de la saison en cours (moins de 40 pour au moins une des deux équipes).',
+    )
+    expect(note(w)).not.toContain('saison précédente') // faux à ce stade : ne doit JAMAIS apparaître
+  })
+
+  it("reprend le seuil envoyé par le serveur plutôt qu'un 40 codé en dur", () => {
+    const w = mount(GameCard, {
+      props: { game: capped({ capped: true, uncapped: 'forte', reason: 'few_games', games_threshold: 25, fewest_games: 14 }) },
+    })
+    expect(note(w)).toContain('moins de 25')
+  })
+
+  it('début de saison, une équipe a déjà basculé : ne prétend pas que les DEUX notes viennent de la saison précédente', () => {
+    const w = mount(GameCard, {
+      props: {
+        game: capped(
+          { capped: true, uncapped: 'forte', reason: 'early_season', games_threshold: 40, fewest_games: 7 },
+          { home: false, away: true },
+        ),
+      },
+    })
+    // Le détail (qui est sur quelle mesure) est dans la phrase « bases différentes » : le plafond ne le répète pas.
+    expect(note(w)).toBe('Confiance limitée : début de saison.')
+    expect(note(w)).not.toContain('saison précédente') // plus de redite, et jamais de « notes basées sur la saison précédente »
+  })
+
+  it('les deux équipes en début de saison : le texte historique, inchangé', () => {
+    const w = mount(GameCard, {
+      props: {
+        game: capped(
+          { capped: true, uncapped: 'forte', reason: 'early_season', games_threshold: 40, fewest_games: 3 },
+          { home: true, away: true },
+        ),
+      },
+    })
+    expect(note(w)).toBe('Confiance limitée : début de saison, notes basées sur la saison précédente.')
+  })
+})

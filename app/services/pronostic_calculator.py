@@ -39,6 +39,14 @@ ABSENT_STATUSES = {InjuryStatus.OUT, InjuryStatus.DOUBTFUL}
 # Une équipe est en "début de saison" tant qu'elle a joué moins de N matchs.
 EARLY_SEASON_GAME_THRESHOLD = 10
 
+# Plafond de l'ÉTIQUETTE de fiabilité : « forte » est abaissée à « moyenne » tant que l'équipe la MOINS avancée des deux
+# a joué moins de RELIABILITY_CAP_GAME_THRESHOLD matchs terminés. Décision du 2026-11-01, d'après l'étude de la falaise
+# (Tools/etude_falaise/) : une fois la note basculée sur la saison en cours (11e match), elle repose sur peu de matchs
+# -- au 10e match le bruit médian d'un côté vaut 13 points et 14 % des côtés sont à 0 % ou 100 % ; avec la règle actuelle
+# un signal « fort » ne trouve le favori que 67 fois sur 100 entre le 16e et le 40e match, contre 79 au-delà. Constante
+# en dur, pas un curseur Settings : même raisonnement que EARLY_SEASON_GAME_THRESHOLD (Décision d'architecture n°12).
+RELIABILITY_CAP_GAME_THRESHOLD = 40
+
 # Fenêtre de calcul du 3-matchs-en-4-nuits : les 3 nuits précédant le match
 # (le match du jour compte comme le 3e/4e match de la fenêtre de 4 nuits).
 THREE_IN_FOUR_WINDOW_DAYS = 3
@@ -170,10 +178,15 @@ class MatchupResult:
     spread: float
     predicted_winner_team_id: int
     reliability: ReliabilityLevel
-    # Niveau d'après le seul écart, avant plafonnement de début de saison ; `reliability_capped` dit si
-    # l'étiquette a été abaissée parce que la note de base d'au moins une équipe vient de la saison précédente.
+    # Niveau d'après le seul écart, avant plafonnement ; `reliability_capped` dit si l'étiquette a été abaissée.
+    # `reliability_cap_reason` : « early_season » si la note de base d'au moins une équipe vient encore de la saison
+    # précédente (moins de EARLY_SEASON_GAME_THRESHOLD matchs), « few_games » si les deux sont passées sur la saison en
+    # cours mais que l'une a encore moins de RELIABILITY_CAP_GAME_THRESHOLD matchs. `fewest_games_played` : matchs de
+    # l'équipe la moins avancée, tel qu'il a décidé du plafond.
     reliability_uncapped: ReliabilityLevel | None = None
     reliability_capped: bool = False
+    reliability_cap_reason: str | None = None
+    fewest_games_played: int = 0
 
 
 def count_finished_games_this_season(
@@ -539,8 +552,13 @@ def compute_matchup(db: Session, game: Game, settings: Settings) -> MatchupResul
     # seule l'étiquette est plafonnée. Une seule équipe sous le seuil suffit : l'écart compare alors une
     # note issue de l'an dernier à une autre, il reste en partie un écart de saison passée.
     early_season_match = home.in_early_season or away.in_early_season
-    capped = early_season_match and uncapped == ReliabilityLevel.FORTE
+    # Le plafond ne se lève PAS à la bascule sur la saison en cours : il tient jusqu'à ce que l'équipe la moins avancée
+    # ait RELIABILITY_CAP_GAME_THRESHOLD matchs (superensemble du cas précédent : 10 < 40). Seule l'étiquette change.
+    fewest_games = min(home.games_played_this_season, away.games_played_this_season)
+    cap_applies = early_season_match or fewest_games < RELIABILITY_CAP_GAME_THRESHOLD
+    capped = cap_applies and uncapped == ReliabilityLevel.FORTE
     reliability = ReliabilityLevel.MOYENNE if capped else uncapped
+    cap_reason = ("early_season" if early_season_match else "few_games") if capped else None
 
     return MatchupResult(
         game_id=game.id,
@@ -551,6 +569,8 @@ def compute_matchup(db: Session, game: Game, settings: Settings) -> MatchupResul
         reliability=reliability,
         reliability_uncapped=uncapped,
         reliability_capped=capped,
+        reliability_cap_reason=cap_reason,
+        fewest_games_played=fewest_games,
     )
 
 
@@ -559,7 +579,10 @@ def reliability_cap_to_dict(result: MatchupResult) -> dict:
     return {
         "capped": result.reliability_capped,
         "uncapped": result.reliability_uncapped.value if result.reliability_uncapped else None,
-        "reason": "early_season" if result.reliability_capped else None,
+        "reason": result.reliability_cap_reason,
+        # Seuil et matchs de l'équipe la moins avancée : la carte dit « moins de 40 matchs » sans coder 40 en dur.
+        "games_threshold": RELIABILITY_CAP_GAME_THRESHOLD,
+        "fewest_games": result.fewest_games_played,
     }
 
 

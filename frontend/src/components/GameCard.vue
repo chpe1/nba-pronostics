@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import DivergentGauge from './DivergentGauge.vue'
 import { reliabilityTreatment } from '@/constants/reliability'
 import { calendarLabels } from '@/utils/pastilles'
+import { joinTeams, noteBasis } from '@/utils/noteBasis'
 import { resolveTeamBadges } from '@/utils/teamColors'
 import { useThemeStore } from '@/stores/theme'
 
@@ -52,11 +53,43 @@ const isRevealed = computed(() => Boolean(prediction.value) && !prediction.value
 const isUpcoming = computed(() => Boolean(prediction.value) && prediction.value.is_upcoming)
 const isNeverCalculated = computed(() => !prediction.value)
 
-// Début de saison : l'étiquette « forte » est plafonnée à « modérée » tant que la note de base d'au moins une équipe
-// vient de la saison précédente (le serveur le dit dans breakdown.reliability_cap ; l'écart affiché, lui, ne change pas).
+// L'étiquette « forte » est plafonnée à « modérée » (le serveur le dit dans breakdown.reliability_cap ; l'écart affiché,
+// lui, ne change pas), pour l'un de deux motifs que la carte doit énoncer VRAIMENT (décision du 2026-11-01) :
+//   - « early_season » : la note de base d'au moins une équipe vient encore de la saison précédente ;
+//   - « few_games »    : les deux sont passées sur la saison en cours, mais l'une a encore moins de 40 matchs, donc la
+//                        note repose sur peu de matchs (étude de la falaise) -- le plafond ne se lève plus au 11e match.
 const reliabilityCapped = computed(
   () => isRevealed.value && prediction.value.breakdown?.reliability_cap?.capped === true,
 )
+
+// Sur quelle mesure repose la note de chaque équipe (saison précédente jusqu'à 10 matchs, saison en cours ensuite).
+// Deux mentions, jamais devinées : l'une dit qu'une équipe a basculé, l'autre qu'un match oppose deux équipes évaluées
+// sur des bases DIFFÉRENTES (l'écart n'a alors plus le même sens, voir utils/noteBasis.js). Rien tant que le pronostic
+// n'est pas révélé, ni pour un ancien pronostic sans `in_early_season`.
+const basis = computed(() =>
+  isRevealed.value
+    ? noteBasis(prediction.value.breakdown, props.game.home_team_abbreviation, props.game.away_team_abbreviation)
+    : { known: false, current: [], previous: [], mixed: false },
+)
+// Cas MIXTE (une seule équipe a basculé) : la phrase « bases différentes » dit déjà qui est sur quelle mesure, bascule
+// comprise -- une mention de bascule à part et un plafond qui répète « saison précédente » feraient trois paragraphes
+// pour une seule information (vu au rendu, 2026-11-01). La mention de bascule seule ne sert donc que quand les deux
+// équipes ont basculé.
+const hasSwitchedTeam = computed(() => basis.value.known && basis.value.current.length > 0 && !basis.value.mixed)
+
+const reliabilityCapText = computed(() => {
+  if (!reliabilityCapped.value) return ''
+  const cap = prediction.value.breakdown.reliability_cap
+  if (cap.reason === 'few_games') {
+    return `Confiance limitée : la note repose sur peu de matchs de la saison en cours (moins de ${cap.games_threshold ?? 40} pour au moins une des deux équipes).`
+  }
+  // « early_season », y compris pour un pronostic d'avant le 2026-11-01 (seul motif qui existait). Quand une équipe a
+  // déjà basculé, « notes basées sur la saison précédente » serait faux : on dit ce qui est vrai.
+  if (basis.value.mixed) {
+    return 'Confiance limitée : début de saison.'
+  }
+  return 'Confiance limitée : début de saison, notes basées sur la saison précédente.'
+})
 
 // "Journée passée" (§10.3) : détecté via `status`, jamais via la seule
 // présence d'un score (voir docstring GameWithPredictionRead côté backend --
@@ -329,7 +362,15 @@ const awayPastilles = computed(() =>
            journée de 12 matchs). -->
       <span v-else class="text-text-disabled">Pronostic indisponible</span>
       <p v-if="reliabilityCapped" data-testid="reliability-cap-note" class="mt-1 text-xs text-text-secondary">
-        Confiance limitée : début de saison, notes basées sur la saison précédente.
+        {{ reliabilityCapText }}
+      </p>
+      <p v-if="hasSwitchedTeam" data-testid="basis-switch-note" class="mt-1 text-xs text-text-secondary">
+        {{ joinTeams(basis.current) }} : note basée sur la saison en cours depuis
+        {{ basis.current.length > 1 ? 'leur' : 'son' }} 11e match.
+      </p>
+      <p v-if="basis.mixed" data-testid="basis-mixed-note" class="mt-1 text-xs text-text-secondary">
+        Les deux équipes ne sont pas évaluées sur la même base : {{ basis.previous[0] }} sur la saison précédente,
+        {{ basis.current[0] }} sur la saison en cours depuis son 11e match. L'écart compare deux mesures différentes.
       </p>
     </div>
 

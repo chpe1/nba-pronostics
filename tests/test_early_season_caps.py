@@ -1,7 +1,9 @@
-"""Deux plafonds de début de saison (2026-10-21) :
+"""Deux plafonds de début de saison (2026-10-21), le second étendu le 2026-11-01 :
 1. le bonus draft d'une équipe est plafonné à la valeur du rang 1 du barème (lue dans la config, jamais codée en dur) ;
-2. tant que la note de base d'au moins une équipe vient de la saison précédente, l'étiquette de fiabilité ne dépasse
-   pas « moyenne » (l'écart, lui, ne change pas)."""
+2. l'étiquette de fiabilité ne dépasse pas « moyenne » tant que l'équipe la moins avancée des deux a joué moins de
+   RELIABILITY_CAP_GAME_THRESHOLD (40) matchs -- d'abord parce que la note de base d'une équipe vient de la saison
+   précédente (motif « early_season »), puis, une fois passée sur la saison en cours, parce qu'elle repose encore sur
+   peu de matchs (motif « few_games », étude de la falaise). L'écart et les notes, eux, ne changent jamais."""
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -136,6 +138,16 @@ def _play_ten_games(db_session, team, opponent):
     db_session.flush()
 
 
+def _play_games(db_session, team, opponent, n):
+    """n matchs terminés de `team` avant GAME_DAY, un par jour (la contrainte d'unicité interdit deux fois le même jour)."""
+    start = GAME_DAY - timedelta(days=70)
+    for i in range(n):
+        db_session.add(Game(
+            season=SEASON, game_date=datetime.combine(start + timedelta(days=i), datetime.min.time()), home_team_id=team.id,
+            away_team_id=opponent.id, status=GameStatus.FINISHED, home_score=100, away_score=90))
+    db_session.flush()
+
+
 def _matchup(db_session, home, away):
     game = Game(season=SEASON, game_date=datetime.combine(GAME_DAY, datetime.min.time()).replace(hour=19),
                 home_team_id=home.id, away_team_id=away.id, status=GameStatus.SCHEDULED)
@@ -160,17 +172,74 @@ def test_gap_above_30_in_early_season_is_capped_to_moyenne_but_the_gap_is_untouc
     assert result.spread == pytest.approx(70.0)  # l'écart affiché ne change pas
     assert result.reliability_uncapped == ReliabilityLevel.FORTE
     assert result.reliability == ReliabilityLevel.MOYENNE and result.reliability_capped is True
-    assert calc.reliability_cap_to_dict(result) == {"capped": True, "uncapped": "forte", "reason": "early_season"}
+    assert calc.reliability_cap_to_dict(result) == {
+        "capped": True, "uncapped": "forte", "reason": "early_season", "games_threshold": 40, "fewest_games": 0}
 
 
-def test_same_gap_outside_early_season_keeps_forte(db_session):
+def test_after_the_switch_to_the_current_season_the_cap_is_NOT_lifted_at_10_games(db_session):
+    # Avant le 2026-11-01 la « forte » revenait au 11e match ; l'étude de la falaise montre que la note repose alors sur
+    # trop peu de matchs (un côté sur sept est à 0 % ou 100 %). Les deux équipes ont basculé : le motif change.
     home, away, third = _teams(db_session, 0.9, 0.2)
     _play_ten_games(db_session, home, third)
     _play_ten_games(db_session, away, third)
     result = _matchup(db_session, home, away)
+    assert (result.home.in_early_season, result.away.in_early_season) == (False, False)
+    assert result.spread == pytest.approx(70.0)  # l'écart ne change pas
+    assert result.reliability_uncapped == ReliabilityLevel.FORTE
+    assert result.reliability == ReliabilityLevel.MOYENNE and result.reliability_capped is True
+    assert calc.reliability_cap_to_dict(result) == {
+        "capped": True, "uncapped": "forte", "reason": "few_games", "games_threshold": 40, "fewest_games": 10}
+
+
+def test_the_cap_lifts_exactly_at_40_games_for_BOTH_teams(db_session):
+    home, away, third = _teams(db_session, 0.9, 0.2)
+    _play_games(db_session, home, third, 40)
+    _play_games(db_session, away, third, 40)
+    result = _matchup(db_session, home, away)
     assert result.spread == pytest.approx(70.0)
     assert result.reliability == ReliabilityLevel.FORTE and result.reliability_capped is False
-    assert calc.reliability_cap_to_dict(result) == {"capped": False, "uncapped": "forte", "reason": None}
+    assert calc.reliability_cap_to_dict(result) == {
+        "capped": False, "uncapped": "forte", "reason": None, "games_threshold": 40, "fewest_games": 40}
+
+
+def test_one_game_short_on_either_side_keeps_the_cap(db_session):
+    # L'équipe la MOINS avancée décide : 40 d'un côté, 39 de l'autre -> plafonné, dans les deux sens.
+    for home_games, away_games in ((40, 39), (39, 40)):
+        home, away, third = _teams(db_session, 0.9, 0.2)
+        home.abbreviation, away.abbreviation, third.abbreviation = f"H{home_games}", f"A{away_games}", f"T{home_games}"
+        home.name, away.name, third.name = f"Home {home_games}", f"Away {away_games}", f"Third {home_games}"
+        db_session.flush()
+        _play_games(db_session, home, third, home_games)
+        _play_games(db_session, away, third, away_games)
+        result = _matchup(db_session, home, away)
+        assert result.reliability == ReliabilityLevel.MOYENNE and result.reliability_capped is True
+        assert result.reliability_cap_reason == "few_games" and result.fewest_games_played == 39
+
+
+def test_the_reason_stays_early_season_while_one_team_is_still_on_last_season(db_session):
+    # Une équipe a 40 matchs, l'autre aucun : la cause première est la note de base de la saison précédente.
+    home, away, third = _teams(db_session, 0.9, 0.2)
+    _play_games(db_session, home, third, 40)
+    result = _matchup(db_session, home, away)
+    assert (result.home.in_early_season, result.away.in_early_season) == (False, True)
+    assert result.reliability_cap_reason == "early_season" and result.fewest_games_played == 0
+
+
+def test_the_cap_never_touches_the_notes_only_the_label(db_session, monkeypatch):
+    # Règle absolue du chantier : seules les étiquettes et les mentions changent, jamais les notes.
+    home, away, third = _teams(db_session, 0.9, 0.2)
+    _play_ten_games(db_session, home, third)
+    _play_ten_games(db_session, away, third)
+    game = Game(season=SEASON, game_date=datetime.combine(GAME_DAY, datetime.min.time()).replace(hour=19),
+                home_team_id=home.id, away_team_id=away.id, status=GameStatus.SCHEDULED)
+    db_session.add(game)
+    db_session.flush()
+    capped = calc.compute_matchup(db_session, game, _settings())  # le MÊME match, calculé deux fois
+    monkeypatch.setattr(calc, "RELIABILITY_CAP_GAME_THRESHOLD", 0)  # plafond neutralisé
+    free = calc.compute_matchup(db_session, game, _settings())
+    assert (capped.home.final_note, capped.away.final_note, capped.spread) == (
+        free.home.final_note, free.away.final_note, free.spread)
+    assert capped.reliability == ReliabilityLevel.MOYENNE and free.reliability == ReliabilityLevel.FORTE
 
 
 def test_small_and_middle_gaps_are_never_touched_in_early_season(db_session):
@@ -205,5 +274,6 @@ def test_save_prediction_stores_the_label_and_the_reason(db_session):
     calc.save_prediction(db_session, game, _settings())
     stored = db_session.query(Prediction).filter(Prediction.game_id == game.id).one()
     assert stored.reliability == ReliabilityLevel.MOYENNE
-    assert stored.breakdown["reliability_cap"] == {"capped": True, "uncapped": "forte", "reason": "early_season"}
+    assert stored.breakdown["reliability_cap"] == {
+        "capped": True, "uncapped": "forte", "reason": "early_season", "games_threshold": 40, "fewest_games": 0}
     assert stored.spread == pytest.approx(70.0)
