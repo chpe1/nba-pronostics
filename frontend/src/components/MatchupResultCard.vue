@@ -62,7 +62,7 @@ const reliabilityLabel = {
 
         <dl class="space-y-1 text-xs text-text-secondary">
           <div class="flex justify-between">
-            <dt>Note de base<span v-if="team.in_early_season" class="ml-1 text-text-disabled">(N-1, début de saison)</span></dt>
+            <dt>Note de base<span v-if="team.in_early_season" class="ml-1 text-text-disabled">{{ team.current_pct_missing ? "(N-1 : aucun match compté d'un côté cette saison)" : '(N-1, début de saison)' }}</span></dt>
             <dd class="tabular-nums">{{ team.note_de_base.toFixed(3) }}</dd>
           </div>
           <div class="flex justify-between">

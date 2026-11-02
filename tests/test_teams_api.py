@@ -53,18 +53,34 @@ def test_update_team_applies_partial_changes(client, db_session, auth_headers):
 
     response = client.patch(
         f"/api/teams/{team.id}",
-        json={"win_pct_home": 0.75, "win_pct_home_prev_season": 0.6},
+        json={"win_pct_home_prev_season": 0.6},
         headers=auth_headers,
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["win_pct_home"] == 0.75
     assert body["win_pct_home_prev_season"] == 0.6
-    assert body["win_pct_away"] == 0.4  # champ non fourni -> inchangé
+    assert body["win_pct_home"] == 0.5  # champ non fourni -> inchangé
 
     db_session.expire_all()
-    assert db_session.get(Team, team.id).win_pct_home == 0.75
+    assert db_session.get(Team, team.id).win_pct_home_prev_season == 0.6
+
+
+def test_update_team_refuses_current_season_win_pct_which_are_read_only(client, db_session, auth_headers):
+    """Chantier (b2) : win_pct_home/away de la saison en cours sont calculés depuis les matchs terminés. Les envoyer est
+    REFUSÉ (422, rien n'est écrit), jamais ignoré en silence -- même mêlés à un champ modifiable."""
+    team = Team(name="Boston Celtics", abbreviation="BOS", win_pct_home=0.5, win_pct_away=0.4)
+    db_session.add(team)
+    db_session.commit()
+
+    for payload in ({"win_pct_home": 0.75}, {"win_pct_away": 0.1, "win_pct_home_prev_season": 0.6}):
+        response = client.patch(f"/api/teams/{team.id}", json=payload, headers=auth_headers)
+        assert response.status_code == 422
+        assert "lecture seule" in response.json()["detail"]
+
+    db_session.expire_all()
+    stored = db_session.get(Team, team.id)
+    assert (stored.win_pct_home, stored.win_pct_away, stored.win_pct_home_prev_season) == (0.5, 0.4, 0.0)
 
 
 def test_update_team_rejects_name_collision_with_another_team(client, db_session, auth_headers):
@@ -108,8 +124,8 @@ def test_update_team_allows_keeping_its_own_name_and_abbreviation(client, db_ses
 
     response = client.patch(
         f"/api/teams/{team.id}",
-        json={"name": "Boston Celtics", "win_pct_home": 0.6},
+        json={"name": "Boston Celtics", "win_pct_home_prev_season": 0.6},
         headers=auth_headers,
     )
     assert response.status_code == 200
-    assert response.json()["win_pct_home"] == 0.6
+    assert response.json()["win_pct_home_prev_season"] == 0.6

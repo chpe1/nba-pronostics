@@ -168,6 +168,8 @@ const daysWithContent = computed(() => (report.value?.days ?? []).filter((d) => 
         <dd v-if="report.status_change_count">{{ report.status_change_count }}</dd>
         <dt class="text-text-secondary">Ignorés</dt>
         <dd data-testid="scores-skipped">{{ report.skipped_count }}</dd>
+        <dt class="text-text-secondary">% victoires recalculés</dt>
+        <dd data-testid="scores-win-pct-updated">{{ report.win_pct_teams_updated ?? 0 }} équipe(s)</dd>
         <dt class="text-text-secondary">Écriture en base</dt>
         <dd data-testid="scores-written">{{ report.written ? 'oui' : 'non' }}</dd>
       </dl>

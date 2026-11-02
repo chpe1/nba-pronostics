@@ -215,5 +215,5 @@ def test_admin_can_set_clear_and_is_refused_an_absurd_point_diff(client, db_sess
     assert r.status_code == 422
     r = client.patch(f"/api/teams/{tid}", json={"point_diff_prev_season": None}, headers=auth_headers)
     assert r.status_code == 200 and r.json()["point_diff_prev_season"] is None
-    r = client.patch(f"/api/teams/{tid}", json={"win_pct_home": 0.5}, headers=auth_headers)
+    r = client.patch(f"/api/teams/{tid}", json={"win_pct_home_prev_season": 0.5}, headers=auth_headers)
     assert r.json()["point_diff_prev_season"] is None  # un autre champ modifié ne la remplit pas

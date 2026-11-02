@@ -14,8 +14,6 @@ function buildForm(team) {
   return {
     name: team.name,
     abbreviation: team.abbreviation,
-    win_pct_home: team.win_pct_home,
-    win_pct_away: team.win_pct_away,
     win_pct_home_prev_season: team.win_pct_home_prev_season,
     win_pct_away_prev_season: team.win_pct_away_prev_season,
     point_diff_prev_season: team.point_diff_prev_season ?? '',
@@ -68,8 +66,6 @@ async function save(team) {
       body: {
         name: form.name,
         abbreviation: form.abbreviation,
-        win_pct_home: Number(form.win_pct_home),
-        win_pct_away: Number(form.win_pct_away),
         win_pct_home_prev_season: Number(form.win_pct_home_prev_season),
         win_pct_away_prev_season: Number(form.win_pct_away_prev_season),
         point_diff_prev_season: pointDiffPayload(form.point_diff_prev_season),
@@ -86,6 +82,19 @@ async function save(team) {
   }
 }
 
+// Pourcentages de la saison en cours : calculés par le moteur depuis les matchs terminés (lecture seule). Une valeur
+// absente (null) veut dire « aucun match compté de ce côté » : affichée comme vide, JAMAIS comme 0.
+function formatPct(value) {
+  return value === null || value === undefined ? null : value.toFixed(3)
+}
+
+// Date NBA « AAAA-MM-JJ » mise en forme sans passer par Date (aucun décalage de fuseau possible).
+function formatDay(isoDay) {
+  if (!isoDay) return null
+  const [y, m, d] = isoDay.split('-')
+  return `${d}/${m}/${y}`
+}
+
 onMounted(loadTeams)
 </script>
 
@@ -93,9 +102,11 @@ onMounted(loadTeams)
   <section class="mx-auto max-w-2xl space-y-4 px-4 py-6">
     <h1 class="text-xl font-semibold text-text">Équipes</h1>
     <p class="text-sm text-text-secondary">
-      Corriger une équipe à la main (ex : win_pct erroné après un mauvais import). Un ajustement ici
+      Corriger une équipe à la main (ex : win_pct N-1 erroné après un mauvais import). Un ajustement ici
       reste un simple placeholder : le prochain import CSV concerné l'écrase normalement, sans
-      protection particulière — même comportement que pour les joueurs.
+      protection particulière — même comportement que pour les joueurs. Les pourcentages de la saison en
+      cours ne se saisissent pas : ils sont calculés depuis les matchs terminés (corriger un score sur l'écran
+      Matchs les recalcule).
     </p>
 
     <p
@@ -134,13 +145,55 @@ onMounted(loadTeams)
           <label class="mb-1 block text-xs font-medium text-text">Abréviation</label>
           <input v-model="forms[team.id].abbreviation" type="text" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
         </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-text">% victoires domicile</label>
-          <input v-model="forms[team.id].win_pct_home" type="number" step="0.001" min="0" max="1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-text">% victoires extérieur</label>
-          <input v-model="forms[team.id].win_pct_away" type="number" step="0.001" min="0" max="1" class="w-full rounded-lg border border-border px-3 py-2 text-sm" />
+        <div
+          v-if="team.current_season_record"
+          :data-testid="`current-season-${team.id}`"
+          class="col-span-2 space-y-1 rounded-lg border border-border px-3 py-2 text-sm text-text"
+        >
+          <p class="text-xs font-medium">
+            % victoires saison en cours ({{ team.current_season_record.season }}) — calculés depuis les matchs
+            terminés, lecture seule
+          </p>
+          <dl class="grid grid-cols-2 gap-3">
+            <div v-for="side in ['home', 'away']" :key="side" :data-testid="`current-season-${team.id}-${side}`">
+              <dt class="text-xs text-text-secondary">{{ side === 'home' ? 'Domicile' : 'Extérieur' }}</dt>
+              <dd>
+                <span v-if="formatPct(team.current_season_record[side].pct) !== null" class="font-mono tabular-nums">
+                  {{ formatPct(team.current_season_record[side].pct) }}
+                </span>
+                <span v-else class="text-text-secondary">vide (aucun match compté)</span>
+                <span class="block text-xs text-text-secondary">
+                  sur {{ team.current_season_record[side].games }} match{{ team.current_season_record[side].games > 1 ? 's' : '' }}
+                  terminé{{ team.current_season_record[side].games > 1 ? 's' : '' }}
+                  ({{ team.current_season_record[side].wins }}-{{ team.current_season_record[side].losses }})
+                </span>
+              </dd>
+            </div>
+          </dl>
+          <p class="text-xs text-text-secondary">
+            Dernier match compté :
+            {{ formatDay(team.current_season_record.last_game_date) ?? 'aucun' }}
+          </p>
+          <p
+            v-if="!team.current_season_record.stored_matches_recount"
+            :data-testid="`current-season-${team.id}-mismatch`"
+            class="rounded-lg bg-warning/10 px-3 py-2 text-xs font-medium text-warning"
+          >
+            Valeur enregistrée, celle que lit la note : domicile {{ formatPct(team.win_pct_home) ?? 'vide' }},
+            extérieur {{ formatPct(team.win_pct_away) ?? 'vide' }} — DIFFÉRENTE du recomptage ci-dessus. Elle sera
+            recalculée à la prochaine synchronisation des scores (ou vient d'un import manuel du classement).
+          </p>
+          <p
+            v-if="team.current_season_record.excluded_games.length"
+            :data-testid="`current-season-${team.id}-excluded`"
+            class="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning"
+          >
+            Non compté{{ team.current_season_record.excluded_games.length > 1 ? 's' : '' }} :
+            <template v-for="(game, i) in team.current_season_record.excluded_games" :key="game.game_id">
+              {{ i ? ' ; ' : '' }}match du {{ formatDay(game.game_date) }} ({{ game.reason }})
+            </template>
+            — corriger le score sur l'écran Matchs.
+          </p>
         </div>
         <div>
           <label class="mb-1 block text-xs font-medium text-text">% victoires domicile (N-1)</label>

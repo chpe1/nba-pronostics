@@ -17,6 +17,7 @@ from app.schemas.scores import (
     ScoreSyncStatusChange,
 )
 from app.services.nba_calendar import current_nba_date
+from app.services.team_win_pct import recompute_current_season_win_pct
 from app.services.scores_fetcher import (
     SKIP_MANUALLY_OVERRIDDEN,
     SKIP_NOT_IN_DATABASE,
@@ -98,7 +99,10 @@ def sync_scores(
             status_code=502, detail=f"Impossible de joindre balldontlie : {str(exc) or type(exc).__name__}"
         ) from exc
 
-    written = any(day.updated > 0 for day in days)
+    # Pourcentages de victoires de la saison en cours (chantier (b2)) : recalculés à CHAQUE synchronisation, même sans
+    # score nouveau (rattrape une valeur stockée périmée, ex. après la migration ou un import manuel du classement).
+    win_pct_teams_updated = recompute_current_season_win_pct(db)
+    written = any(day.updated > 0 for day in days) or win_pct_teams_updated > 0
     if written:
         db.commit()
     else:
@@ -115,5 +119,6 @@ def sync_scores(
         status_change_count=sum(len(d.status_changes) for d in days),
         skipped_count=sum(d.skipped_count for d in days),
         written=written,
+        win_pct_teams_updated=win_pct_teams_updated,
         days=[_day_read(d) for d in days],
     )

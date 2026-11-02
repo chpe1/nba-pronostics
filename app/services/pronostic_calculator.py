@@ -157,6 +157,9 @@ class TeamNoteBreakdown:
     draft_bonus: float
     transfer_adjustment: float
     final_note: float
+    # Vrai si l'équipe a assez de matchs pour basculer mais reste sur la saison précédente faute d'un pourcentage de
+    # la saison en cours (côté sans match compté). Explique un `in_early_season` vrai au-delà du 10e match.
+    current_pct_missing: bool = False
     questionable_players: list[QuestionablePlayerInfo] = field(default_factory=list)
     absent_players: list[QuestionablePlayerInfo] = field(default_factory=list)
     # Détail du bonus draft (plafond par équipe) : total AVANT plafonnement et plafond appliqué, pour que
@@ -470,7 +473,11 @@ def compute_team_note(
     db: Session, team: Team, game_date: date, season: str, is_home: bool, settings: Settings
 ) -> TeamNoteBreakdown:
     games_played = count_finished_games_this_season(db, team, season, before_date=game_date)
-    in_early_season = games_played < EARLY_SEASON_GAME_THRESHOLD
+    # La bascule sur la saison en cours exige les DEUX pourcentages définis : un côté sans match compté vaut None
+    # (jamais 0, limitation n°30) et l'équipe reste alors sur la saison précédente, qui est de vraies données.
+    # `in_early_season` dit donc la base RÉELLEMENT utilisée (la carte le lit), pas seulement le nombre de matchs.
+    current_pct_missing = team.win_pct_home is None or team.win_pct_away is None
+    in_early_season = games_played < EARLY_SEASON_GAME_THRESHOLD or current_pct_missing
     # Calculé inconditionnellement (pas seulement si in_early_season) : le
     # garde-fou petit échantillon INDIVIDUEL (_effective_per_mpg) doit pouvoir
     # s'appliquer même quand l'ÉQUIPE a dépassé ses 10 premiers matchs -- les
@@ -510,6 +517,7 @@ def compute_team_note(
         is_home=is_home,
         games_played_this_season=games_played,
         in_early_season=in_early_season,
+        current_pct_missing=current_pct_missing and games_played >= EARLY_SEASON_GAME_THRESHOLD,
         note_de_base=note_de_base,
         injury_penalty=injury_penalty,
         is_back_to_back=calendar["is_back_to_back"],
@@ -597,6 +605,7 @@ def breakdown_to_dict(breakdown: TeamNoteBreakdown) -> dict:
         "is_home": breakdown.is_home,
         "games_played_this_season": breakdown.games_played_this_season,
         "in_early_season": breakdown.in_early_season,
+        "current_pct_missing": breakdown.current_pct_missing,
         "note_de_base": breakdown.note_de_base,
         "injury_penalty": breakdown.injury_penalty,
         "is_back_to_back": breakdown.is_back_to_back,

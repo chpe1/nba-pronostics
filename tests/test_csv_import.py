@@ -537,8 +537,9 @@ def test_apply_teams_home_away_prev_season_writes_prev_season_columns(db_session
     assert celtics.win_pct_home_prev_season == pytest.approx(24 / 30)
     assert celtics.win_pct_away_prev_season == pytest.approx(18 / 30)
     # Les colonnes de la saison courante ne doivent pas être touchées.
-    assert celtics.win_pct_home == 0.0
-    assert celtics.win_pct_away == 0.0
+    # (équipe créée par cet import : « inconnu », jamais 0 -- chantier (b2))
+    assert celtics.win_pct_home is None
+    assert celtics.win_pct_away is None
 
 
 def test_prev_season_players_advanced_ignores_tot_and_keeps_last_team(db_session):

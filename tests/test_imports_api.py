@@ -181,7 +181,7 @@ def test_previous_season_teams_import_writes_prev_season_columns(client, db_sess
 
     celtics = db_session.query(Team).filter(Team.abbreviation == "BOS").one()
     assert celtics.win_pct_home_prev_season == pytest.approx(24 / 30)
-    assert celtics.win_pct_home == 0.0  # saison courante non affectée
+    assert celtics.win_pct_home is None  # saison courante non affectée (inconnue, jamais 0 -- chantier (b2))
 
 
 def test_draft_import_creates_rookie_with_draft_pick(client, db_session, auth_headers):

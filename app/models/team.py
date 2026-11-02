@@ -20,9 +20,12 @@ class Team(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     abbreviation: Mapped[str] = mapped_column(String(5), unique=True, nullable=False)
 
-    # Note de base (% de victoires), saison en cours
-    win_pct_home: Mapped[float] = mapped_column(Float, default=0.0)
-    win_pct_away: Mapped[float] = mapped_column(Float, default=0.0)
+    # Note de base (% de victoires), saison en cours. CALCULÉS par le moteur depuis les matchs terminés
+    # (services/team_win_pct.py, chantier (b2)) ; l'import manuel du classement peut encore les écrire (filet de
+    # sécurité). NULL = aucun match compté de ce côté : inconnu, JAMAIS 0 (limitation n°30) -- la note reste alors
+    # sur la saison précédente.
+    win_pct_home: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    win_pct_away: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
 
     # Saison N-1, utilisé pour la règle des 10 premiers matchs
     win_pct_home_prev_season: Mapped[float] = mapped_column(Float, default=0.0)

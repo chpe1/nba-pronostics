@@ -24,6 +24,7 @@ from datetime import date, datetime, time, timedelta
 import httpx
 from sqlalchemy.orm import Session
 
+from app.services.team_win_pct import recompute_current_season_win_pct
 from app.models import Game, GameStatus, Team
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,8 @@ class DaySyncResult:
     not_finished: int = 0  # pas terminés côté API (à venir ou en cours) et rien à changer
     status_changes: list[StatusChange] = field(default_factory=list)
     skipped: list[SkippedGame] = field(default_factory=list)
+    # Rempli par sync_scores_for_date seulement : équipes dont un pourcentage de victoires a changé au recalcul.
+    win_pct_teams_updated: int = 0
 
     @property
     def updated(self) -> int:
@@ -240,5 +243,8 @@ def sync_scores_for_date(
     """Une seule date, avec validation de la transaction (utilisé par la tâche planifiée). Le décompte
     `updated` ne compte que les matchs dont une valeur a RÉELLEMENT changé."""
     (result,) = sync_scores_for_range(db, api_key, target_date, target_date, client=client)
+    # Pourcentages de victoires de la saison en cours recalculés à chaque passage (chantier (b2)), validés avec les
+    # scores dans la même transaction.
+    result.win_pct_teams_updated = recompute_current_season_win_pct(db)
     db.commit()
     return result

@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models import Game, GameStatus, Prediction
 from app.schemas import GameManualUpdate, GameWithTeamsRead
 from app.services.nba_calendar import current_nba_date
+from app.services.team_win_pct import recompute_current_season_win_pct
 
 router = APIRouter(prefix="/api/games", tags=["games"])
 
@@ -85,6 +86,9 @@ def delete_game(game_id: int, db: Session = Depends(get_db)):
     if prediction is not None:
         db.delete(prediction)
     db.delete(game)
+    db.flush()
+    # Un match terminé supprimé ne doit plus compter dans les pourcentages de victoires (chantier (b2)).
+    recompute_current_season_win_pct(db)
     db.commit()
 
 
@@ -136,6 +140,9 @@ def update_game(game_id: int, payload: GameManualUpdate, db: Session = Depends(g
     if "manually_overridden" in fields:
         game.manually_overridden = fields["manually_overridden"]
 
+    db.flush()
+    # Score, statut ou date corrigés à la main : pourcentages de victoires recalculés dans la même transaction.
+    recompute_current_season_win_pct(db)
     db.commit()
     db.refresh(game)
     return GameWithTeamsRead(

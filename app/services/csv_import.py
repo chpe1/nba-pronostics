@@ -43,6 +43,7 @@ from app.models import (
     Settings,
     Team,
 )
+from app.services.team_win_pct import recompute_current_season_win_pct
 from app.services.nba_teams import ABBREVIATION_TO_NAME, NBA_TEAMS, normalize_abbreviation, resolve_team_name
 from app.services.player_matching import (  # noqa: F401 -- fold_diacritics et _roster_match_key restent importables d'ici
     fold_diacritics,
@@ -308,6 +309,10 @@ def parse_teams_home_away(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
                 "abbreviation": NBA_TEAMS[full_name],
                 "win_pct_home": (home_wins / home_total) if home_total else 0.0,
                 "win_pct_away": (road_wins / road_total) if road_total else 0.0,
+                # Nombre de matchs de chaque côté : l'import de la saison EN COURS s'en sert pour écrire « inconnu »
+                # (None) au lieu de 0 quand un côté n'a aucun match. Le chemin N-1 garde son comportement.
+                "home_games": home_total,
+                "road_games": road_total,
             }
         )
     return parsed, errors
@@ -585,8 +590,10 @@ def apply_teams_home_away(parsed: list[dict], db: Session) -> int:
         if team is None:
             team = Team(name=item["name"], abbreviation=item["abbreviation"])
             db.add(team)
-        team.win_pct_home = item["win_pct_home"]
-        team.win_pct_away = item["win_pct_away"]
+        # Côté sans aucun match : inconnu (None), JAMAIS 0 (limitation n°30). `.get` : une ligne parsée sans ces clés
+        # garde l'ancien comportement.
+        team.win_pct_home = None if item.get("home_games") == 0 else item["win_pct_home"]
+        team.win_pct_away = None if item.get("road_games") == 0 else item["win_pct_away"]
         count += 1
     db.flush()
     return count
@@ -805,6 +812,8 @@ def apply_schedule(parsed: list[dict], db: Session, season: str) -> int:
         # sinon : déjà FINISHED et la ligne réimportée n'a pas de score ->
         # on ne touche pas au statut/score existant.
     db.flush()
+    # Un calendrier réimporté peut porter des scores : pourcentages de victoires recalculés (chantier (b2)).
+    recompute_current_season_win_pct(db)
     return count
 
 

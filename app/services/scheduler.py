@@ -81,11 +81,13 @@ def run_scores_sync_job() -> None:
             try:
                 result = sync_scores_for_date(db, api_key, target_date)
                 logger.info(
-                    "Scores synchronisés pour %s : %d récupéré(s), %d mis à jour, %d ignoré(s)",
+                    "Scores synchronisés pour %s : %d récupéré(s), %d mis à jour, %d ignoré(s), "
+                    "%d équipe(s) aux %% de victoires recalculés",
                     target_date,
                     result.found,
                     result.updated,  # uniquement les matchs dont une valeur a changé (limitation n°36)
                     result.skipped_count,
+                    result.win_pct_teams_updated,
                 )
             except Exception:
                 logger.exception("Échec de la synchronisation des scores pour %s", target_date)

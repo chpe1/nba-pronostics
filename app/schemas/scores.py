@@ -61,4 +61,7 @@ class ScoreSyncReport(BaseModel):
     skipped_count: int
     # False => aucune écriture n'a eu lieu en base.
     written: bool
+    # Équipes dont un pourcentage de victoires de la saison en cours a changé au recalcul (chantier (b2)), recalcul
+    # fait à chaque synchronisation. Compte dans `written`.
+    win_pct_teams_updated: int = 0
     days: list[ScoreSyncDay]
