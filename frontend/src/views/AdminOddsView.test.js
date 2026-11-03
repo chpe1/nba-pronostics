@@ -67,6 +67,15 @@ describe('AdminOddsView', () => {
     expect(wrapper.find('[data-testid="cell-1-winamax_home"]').element.value).toBe('1,85')
   })
 
+  it("chaque case porte l'abréviation de l'équipe concernée (garde contre une inversion domicile/extérieur)", async () => {
+    const wrapper = await mountView() // GAME : domicile BOS, extérieur MIA
+    const placeholder = (col) => wrapper.find(`[data-testid="cell-1-${col}"]`).attributes('placeholder')
+    expect(placeholder('winamax_home')).toBe('BOS')
+    expect(placeholder('winamax_away')).toBe('MIA')
+    expect(placeholder('unibet_home')).toBe('BOS')
+    expect(placeholder('unibet_away')).toBe('MIA')
+  })
+
   it("l'ordre de tabulation suit la colonne, pas la ligne (deux matchs)", async () => {
     const game2 = { ...GAME, id: 3, away_team_abbreviation: 'ORL', home_team_abbreviation: 'NYK' }
     stubApi([GAME, game2])

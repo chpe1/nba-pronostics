@@ -122,6 +122,14 @@ function marketFor(game) {
   }
 }
 
+function cellTeamAbbr(game, col) {
+  // Lève l'ambiguïté domicile/extérieur : la case elle-même porte l'abréviation de l'équipe concernée
+  // (ex. ligne « MIA @ CHA » -> CHA, MIA, CHA, MIA), plutôt que de compter sur une lecture correcte des
+  // en-têtes de colonne (qui disent le bookmaker et le côté, pas l'équipe). Remplace aussi le texte
+  // d'exemple « 1,85 », répété 44 fois, qui donnait à tort l'impression d'un formulaire prérempli.
+  return col.side === 'home' ? game.home_team_abbreviation : game.away_team_abbreviation
+}
+
 function gameTimeLabel(isoGameDate) {
   // game_date est une heure murale US/ET naïve (Décision n°3) : mêmes composants, jamais convertis
   // (voir GameCard.vue::gameTime, même libellé " · New York").
@@ -270,7 +278,7 @@ onMounted(loadOdds)
                     :disabled="game.started"
                     :tabindex="game.started ? -1 : cellTabIndex(gameIndex, colIndex)"
                     :aria-label="`${col.label} — ${game.away_team_abbreviation} @ ${game.home_team_abbreviation}`"
-                    placeholder="1,85"
+                    :placeholder="cellTeamAbbr(game, col)"
                     class="min-h-11 w-24 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50"
                     :data-testid="`cell-${game.id}-${col.key}`"
                   />
