@@ -31,6 +31,9 @@ from app.schemas.odds import (
     OddsCellRead,
     OddsDayRead,
     OddsEntryWrite,
+    OddsFetchRunRead,
+    OddsFetchStatusRead,
+    KickoffAlertRead,
     OddsGameRead,
 )
 
@@ -72,4 +75,7 @@ __all__ = [
     "OddsCellRead",
     "OddsGameRead",
     "OddsDayRead",
+    "OddsFetchRunRead",
+    "OddsFetchStatusRead",
+    "KickoffAlertRead",
 ]

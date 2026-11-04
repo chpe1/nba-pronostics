@@ -68,3 +68,51 @@ class OddsGameRead(BaseModel):
 class OddsDayRead(BaseModel):
     date: str
     games: list[OddsGameRead]
+
+
+class OddsFetchRunRead(BaseModel):
+    """Une ligne du journal des appels à the-odds-api.com. Instants en ISO 8601 avec « Z » (UTC). `report` (le
+    compte-rendu complet) n'est renvoyé que par le bouton et pour le dernier appel de l'état ; les autres lignes du
+    journal n'en portent que les comptes."""
+
+    id: int
+    fetched_at: str
+    trigger: Literal["scheduled", "button"]
+    http_status: int | None = None
+    error: str | None = None
+    credits_used: int | None = None
+    credits_remaining: int | None = None
+    events_returned: int
+    rows_written: int
+    matched_count: int
+    unmatched_count: int
+    no_odds_yet_count: int
+    ignored_count: int
+    time_gap_count: int
+    anomaly_count: int
+    report: dict | None = None
+
+
+class KickoffAlertRead(BaseModel):
+    """L'API annonce un coup d'envoi PLUS TÔT que notre calendrier, pour un match à venir. Rien n'est corrigé :
+    l'alerte informe, l'utilisateur décide (écran Matchs)."""
+
+    game_id: int
+    label: str
+    api_start: str
+    our_start: str
+    minutes_earlier: int
+    fetched_at: str
+
+
+class OddsFetchStatusRead(BaseModel):
+    scheduler_enabled: bool
+    api_key_configured: bool
+    credits_threshold: int
+    last_known_credits: int | None = None
+    last_known_credits_at: str | None = None
+    # Dernier solde connu sous le seuil : la tâche planifiée n'appelle plus (le bouton, si).
+    scheduled_suspended: bool
+    latest_run: OddsFetchRunRead | None = None
+    recent_runs: list[OddsFetchRunRead]
+    alerts: list[KickoffAlertRead]

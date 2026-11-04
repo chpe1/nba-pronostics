@@ -27,11 +27,12 @@ from app.api.teams import router as teams_router  # noqa: E402
 from app.services.scheduler import start_scheduler  # noqa: E402
 
 # Désactivés par défaut (dev/tests) : pas d'appel réseau planifié sans action
-# explicite. Mettre ENABLE_INJURY_SCHEDULER / ENABLE_SCORES_SCHEDULER à true
+# explicite. Mettre ENABLE_INJURY_SCHEDULER / ENABLE_SCORES_SCHEDULER / ENABLE_ODDS_SCHEDULER à true
 # pour les activer (ex: run local pendant la saison) -- indépendants l'un de
 # l'autre, chacun n'enregistre que sa propre tâche (voir app/services/scheduler.py).
 ENABLE_INJURY_SCHEDULER = os.getenv("ENABLE_INJURY_SCHEDULER", "false").lower() == "true"
 ENABLE_SCORES_SCHEDULER = os.getenv("ENABLE_SCORES_SCHEDULER", "false").lower() == "true"
+ENABLE_ODDS_SCHEDULER = os.getenv("ENABLE_ODDS_SCHEDULER", "false").lower() == "true"
 
 # Origines autorisées pour le frontend Vue.js (Vite). Ajustable via .env sans
 # toucher au code (ex: une fois le port/domaine de l'Étape 5 confirmé).
@@ -44,7 +45,9 @@ CORS_ALLOWED_ORIGINS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler = start_scheduler() if (ENABLE_INJURY_SCHEDULER or ENABLE_SCORES_SCHEDULER) else None
+    scheduler = (
+        start_scheduler() if (ENABLE_INJURY_SCHEDULER or ENABLE_SCORES_SCHEDULER or ENABLE_ODDS_SCHEDULER) else None
+    )
     yield
     if scheduler is not None:
         scheduler.shutdown()

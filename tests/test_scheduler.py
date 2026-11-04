@@ -1,8 +1,16 @@
+import pytest
+
 from app.services.scheduler import JOB_ID, SCORES_JOB_ID, run_scores_sync_job, start_scheduler
 
 
 def _job_ids(scheduler) -> set[str]:
     return {job.id for job in scheduler.get_jobs()}
+
+
+@pytest.fixture(autouse=True)
+def no_odds_toggle(monkeypatch):
+    # Le relevé des cotes a son propre test (test_odds_fetch_schedule.py) ; ici, jamais activé par l'environnement.
+    monkeypatch.delenv("ENABLE_ODDS_SCHEDULER", raising=False)
 
 
 def test_no_toggle_registers_no_jobs(monkeypatch):

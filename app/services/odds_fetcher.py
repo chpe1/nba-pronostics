@@ -61,7 +61,9 @@ ODDS_API_URL = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
 ODDS_API_PARAMS = {"regions": "eu", "markets": "h2h", "oddsFormat": "decimal"}
 # Délai maximal d'un appel (secondes) : une API qui ne répond pas ne doit pas bloquer la tâche planifiée ni le bouton.
 ODDS_API_TIMEOUT = 30.0
-
+# Appel GRATUIT (0 crédit, vérifié le 2026-11-04 : x-requests-last = 0 et x-requests-remaining présent) qui sert
+# uniquement à relire le solde : c'est lui qui permet à la tâche suspendue de reprendre après la remise à zéro mensuelle.
+ODDS_API_SPORTS_URL = "https://api.the-odds-api.com/v4/sports"
 
 # Libellés EXACTS de l'API -> abréviation de nos 30 équipes. Recopiés de la réponse de
 # /v4/sports/basketball_nba/participants du 2026-11-03 (32 entrées) ; aucun n'est déduit. 29 sont identiques au nom
@@ -155,6 +157,11 @@ def _int_header(headers: httpx.Headers, name: str) -> int | None:
         return None
 
 
+def make_client() -> httpx.Client:
+    """Client HTTP du relevé (bouton et tâche planifiée). Point d'entrée unique : les tests le remplacent."""
+    return httpx.Client(timeout=ODDS_API_TIMEOUT)
+
+
 def fetch_odds(client: httpx.Client, api_key: str) -> ApiResponse:
     """UN appel à l'API. Lève OddsApiError (clé masquée) en cas d'échec réseau, de statut non 200 ou de réponse
     qui n'est pas une liste."""
@@ -179,6 +186,31 @@ def fetch_odds(client: httpx.Client, api_key: str) -> ApiResponse:
         credits_used=_int_header(response.headers, "x-requests-last"),
         credits_remaining=_int_header(response.headers, "x-requests-remaining"),
     )
+
+
+def refresh_credits(
+    db: Session, client: httpx.Client, api_key: str, trigger: OddsFetchTrigger, fetched_at: datetime
+) -> OddsFetchRun:
+    """Relit le solde de crédits par un appel gratuit et le journalise (aucune cote lue, aucune écriture dans
+    `odds`). Un échec est journalisé sans solde. Ne valide PAS la transaction."""
+    run = OddsFetchRun(
+        fetched_at=fetched_at, trigger=trigger, events_returned=0, rows_written=0,
+        report={"balance_check_only": True},
+    )
+    db.add(run)
+    try:
+        response = client.get(ODDS_API_SPORTS_URL, params={"apiKey": api_key})
+    except httpx.HTTPError as exc:
+        run.error = _redact(f"Relecture du solde impossible : {exc}", api_key)
+    else:
+        run.http_status = response.status_code
+        if response.status_code == 200:
+            run.credits_used = _int_header(response.headers, "x-requests-last")
+            run.credits_remaining = _int_header(response.headers, "x-requests-remaining")
+        else:
+            run.error = _redact(f"Relecture du solde : the-odds-api a répondu {response.status_code}", api_key)
+    db.flush()
+    return run
 
 
 def _parse_api_instant(raw) -> datetime | None:
@@ -437,3 +469,70 @@ def active_kickoff_alerts(db: Session, now: datetime) -> list[KickoffAlert]:
         ))
     alerts.sort(key=lambda a: a.api_start)
     return alerts
+
+
+# --------------------------------------------------------------------------- rythme de la tâche planifiée
+
+# RÈGLE DE RYTHME (validée par l'utilisateur le 2026-11-03), écrite UNE SEULE FOIS, identique sur le PC et sur un
+# futur serveur : « un relevé par heure tant qu'un match commence dans les 3 heures qui suivent, jusqu'au dernier
+# coup d'envoi du jour ». La tâche se réveille à chaque heure pile et ne pose que cette question ; AUCUNE heure de
+# début ni d'arrêt n'est écrite nulle part : la plage s'ouvre et se ferme d'elle-même avec le calendrier. Sur le PC,
+# elle est simplement coupée quand le PC s'éteint ; le journal des appels montre alors les heures sans relevé.
+SCHEDULE_LOOKAHEAD = timedelta(hours=3)
+# En dessous de ce solde (dernier x-requests-remaining connu), la tâche planifiée n'appelle plus et le dit dans le
+# journal de l'application. Le bouton reste utilisable : son appel rafraîchit le solde connu (ex. après la remise à
+# zéro mensuelle du plan gratuit), et la tâche reprend d'elle-même dès qu'il repasse au-dessus.
+MIN_CREDITS_FOR_SCHEDULED = 20
+
+DECISION_CALL = "call"
+DECISION_NO_GAME_SOON = "no_game_soon"
+DECISION_CREDITS_LOW = "credits_low"
+
+
+def upcoming_games_within(db: Session, now: datetime, lookahead: timedelta = SCHEDULE_LOOKAHEAD) -> list[Game]:
+    """Matchs à venir (SCHEDULED) dont le coup d'envoi, selon NOTRE calendrier, tombe dans ]now, now + lookahead].
+    Comparaison sur les INSTANTS (UTC) : un soir de match qui passe minuit, à New York, à Paris ou en UTC, ne
+    pose aucun cas particulier. La requête borne large par date de New York, le tri fin se fait sur l'instant."""
+    horizon = now + lookahead
+    candidates = (
+        db.query(Game)
+        .filter(
+            Game.status == GameStatus.SCHEDULED,
+            Game.game_date_only >= _nba_date(now) - timedelta(days=1),
+            Game.game_date_only <= _nba_date(horizon) + timedelta(days=1),
+        )
+        .all()
+    )
+    upcoming = [g for g in candidates if now < game_start_utc(g.game_date) <= horizon]
+    return sorted(upcoming, key=lambda g: game_start_utc(g.game_date))
+
+
+def last_known_credits(db: Session) -> OddsFetchRun | None:
+    """Le dernier appel qui a renvoyé un solde de crédits (bouton ou tâche planifiée)."""
+    return (
+        db.query(OddsFetchRun)
+        .filter(OddsFetchRun.credits_remaining.isnot(None))
+        .order_by(OddsFetchRun.fetched_at.desc(), OddsFetchRun.id.desc())
+        .first()
+    )
+
+
+@dataclass(frozen=True)
+class ScheduledDecision:
+    action: str  # DECISION_CALL / DECISION_NO_GAME_SOON / DECISION_CREDITS_LOW
+    next_game: str | None  # premier match de la fenêtre, ex. « BOS@NYK 2026-11-05T00:00:00Z »
+    credits_remaining: int | None
+
+
+def scheduled_fetch_decision(db: Session, now: datetime) -> ScheduledDecision:
+    """Ce que la tâche planifiée doit faire à l'instant `now` (UTC naïf). Aucun appel réseau ici."""
+    upcoming = upcoming_games_within(db, now)
+    last = last_known_credits(db)
+    credits = last.credits_remaining if last is not None else None
+    if not upcoming:
+        return ScheduledDecision(DECISION_NO_GAME_SOON, None, credits)
+    first = upcoming[0]
+    next_game = f"{_label(first)} {_iso(game_start_utc(first.game_date))}"
+    if credits is not None and credits < MIN_CREDITS_FOR_SCHEDULED:
+        return ScheduledDecision(DECISION_CREDITS_LOW, next_game, credits)
+    return ScheduledDecision(DECISION_CALL, next_game, credits)
