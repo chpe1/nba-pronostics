@@ -33,7 +33,8 @@ router = APIRouter(prefix="/api/odds", tags=["odds"], dependencies=[Depends(get_
 # Les deux seules sources affichées par CET écran (quatre champs fixes par match, exigence du point 2).
 # Rien n'empêche KNOWN_ODDS_SOURCES (app/services/odds.py) d'en compter d'autres plus tard sans migration
 # -- mais cet écran-ci, câblé sur exactement ces deux colonnes dans le schéma de lecture, demandera alors
-# un vrai changement de code.
+# un vrai changement de code. Identifiants exacts de the-odds-api.com depuis le 2026-11-03.
+SCREEN_SOURCES: tuple[str, ...] = ("winamax_fr", "unibet_fr")
 
 
 def _empty_cell() -> OddsCellRead:
@@ -63,7 +64,7 @@ def list_odds(
         .order_by(Game.game_date)
         .all()
     )
-    latest = latest_odds_by_cell(db, [g.id for g in games])
+    latest = latest_odds_by_cell(db, [g.id for g in games], SCREEN_SOURCES)
 
     def cell(game_id: int, side: OddsSide, source: str) -> OddsCellRead:
         return _cell_from_odds(latest.get((game_id, side, source)))
@@ -79,10 +80,10 @@ def list_odds(
                 away_team_name=g.away_team.name,
                 away_team_abbreviation=g.away_team.abbreviation,
                 started=has_game_started(g),
-                winamax_home=cell(g.id, OddsSide.HOME, "winamax"),
-                winamax_away=cell(g.id, OddsSide.AWAY, "winamax"),
-                unibet_home=cell(g.id, OddsSide.HOME, "unibet"),
-                unibet_away=cell(g.id, OddsSide.AWAY, "unibet"),
+                winamax_home=cell(g.id, OddsSide.HOME, "winamax_fr"),
+                winamax_away=cell(g.id, OddsSide.AWAY, "winamax_fr"),
+                unibet_home=cell(g.id, OddsSide.HOME, "unibet_fr"),
+                unibet_away=cell(g.id, OddsSide.AWAY, "unibet_fr"),
             )
             for g in games
         ],

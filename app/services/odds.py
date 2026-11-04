@@ -11,12 +11,14 @@ from datetime import datetime, timezone
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.models import Odds, OddsMarket, OddsSide
+from app.models import Odds, OddsCollection, OddsMarket, OddsSide
 
-# Liste connue des bookmakers. Une chaîne libre validée contre cette liste, PAS un type énuméré SQL :
-# ajouter un troisième bookmaker ne doit demander qu'une entrée ici, jamais une migration (décision du
-# 2026-10-24).
-KNOWN_ODDS_SOURCES: tuple[str, ...] = ("winamax", "unibet")
+# Bookmakers acceptés en SAISIE MANUELLE. Une chaîne libre validée contre cette liste, PAS un type énuméré SQL :
+# ajouter un bookmaker ne doit demander qu'une entrée ici, jamais une migration (décision du 2026-10-24).
+# Identifiants EXACTS de the-odds-api.com depuis le 2026-11-03 (un relevé automatique et une saisie du même
+# bookmaker portent la même source et se distinguent par `Odds.collection`). Le relevé automatique, lui,
+# stocke TOUS les bookmakers renvoyés par l'API, sans passer par cette liste (app/services/odds_fetcher.py).
+KNOWN_ODDS_SOURCES: tuple[str, ...] = ("winamax_fr", "unibet_fr")
 
 MIN_ODDS_VALUE = 1.01
 MAX_ODDS_VALUE = 100.0
@@ -91,10 +93,14 @@ def record_odds(
     1. même valeur que le dernier relevé connu pour (game, market, side, source) -> rien n'est écrit ;
     2. valeur différente, même `recorded_at` qu'un relevé déjà en base -> ce relevé est corrigé en place ;
     3. valeur différente, `recorded_at` différent (ou aucun relevé antérieur) -> nouvelle ligne.
+    Ces trois règles ne regardent que les SAISIES MANUELLES (collection MANUEL) : un relevé automatique du même
+    bookmaker est une autre série, qui ne rend jamais une saisie « inchangée » et n'est jamais corrigée par elle.
     Ne commit jamais : à charge de l'appelant (même convention que les upserts CSV, csv_import.py)."""
+    manual = OddsCollection.MANUEL
     latest = (
         db.query(Odds)
-        .filter(Odds.game_id == game_id, Odds.market == market, Odds.side == side, Odds.source == source)
+        .filter(Odds.game_id == game_id, Odds.market == market, Odds.side == side, Odds.source == source,
+                Odds.collection == manual)
         .order_by(desc(Odds.recorded_at), desc(Odds.id))
         .first()
     )
@@ -108,6 +114,7 @@ def record_odds(
             Odds.market == market,
             Odds.side == side,
             Odds.source == source,
+            Odds.collection == manual,
             Odds.recorded_at == recorded_at,
         )
         .one_or_none()
@@ -117,20 +124,27 @@ def record_odds(
         db.flush()
         return OddsWriteOutcome(odds=same_instant, action="updated")
 
-    odds = Odds(game_id=game_id, market=market, side=side, source=source, value=value, recorded_at=recorded_at)
+    odds = Odds(game_id=game_id, market=market, side=side, source=source, value=value, recorded_at=recorded_at,
+                collection=manual)
     db.add(odds)
     db.flush()
     return OddsWriteOutcome(odds=odds, action="created")
 
 
-def latest_odds_by_cell(db: Session, game_ids: list[int], market: OddsMarket = OddsMarket.WINNER) -> dict:
-    """Pour l'écran de saisie : le DERNIER relevé de chaque (game_id, side, source), en une seule requête
-    (pas une par cellule -- une soirée de 11 matchs fait déjà 44 cellules)."""
+def latest_odds_by_cell(
+    db: Session, game_ids: list[int], sources: tuple[str, ...], market: OddsMarket = OddsMarket.WINNER
+) -> dict:
+    """Pour l'écran de saisie : le DERNIER relevé de chaque (game_id, side, source), QUELLE QU'EN SOIT L'ORIGINE
+    (saisie ou relevé automatique : l'écran dit laquelle), en une seule requête -- pas une par cellule.
+
+    Filtré sur les seules `sources` de l'écran : le relevé automatique stocke ~19 bookmakers, achat et vente, toutes
+    les 30 minutes ; sans ce filtre, l'écran chargerait des milliers de lignes qu'il n'affiche pas. La requête
+    s'appuie sur l'index de la contrainte uq_odds_snapshot (game_id, market, side, source, ...)."""
     if not game_ids:
         return {}
     rows = (
         db.query(Odds)
-        .filter(Odds.game_id.in_(game_ids), Odds.market == market)
+        .filter(Odds.game_id.in_(game_ids), Odds.market == market, Odds.source.in_(sources))
         .order_by(Odds.game_id, Odds.side, Odds.source, desc(Odds.recorded_at), desc(Odds.id))
         .all()
     )

@@ -6,7 +6,8 @@ from app.models.import_history import ImportHistory, ImportType, ImportStatus, S
 from app.models.prediction import Prediction, ReliabilityLevel
 from app.models.previous_season_player_stat import PreviousSeasonPlayerStat
 from app.models.login_lockout import LoginLockout
-from app.models.odds import Odds, OddsMarket, OddsSide
+from app.models.odds import Odds, OddsCollection, OddsMarket, OddsSide
+from app.models.odds_fetch_run import OddsFetchRun, OddsFetchTrigger
 
 __all__ = [
     "Team",
@@ -27,4 +28,7 @@ __all__ = [
     "Odds",
     "OddsMarket",
     "OddsSide",
+    "OddsCollection",
+    "OddsFetchRun",
+    "OddsFetchTrigger",
 ]

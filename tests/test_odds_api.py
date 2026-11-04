@@ -1,7 +1,7 @@
 """GET/POST /api/odds."""
 from datetime import datetime, timedelta, timezone
 
-from app.models import Game, Odds, OddsSide, Team
+from app.models import Game, Odds, OddsCollection, OddsSide, Team
 from app.services import nba_calendar
 
 
@@ -44,8 +44,8 @@ def test_get_shows_the_latest_known_value_per_cell(client, db_session, auth_head
     home, away = _teams(db_session)
     game = _game(db_session, home, away)
     db_session.add_all([
-        Odds(game_id=game.id, side=OddsSide.HOME, source="winamax", value=1.80, recorded_at=datetime(2026, 10, 24, 10)),
-        Odds(game_id=game.id, side=OddsSide.HOME, source="winamax", value=1.85, recorded_at=datetime(2026, 10, 24, 16)),
+        Odds(game_id=game.id, side=OddsSide.HOME, source="winamax_fr", collection=OddsCollection.MANUEL, value=1.80, recorded_at=datetime(2026, 10, 24, 10)),
+        Odds(game_id=game.id, side=OddsSide.HOME, source="winamax_fr", collection=OddsCollection.MANUEL, value=1.85, recorded_at=datetime(2026, 10, 24, 16)),
     ])
     db_session.commit()
 
@@ -62,7 +62,7 @@ def test_post_partial_submission_writes_only_the_filled_cells(client, db_session
     response = client.post(
         "/api/odds",
         json={"recorded_at": "2026-10-24T14:30:00Z", "entries": [
-            {"game_id": game.id, "side": "home", "source": "winamax", "value": "1,85"},
+            {"game_id": game.id, "side": "home", "source": "winamax_fr", "value": "1,85"},
         ]},
         headers=auth_headers,
     )
@@ -71,7 +71,7 @@ def test_post_partial_submission_writes_only_the_filled_cells(client, db_session
     assert (body["created_count"], body["updated_count"], body["rejected_count"]) == (1, 0, 0)
     assert db_session.query(Odds).count() == 1
     row = db_session.query(Odds).one()
-    assert row.value == 1.85 and row.source == "winamax" and row.side == OddsSide.HOME
+    assert row.value == 1.85 and row.source == "winamax_fr" and row.side == OddsSide.HOME
     assert row.recorded_at == datetime(2026, 10, 24, 14, 30, 0)  # converti en UTC naïf
 
 
@@ -81,8 +81,8 @@ def test_post_accepts_french_comma_and_dot_decimals(client, db_session, auth_hea
     response = client.post(
         "/api/odds",
         json={"recorded_at": "2026-10-24T14:30:00Z", "entries": [
-            {"game_id": game.id, "side": "home", "source": "winamax", "value": "1,85"},
-            {"game_id": game.id, "side": "away", "source": "winamax", "value": "2.10"},
+            {"game_id": game.id, "side": "home", "source": "winamax_fr", "value": "1,85"},
+            {"game_id": game.id, "side": "away", "source": "winamax_fr", "value": "2.10"},
         ]},
         headers=auth_headers,
     )
@@ -95,7 +95,7 @@ def test_post_resubmitting_the_exact_same_batch_is_a_no_op_pressing_twice_is_saf
     home, away = _teams(db_session)
     game = _game(db_session, home, away)
     payload = {"recorded_at": "2026-10-24T14:30:00Z", "entries": [
-        {"game_id": game.id, "side": "home", "source": "winamax", "value": "1,85"},
+        {"game_id": game.id, "side": "home", "source": "winamax_fr", "value": "1,85"},
     ]}
     client.post("/api/odds", json=payload, headers=auth_headers)
     second = client.post("/api/odds", json=payload, headers=auth_headers)
@@ -109,8 +109,8 @@ def test_post_rejects_an_absurd_value_without_losing_the_rest_of_the_batch(clien
     response = client.post(
         "/api/odds",
         json={"recorded_at": "2026-10-24T14:30:00Z", "entries": [
-            {"game_id": game.id, "side": "home", "source": "winamax", "value": "1,85"},
-            {"game_id": game.id, "side": "away", "source": "winamax", "value": "0,80"},  # sous 1,01
+            {"game_id": game.id, "side": "home", "source": "winamax_fr", "value": "1,85"},
+            {"game_id": game.id, "side": "away", "source": "winamax_fr", "value": "0,80"},  # sous 1,01
         ]},
         headers=auth_headers,
     )
@@ -142,11 +142,11 @@ def test_post_normalizes_source_case_on_write(client, db_session, auth_headers):
     client.post(
         "/api/odds",
         json={"recorded_at": "2026-10-24T14:30:00Z", "entries": [
-            {"game_id": game.id, "side": "home", "source": "Winamax", "value": "1,85"},
+            {"game_id": game.id, "side": "home", "source": "Winamax_FR", "value": "1,85"},
         ]},
         headers=auth_headers,
     )
-    assert db_session.query(Odds).one().source == "winamax"
+    assert db_session.query(Odds).one().source == "winamax_fr"
 
 
 def test_post_refuses_a_game_already_started(client, db_session, auth_headers, monkeypatch):
@@ -157,7 +157,7 @@ def test_post_refuses_a_game_already_started(client, db_session, auth_headers, m
     response = client.post(
         "/api/odds",
         json={"recorded_at": "2026-10-24T23:50:00Z", "entries": [
-            {"game_id": game.id, "side": "home", "source": "winamax", "value": "1,85"},
+            {"game_id": game.id, "side": "home", "source": "winamax_fr", "value": "1,85"},
         ]},
         headers=auth_headers,
     )

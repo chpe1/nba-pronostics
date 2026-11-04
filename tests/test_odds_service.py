@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.models import Game, Odds, OddsSide, Team
+from app.models import Game, Odds, OddsCollection, OddsSide, Team
 from app.services.odds import (
     InvalidOddsSourceError,
     InvalidOddsValueError,
@@ -36,9 +36,9 @@ def test_parse_rejects_unparseable_text(raw):
 # --------------------------------------------------------------------------- normalize_odds_source
 
 
-@pytest.mark.parametrize("raw", ["winamax", "Winamax", "WINAMAX", " winamax "])
+@pytest.mark.parametrize("raw", ["winamax_fr", "Winamax_FR", "WINAMAX_FR", " winamax_fr "])
 def test_normalize_source_folds_case(raw):
-    assert normalize_odds_source(raw) == "winamax"
+    assert normalize_odds_source(raw) == "winamax_fr"
 
 
 def test_normalize_source_rejects_unknown():
@@ -54,10 +54,10 @@ def test_winamax_and_winamax_capitalized_never_produce_two_distinct_rows(db_sess
     db_session.add(game)
     db_session.flush()
     now = datetime(2026, 1, 1, 10)
-    record_odds(db_session, game.id, OddsSide.HOME, normalize_odds_source("Winamax"), 1.85, now)
-    record_odds(db_session, game.id, OddsSide.HOME, normalize_odds_source("WINAMAX"), 1.90, now + timedelta(minutes=5))
-    assert db_session.query(Odds).filter(Odds.source == "winamax").count() == 2
-    assert db_session.query(Odds).filter(Odds.source == "Winamax").count() == 0
+    record_odds(db_session, game.id, OddsSide.HOME, normalize_odds_source("Winamax_FR"), 1.85, now)
+    record_odds(db_session, game.id, OddsSide.HOME, normalize_odds_source("WINAMAX_FR"), 1.90, now + timedelta(minutes=5))
+    assert db_session.query(Odds).filter(Odds.source == "winamax_fr").count() == 2
+    assert db_session.query(Odds).filter(Odds.source == "Winamax_FR").count() == 0
 
 
 # --------------------------------------------------------------------------- to_naive_utc
@@ -92,21 +92,21 @@ T2 = datetime(2026, 10, 24, 16, 0)
 
 
 def test_first_record_is_created(db_session, game):
-    out = record_odds(db_session, game.id, OddsSide.HOME, "winamax", 1.85, T1)
+    out = record_odds(db_session, game.id, OddsSide.HOME, "winamax_fr", 1.85, T1)
     assert out.action == "created"
     assert db_session.query(Odds).count() == 1
 
 
 def test_same_value_again_is_a_no_op(db_session, game):
-    record_odds(db_session, game.id, OddsSide.HOME, "winamax", 1.85, T1)
-    out = record_odds(db_session, game.id, OddsSide.HOME, "winamax", 1.85, T2)
+    record_odds(db_session, game.id, OddsSide.HOME, "winamax_fr", 1.85, T1)
+    out = record_odds(db_session, game.id, OddsSide.HOME, "winamax_fr", 1.85, T2)
     assert out.action == "unchanged"
     assert db_session.query(Odds).count() == 1  # aucune deuxième ligne, même à un instant différent
 
 
 def test_different_value_at_a_new_instant_adds_a_history_row(db_session, game):
-    record_odds(db_session, game.id, OddsSide.HOME, "winamax", 1.85, T1)
-    out = record_odds(db_session, game.id, OddsSide.HOME, "winamax", 1.90, T2)
+    record_odds(db_session, game.id, OddsSide.HOME, "winamax_fr", 1.85, T1)
+    out = record_odds(db_session, game.id, OddsSide.HOME, "winamax_fr", 1.90, T2)
     assert out.action == "created"
     assert db_session.query(Odds).count() == 2
     values = sorted(o.value for o in db_session.query(Odds).all())
@@ -114,17 +114,17 @@ def test_different_value_at_a_new_instant_adds_a_history_row(db_session, game):
 
 
 def test_different_value_at_the_same_instant_corrects_in_place(db_session, game):
-    record_odds(db_session, game.id, OddsSide.HOME, "winamax", 1.85, T1)
-    out = record_odds(db_session, game.id, OddsSide.HOME, "winamax", 1.95, T1)  # même T1 : faute de frappe corrigée
+    record_odds(db_session, game.id, OddsSide.HOME, "winamax_fr", 1.85, T1)
+    out = record_odds(db_session, game.id, OddsSide.HOME, "winamax_fr", 1.95, T1)  # même T1 : faute de frappe corrigée
     assert out.action == "updated"
     assert db_session.query(Odds).count() == 1
     assert db_session.query(Odds).one().value == 1.95
 
 
 def test_each_side_source_market_combination_has_its_own_history(db_session, game):
-    record_odds(db_session, game.id, OddsSide.HOME, "winamax", 1.85, T1)
-    record_odds(db_session, game.id, OddsSide.AWAY, "winamax", 2.10, T1)
-    record_odds(db_session, game.id, OddsSide.HOME, "unibet", 1.80, T1)
+    record_odds(db_session, game.id, OddsSide.HOME, "winamax_fr", 1.85, T1)
+    record_odds(db_session, game.id, OddsSide.AWAY, "winamax_fr", 2.10, T1)
+    record_odds(db_session, game.id, OddsSide.HOME, "unibet_fr", 1.80, T1)
     assert db_session.query(Odds).count() == 3
 
 
@@ -132,8 +132,8 @@ def test_the_unique_constraint_is_a_backstop_not_the_mechanism(db_session, game)
     """record_odds gère déjà les 3 cas sans jamais violer la contrainte -- elle protège contre un bug
     futur qui écrirait directement sans passer par le service (même principe que UNIQUE(name, team_id),
     Décision d'architecture n°7)."""
-    db_session.add(Odds(game_id=game.id, side=OddsSide.HOME, source="winamax", value=1.85, recorded_at=T1))
+    db_session.add(Odds(game_id=game.id, side=OddsSide.HOME, source="winamax_fr", collection=OddsCollection.MANUEL, value=1.85, recorded_at=T1))
     db_session.flush()
-    db_session.add(Odds(game_id=game.id, side=OddsSide.HOME, source="winamax", value=1.90, recorded_at=T1))
+    db_session.add(Odds(game_id=game.id, side=OddsSide.HOME, source="winamax_fr", collection=OddsCollection.MANUEL, value=1.90, recorded_at=T1))
     with pytest.raises(Exception):
         db_session.flush()
