@@ -306,3 +306,106 @@ describe("plafond tenu jusqu'à 40 matchs : un motif qui dit la vérité", () =>
     expect(note(w)).toBe('Confiance limitée : début de saison, notes basées sur la saison précédente.')
   })
 })
+
+describe('liste complète des faits de contexte (pastille « +N » cliquable)', () => {
+  const players = (prefix, n) => Array.from({ length: n }, (_, i) => ({ name: `${prefix}${i + 1}`, per: 15, reason: null }))
+  // Domicile : 1 absent + 3 incertains + B2B + 3-en-4 = 6 faits (deux pastilles + « +4 ») ; extérieur : 1 seul fait.
+  const game = (homeAbsent = 1, homeQuestionable = 3) => ({
+    ...BASE,
+    home_calendar_status: { is_back_to_back: true, is_three_in_four: true },
+    away_calendar_status: { is_back_to_back: true, is_three_in_four: false },
+    prediction: {
+      id: 1,
+      game_id: 1,
+      is_upcoming: false,
+      home_team_note: 70,
+      away_team_note: 60,
+      predicted_winner_team_id: 1,
+      spread: 10,
+      reliability: 'moyenne',
+      breakdown: {
+        home: { absent_players: players('Abs', homeAbsent), questionable_players: players('Inc', homeQuestionable) },
+        away: { absent_players: [], questionable_players: [] },
+      },
+      computed_at: '2026-10-21T19:31:37',
+    },
+  })
+  const toggle = (w) => w.find('[data-testid="facts-toggle-home"]')
+  const panel = (w) => w.find('[data-testid="facts-panel"]')
+
+  it('rend le « +N » en vrai bouton, fermé par défaut, avec un libellé qui dit ce qu\'il fait', () => {
+    const w = mount(GameCard, { props: { game: game() } })
+    const b = toggle(w)
+    expect(b.exists()).toBe(true)
+    expect(b.element.tagName).toBe('BUTTON')
+    expect(b.attributes('type')).toBe('button')
+    expect(b.text()).toBe('+4')
+    expect(b.attributes('aria-expanded')).toBe('false')
+    expect(b.attributes('aria-label')).toBe('+4, afficher le détail complet de DET')
+    expect(panel(w).exists()).toBe(false)
+  })
+
+  it('ne met aucun bouton sur une équipe dont tous les faits tiennent dans la carte fermée', () => {
+    const w = mount(GameCard, { props: { game: game() } })
+    expect(w.find('[data-testid="facts-toggle-away"]').exists()).toBe(false)
+  })
+
+  it('au clic, montre TOUS les faits (rien de caché), puis un second clic referme', async () => {
+    const w = mount(GameCard, { props: { game: game() } })
+    await toggle(w).trigger('click')
+    expect(toggle(w).attributes('aria-expanded')).toBe('true')
+    expect(toggle(w).text()).toBe('Masquer')
+    expect(toggle(w).attributes('aria-label')).toBe('Masquer le détail de DET')
+    expect(toggle(w).attributes('aria-controls')).toBe(panel(w).attributes('id'))
+    const texts = w.findAll('[data-testid="fact-pill"]').map((p) => p.text())
+    expect(texts).toEqual(['Abs1 absent', 'B2B', '3-en-4', 'Inc1 incertain', 'Inc2 incertain', 'Inc3 incertain'])
+    await toggle(w).trigger('click')
+    expect(toggle(w).attributes('aria-expanded')).toBe('false')
+    expect(panel(w).exists()).toBe(false)
+    expect(w.text()).toContain('+4')
+  })
+
+  it('range les faits en groupes dont le titre dit, avec le compte, s\'ils pèsent sur la note', async () => {
+    const w = mount(GameCard, { props: { game: game(2, 3) } })
+    await toggle(w).trigger('click')
+    const title = (kind) => w.get(`[data-testid="facts-group-${kind}"] p`).text()
+    expect(title('absent')).toBe('Absents, pèsent sur la note (2)')
+    expect(title('calendar')).toBe('Calendrier, pèse sur la note (2)')
+    expect(title('questionable')).toBe('Incertains, sans effet sur la note (3)')
+  })
+
+  it('porte la distinction par le remplissage : pleine si ça pèse, contour pointillé sans fond sinon ; la teinte ne change pas', async () => {
+    const w = mount(GameCard, { props: { game: game() } })
+    await toggle(w).trigger('click')
+    const cls = (kind) => w.get(`[data-kind="${kind}"]`).classes()
+    // Ce qui pèse : fond plein, teinte inchangée (rouge pour un joueur, ambre pour le calendrier).
+    expect(cls('absent')).toEqual(expect.arrayContaining(['bg-danger/15', 'text-danger-text']))
+    expect(cls('calendar')).toEqual(expect.arrayContaining(['bg-warning/15', 'text-warning-on-tint']))
+    // Ce qui ne pèse pas : contour pointillé, AUCUN fond.
+    const q = cls('questionable')
+    expect(q).toEqual(expect.arrayContaining(['border-dashed', 'border-warning', 'text-warning']))
+    expect(q.some((c) => c.startsWith('bg-'))).toBe(false)
+    // Les pastilles pleines n'ont ni contour visible ni pointillé.
+    expect(cls('absent')).not.toContain('border-dashed')
+    expect(cls('calendar')).not.toContain('border-dashed')
+  })
+
+  it('n\'ouvre rien tant qu\'il n\'y a pas de clic : aucun gestionnaire de survol sur le bouton', () => {
+    const w = mount(GameCard, { props: { game: game() } })
+    expect(panel(w).exists()).toBe(false)
+    const html = toggle(w).html()
+    expect(html).not.toMatch(/mouseenter|mouseover|onmouse/i)
+  })
+
+  it("nomme l'équipe en tête du panneau, et en fait le nom de la région (aria-labelledby)", async () => {
+    const w = mount(GameCard, { props: { game: game() } })
+    await toggle(w).trigger('click')
+    const region = panel(w)
+    expect(region.attributes('role')).toBe('region')
+    const label = w.get(`#${region.attributes('aria-labelledby')}`)
+    expect(label.text()).toBe('DET')
+    expect(w.get('[data-testid="facts-team"]').element).toBe(label.element)
+    // pas d'abréviation répétée dans les titres de groupe
+    expect(w.get('[data-testid="facts-group-absent"] p').text()).not.toContain('DET')
+  })
+})

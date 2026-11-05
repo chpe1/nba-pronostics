@@ -336,7 +336,7 @@ const monthLabel = computed(() => {
         <span class="capitalize">{{ dayLabel(item.iso).weekday }}</span>
         <span
           class="font-mono text-sm tabular-nums"
-          :class="item.iso === todayIso && item.iso !== renderedCenter ? 'text-accent-text' : ''"
+          :class="item.iso === todayIso && item.iso !== renderedCenter ? 'text-accent-text-on-sunken' : ''"
         >
           {{ dayLabel(item.iso).day }}
         </span>

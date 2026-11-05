@@ -1,6 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import DivergentGauge from './DivergentGauge.vue'
+import ContextFactsPanel from './ContextFactsPanel.vue'
 import { reliabilityTreatment } from '@/constants/reliability'
 import { calendarLabels } from '@/utils/pastilles'
 import { joinTeams, noteBasis } from '@/utils/noteBasis'
@@ -147,29 +148,58 @@ const pastilleZoneClass = computed(() => (props.reservedPastilleCount >= 3 ? 'mi
 // pastille -- la troisième position devient une pastille de RESTE, neutre
 // (jamais une couleur sémantique, ce n'en est pas une), qui annonce le volume
 // masqué au lieu de le taire.
-function buildPastilles(absentPlayers, questionablePlayers, calendarLabelsList) {
+//
+// Deux informations lisibles ENSEMBLE (décision du 2026-11-05) : la TEINTE dit de quoi il s'agit (rouge = un joueur
+// absent, ambre = le calendrier ou un joueur incertain), le REMPLISSAGE dit si cela pèse sur la note. Pastille pleine =
+// pèse (absents, calendrier) ; pastille en contour pointillé, sans fond = ne coûte rien au modèle (incertains). Aucune
+// couleur n'a changé pour ce qui pèse déjà ; seul le style des incertains change. Une bordure (transparente pour les
+// pastilles pleines) est portée par toutes, pour que leur hauteur ne varie pas.
+const PILL_BASE = 'rounded border px-1.5 py-0.5 text-[10px] font-medium'
+const KIND_STYLE = {
+  absent: 'border-transparent bg-danger/15 text-danger-text',
+  calendar: 'border-transparent bg-warning/15 text-warning-on-tint',
+  questionable: 'border-dashed border-warning text-warning',
+}
+
+// Ouverture de la liste complète, par équipe (clic ou touche, jamais le survol : il n'existe pas au doigt).
+const openSides = ref({ home: false, away: false })
+function toggleSide(side) {
+  openSides.value[side] = !openSides.value[side]
+}
+
+// Tous les faits d'une équipe, dans l'ordre de priorité de la carte fermée, chacun avec sa nature.
+function buildFacts(absentPlayers, questionablePlayers, calendarLabelsList) {
   const items = []
   for (const p of absentPlayers) {
-    items.push({ key: `absent-${p.name}`, text: `${p.name} absent`, cls: 'bg-danger/15 text-danger-text' })
+    items.push({ key: `absent-${p.name}`, kind: 'absent', text: `${p.name} absent` })
   }
   for (const p of questionablePlayers) {
-    items.push({ key: `q-${p.name}`, text: `${p.name} incertain`, cls: 'bg-warning/15 text-warning' })
+    items.push({ key: `q-${p.name}`, kind: 'questionable', text: `${p.name} incertain` })
   }
   for (const label of calendarLabelsList) {
-    items.push({ key: `cal-${label}`, text: label, cls: 'bg-warning/15 text-warning' })
+    items.push({ key: `cal-${label}`, kind: 'calendar', text: label })
   }
-  if (items.length <= 3) return items
+  return items.map((it) => ({ ...it, cls: `${PILL_BASE} ${KIND_STYLE[it.kind]}` }))
+}
 
-  const shown = items.slice(0, 2)
-  const remaining = items.length - shown.length
-  shown.push({
-    key: 'more',
-    text: `+${remaining}`,
-    cls: 'bg-neutral/15 text-neutral',
-    // "+3" seul ne dit rien hors contexte visuel à un lecteur d'écran.
-    ariaLabel: `${remaining} information${remaining > 1 ? 's' : ''} supplémentaire${remaining > 1 ? 's' : ''} non affichée${remaining > 1 ? 's' : ''} ici`,
-  })
-  return shown
+// Fermée : au-delà de trois faits, deux pastilles puis un reste. `overflow` dit que le reste est un bouton.
+function buildPastilles(facts) {
+  if (facts.length <= 3) return { shown: facts, remaining: 0 }
+  return { shown: facts.slice(0, 2), remaining: facts.length - 2 }
+}
+
+// Ouverte : tous les faits, en trois groupes qui disent chacun, en toutes lettres, s'ils pèsent sur la note.
+// Un groupe vide n'est pas affiché ; l'ordre place les deux groupes qui pèsent avant celui qui ne pèse pas.
+const FACT_GROUPS = [
+  { kind: 'absent', title: 'Absents, pèsent sur la note' },
+  { kind: 'calendar', title: 'Calendrier, pèse sur la note' },
+  { kind: 'questionable', title: 'Incertains, sans effet sur la note' },
+]
+function groupFacts(facts) {
+  return FACT_GROUPS.map((g) => {
+    const items = facts.filter((f) => f.kind === g.kind)
+    return { kind: g.kind, title: `${g.title} (${items.length})`, items }
+  }).filter((g) => g.items.length > 0)
 }
 
 // Absents/incertains : dans breakdown, donc déjà masqués en bloc avec le
@@ -209,20 +239,47 @@ const gamesUsed = computed(() =>
 // compte aucun.
 const absentCount = computed(() => homeAbsentPlayers.value.length + awayAbsentPlayers.value.length)
 
-const homePastilles = computed(() =>
-  buildPastilles(
+const homeFacts = computed(() =>
+  buildFacts(
     isRevealed.value ? homeAbsentPlayers.value : [],
     isRevealed.value ? homeQuestionablePlayers.value : [],
     calendarLabels(props.game.home_calendar_status),
   ),
 )
-const awayPastilles = computed(() =>
-  buildPastilles(
+const awayFacts = computed(() =>
+  buildFacts(
     isRevealed.value ? awayAbsentPlayers.value : [],
     isRevealed.value ? awayQuestionablePlayers.value : [],
     calendarLabels(props.game.away_calendar_status),
   ),
 )
+const homePastilles = computed(() => buildPastilles(homeFacts.value))
+const awayPastilles = computed(() => buildPastilles(awayFacts.value))
+const homeGroups = computed(() => groupFacts(homeFacts.value))
+const awayGroups = computed(() => groupFacts(awayFacts.value))
+
+// Une équipe n'a un bouton que si des faits sont masqués ; sinon rien ne change.
+const sideView = computed(() => ({
+  home: { pastilles: homePastilles.value, groups: homeGroups.value, abbreviation: props.game.home_team_abbreviation },
+  away: { pastilles: awayPastilles.value, groups: awayGroups.value, abbreviation: props.game.away_team_abbreviation },
+}))
+function panelId(side) {
+  return `facts-${props.game.id}-${side}`
+}
+function isOpen(side) {
+  return sideView.value[side].pastilles.remaining > 0 && openSides.value[side]
+}
+// Le libellé dit ce que fait le bouton ; l'état (ouvert ou fermé) est porté par aria-expanded. Il contient le texte
+// visible (« +4 » fermé, « Masquer » ouvert), comme l'exige le critère 2.5.3.
+function toggleLabel(side) {
+  const { pastilles, abbreviation } = sideView.value[side]
+  return isOpen(side)
+    ? `Masquer le détail de ${abbreviation}`
+    : `+${pastilles.remaining}, afficher le détail complet de ${abbreviation}`
+}
+function toggleText(side) {
+  return isOpen(side) ? 'Masquer' : `+${sideView.value[side].pastilles.remaining}`
+}
 </script>
 
 <template>
@@ -263,16 +320,24 @@ const awayPastilles = computed(() =>
             >
               {{ game.away_team_abbreviation }}
             </div>
-            <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
-              <span
-                v-for="p in awayPastilles"
-                :key="p.key"
-                class="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                :class="p.cls"
-                :aria-label="p.ariaLabel"
+            <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="isOpen('away') ? '' : pastilleZoneClass">
+              <template v-if="!isOpen('away')">
+                <span v-for="p in awayPastilles.shown" :key="p.key" :class="p.cls">
+                  {{ p.text }}
+                </span>
+              </template>
+              <button
+                v-if="awayPastilles.remaining > 0"
+                type="button"
+                class="-mx-2 -my-3 flex min-h-11 items-center px-2"
+                data-testid="facts-toggle-away"
+                :aria-expanded="isOpen('away')"
+                :aria-controls="isOpen('away') ? panelId('away') : undefined"
+                :aria-label="toggleLabel('away')"
+                @click="toggleSide('away')"
               >
-                {{ p.text }}
-              </span>
+                <span :class="`${PILL_BASE} border-transparent bg-neutral/15 text-neutral`">{{ toggleText('away') }}</span>
+              </button>
             </div>
             <div v-if="formatRecord(game.away_team_recent_record)" class="text-xs font-normal text-text-secondary">
               {{ formatRecord(game.away_team_recent_record) }}
@@ -283,6 +348,7 @@ const awayPastilles = computed(() =>
           {{ prediction.away_team_note.toFixed(2) }}
         </span>
       </div>
+      <ContextFactsPanel v-if="isOpen('away')" :id="panelId('away')" :team="game.away_team_abbreviation" :groups="awayGroups" />
 
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -314,16 +380,24 @@ const awayPastilles = computed(() =>
                    où text-disabled est interdit, sur --surface-info). -->
               <span class="text-[10px] font-normal uppercase tracking-wide text-text-disabled">Domicile</span>
             </div>
-            <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="pastilleZoneClass">
-              <span
-                v-for="p in homePastilles"
-                :key="p.key"
-                class="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                :class="p.cls"
-                :aria-label="p.ariaLabel"
+            <div v-if="reservedPastilleCount > 0" class="mt-1 flex flex-wrap items-start gap-1" :class="isOpen('home') ? '' : pastilleZoneClass">
+              <template v-if="!isOpen('home')">
+                <span v-for="p in homePastilles.shown" :key="p.key" :class="p.cls">
+                  {{ p.text }}
+                </span>
+              </template>
+              <button
+                v-if="homePastilles.remaining > 0"
+                type="button"
+                class="-mx-2 -my-3 flex min-h-11 items-center px-2"
+                data-testid="facts-toggle-home"
+                :aria-expanded="isOpen('home')"
+                :aria-controls="isOpen('home') ? panelId('home') : undefined"
+                :aria-label="toggleLabel('home')"
+                @click="toggleSide('home')"
               >
-                {{ p.text }}
-              </span>
+                <span :class="`${PILL_BASE} border-transparent bg-neutral/15 text-neutral`">{{ toggleText('home') }}</span>
+              </button>
             </div>
             <div v-if="formatRecord(game.home_team_recent_record)" class="text-xs font-normal text-text-secondary">
               {{ formatRecord(game.home_team_recent_record) }}
@@ -334,6 +408,7 @@ const awayPastilles = computed(() =>
           {{ prediction.home_team_note.toFixed(2) }}
         </span>
       </div>
+      <ContextFactsPanel v-if="isOpen('home')" :id="panelId('home')" :team="game.home_team_abbreviation" :groups="homeGroups" />
     </div>
 
     <div v-if="isRevealed" class="my-3">

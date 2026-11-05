@@ -122,10 +122,12 @@
   --accent-text: #f97316;
   --accent-tint: #fdba74;
   --accent-on: #0e1015;
+  --accent-text-on-sunken: var(--accent-text); /* texte d'accent posé sur --surface-sunken : en sombre --accent-text suffit */
 
   /* Sémantique -- fixes vis-à-vis de l'accent, variables selon le mode (§5.4) */
   --success: #22c55e;
   --warning: #fbbf24;
+  --warning-on-tint: #fbbf24; /* texte ambre posé sur sa propre teinte (bg-warning/15) : identique à --warning en sombre */
   --danger: #ef4444; /* aplats/remplissages non textuels uniquement */
   --danger-text: #f87171; /* texte -- #ef4444 est sous 4,5:1 sur carte, voir §2.3 */
   --neutral: #9ca3af;
@@ -153,9 +155,11 @@
   --accent-fill: #f97316;
   --accent-text: #c2410c;
   --accent-tint: #ffedd5;
+  --accent-text-on-sunken: color-mix(in srgb, var(--accent-text) 88%, black); /* --accent-text ne fait que 4,30:1 sur --surface-sunken (#e8eaef) ; assombri de 12 % : 5,26:1 */
 
   --success: #166534;
   --warning: #8f5e06;
+  --warning-on-tint: #815505; /* même ambre assombri : 5,27:1 sur bg-warning/15 (--warning y mesure 4,53:1, marge trop mince) */
   --danger: #b91c1c;
   --danger-text: #b91c1c; /* une seule valeur mesurée en clair, sert aux deux usages */
   --neutral: #545b6b;
@@ -381,11 +385,13 @@ textarea:focus-visible {
 
   --color-accent: var(--accent-fill);
   --color-accent-text: var(--accent-text);
+  --color-accent-text-on-sunken: var(--accent-text-on-sunken);
   --color-accent-tint: var(--accent-tint);
   --color-accent-on: var(--accent-on);
 
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-warning-on-tint: var(--warning-on-tint);
   --color-danger: var(--danger);
   --color-danger-text: var(--danger-text);
   --color-neutral: var(--neutral);
