@@ -58,7 +58,9 @@ def _cell_from_odds(odds: Odds | None) -> OddsCellRead:
         return _empty_cell()
     # ISO 8601 avec "Z" explicite (UTC) -- jamais une chaîne naïve ambiguë lue comme heure locale par
     # `new Date(...)` côté navigateur (voir CLAUDE.md, limitation n°35).
-    return OddsCellRead(value=odds.value, recorded_at=odds.recorded_at.isoformat() + "Z")
+    return OddsCellRead(
+        value=odds.value, recorded_at=odds.recorded_at.isoformat() + "Z", collection=odds.collection.value
+    )
 
 
 @router.get("", response_model=OddsDayRead)

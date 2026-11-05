@@ -85,3 +85,40 @@ describe('recalcul : matchs déjà commencés ignorés', () => {
     expect(notice(wrapper).exists()).toBe(false)
   })
 })
+
+describe("alerte d'heure de coup d'envoi (cotes automatiques)", () => {
+  const ALERT = {
+    game_id: 1, label: 'PHI@DET', api_start: '2026-11-04T23:30:00Z', our_start: '2026-11-05T00:00:00Z',
+    minutes_earlier: 30, fetched_at: '2026-11-04T21:00:00Z',
+  }
+
+  async function mountWith({ token, statusHandler }) {
+    setActivePinia(createPinia())
+    useAuthStore().token = token
+    apiFetch.mockImplementation((path) => {
+      if (path === '/api/odds/fetch-status') return statusHandler()
+      return Promise.resolve([])
+    })
+    const wrapper = mount(DashboardView)
+    await flushPromises()
+    return wrapper
+  }
+
+  it("l'admin connecté voit l'alerte, qui n'a rien corrigé", async () => {
+    const wrapper = await mountWith({ token: 'jeton-de-test', statusHandler: () => Promise.resolve({ alerts: [ALERT] }) })
+    expect(wrapper.find('[data-testid="kickoff-alert"]').text()).toContain('PHI@DET')
+    expect(wrapper.find('[data-testid="kickoff-alert"]').text()).toContain('30 min plus tôt')
+  })
+
+  it("un visiteur non connecté ne voit rien et la route protégée n'est même pas appelée", async () => {
+    const wrapper = await mountWith({ token: null, statusHandler: () => Promise.resolve({ alerts: [ALERT] }) })
+    expect(wrapper.find('[data-testid="kickoff-alerts"]').exists()).toBe(false)
+    expect(apiFetch.mock.calls.some(([path]) => path === '/api/odds/fetch-status')).toBe(false)
+  })
+
+  it("un échec de lecture ne casse pas la page et n'affiche aucune erreur", async () => {
+    const wrapper = await mountWith({ token: 'jeton-de-test', statusHandler: () => Promise.reject(new Error('panne')) })
+    expect(wrapper.find('[data-testid="kickoff-alerts"]').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+})

@@ -376,3 +376,21 @@ def test_status_shows_journal_balance_suspension_and_kickoff_alerts(
     (alert,) = body["alerts"]
     assert alert["label"] == "PHI@DET" and alert["minutes_earlier"] == 30
     assert alert["api_start"] == "2026-11-04T23:30:00Z" and alert["our_start"] == "2026-11-05T00:00:00Z"
+
+
+def test_status_raises_no_alert_when_the_api_announces_a_LATER_kickoff_or_the_same_one(
+        client, db_session, nov4, auth_headers, api_mock, monkeypatch):
+    """L'alerte ne vaut que dans le sens dangereux (l'API annonce PLUS TÔT que notre calendrier : le match peut être
+    commencé quand on le croit à venir). Plus tard ou identique : rien à signaler à l'écran."""
+    events = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    for event in events:
+        if event["home_team"] == "Detroit Pistons":
+            event["commence_time"] = "2026-11-05T00:30:00Z"  # 30 minutes PLUS TARD que notre 00:00Z
+    api_mock(lambda request: httpx.Response(200, json=events, headers={"x-requests-remaining": "400"}))
+    monkeypatch.setattr(nba_calendar, "utc_now", lambda: utc(4, 22))
+    assert client.post("/api/odds/fetch", headers=auth_headers).status_code == 200
+    body = client.get("/api/odds/fetch-status", headers=auth_headers).json()
+    assert body["alerts"] == []
+    # le compte-rendu le dit sans alerte : l'écart existe mais n'est pas dangereux
+    gaps = [g for g in body["latest_run"]["report"]["time_gaps"] if g["label"] == "PHI@DET"]
+    assert gaps and gaps[0]["gap_minutes"] == 30 and gaps[0]["alert"] is False

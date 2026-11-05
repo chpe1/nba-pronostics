@@ -49,6 +49,8 @@ class OddsCellRead(BaseModel):
 
     value: float | None = None
     recorded_at: str | None = None
+    # Comment ce dernier relevé a été pris (saisie à la main ou relevé automatique), pour que l'écran le dise.
+    collection: Literal["manuel", "api"] | None = None
 
 
 class OddsGameRead(BaseModel):

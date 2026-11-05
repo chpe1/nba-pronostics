@@ -37,7 +37,7 @@ def test_get_returns_the_day_s_games_with_empty_cells(client, db_session, auth_h
     assert g["home_team_abbreviation"] == "BOS" and g["away_team_abbreviation"] == "MIA"
     assert g["started"] is False
     for cell in ("winamax_home", "winamax_away", "unibet_home", "unibet_away"):
-        assert g[cell] == {"value": None, "recorded_at": None}
+        assert g[cell] == {"value": None, "recorded_at": None, "collection": None}
 
 
 def test_get_shows_the_latest_known_value_per_cell(client, db_session, auth_headers):
@@ -53,6 +53,24 @@ def test_get_shows_the_latest_known_value_per_cell(client, db_session, auth_head
     cell = body["games"][0]["winamax_home"]
     assert cell["value"] == 1.85  # le plus récent, pas le premier
     assert cell["recorded_at"] == "2026-10-24T16:00:00Z"  # Z explicite : UTC, pas une heure locale ambiguë
+
+
+def test_get_says_whether_the_latest_value_was_typed_or_fetched_automatically(client, db_session, auth_headers):
+    home, away = _teams(db_session)
+    game = _game(db_session, home, away)
+    db_session.add_all([
+        Odds(game_id=game.id, side=OddsSide.HOME, source="winamax_fr", collection=OddsCollection.MANUEL, value=1.80,
+             recorded_at=datetime(2026, 10, 24, 10)),
+        Odds(game_id=game.id, side=OddsSide.HOME, source="winamax_fr", collection=OddsCollection.API, value=1.90,
+             recorded_at=datetime(2026, 10, 24, 16)),
+        Odds(game_id=game.id, side=OddsSide.AWAY, source="winamax_fr", collection=OddsCollection.MANUEL, value=2.10,
+             recorded_at=datetime(2026, 10, 24, 12)),
+    ])
+    db_session.commit()
+    day = client.get("/api/odds?date=2026-10-24", headers=auth_headers).json()["games"][0]
+    assert (day["winamax_home"]["value"], day["winamax_home"]["collection"]) == (1.90, "api")
+    assert (day["winamax_away"]["value"], day["winamax_away"]["collection"]) == (2.10, "manuel")
+    assert day["unibet_home"]["collection"] is None
 
 
 def test_post_partial_submission_writes_only_the_filled_cells(client, db_session, auth_headers):

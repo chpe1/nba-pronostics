@@ -6,6 +6,7 @@ import GameCard from '@/components/GameCard.vue'
 import GameCardSkeleton from '@/components/GameCardSkeleton.vue'
 import DateStrip from '@/components/DateStrip.vue'
 import ContextBanner from '@/components/ContextBanner.vue'
+import KickoffAlertsBanner from '@/components/KickoffAlertsBanner.vue'
 import { maxRenderedPastilleCount } from '@/utils/pastilles'
 
 const authStore = useAuthStore()
@@ -201,12 +202,29 @@ function onDateChange() {
   loadGames()
 }
 
-onMounted(loadGames)
+// Alerte « l'API des cotes annonce un coup d'envoi plus tôt que notre calendrier » : réservée à l'admin (la route est
+// protégée), JAMAIS bloquante -- un échec de lecture ne montre rien plutôt qu'une erreur sur la page publique.
+const kickoffAlerts = ref([])
+async function loadKickoffAlerts() {
+  if (!authStore.isAuthenticated) return
+  try {
+    kickoffAlerts.value = (await apiFetch('/api/odds/fetch-status')).alerts ?? []
+  } catch {
+    kickoffAlerts.value = []
+  }
+}
+
+onMounted(() => {
+  loadGames()
+  loadKickoffAlerts()
+})
 </script>
 
 <template>
   <section class="px-4 py-6">
     <h1 class="mb-4 text-xl font-semibold text-text">Matchs</h1>
+
+    <KickoffAlertsBanner v-if="authStore.isAuthenticated" :alerts="kickoffAlerts" class="mb-4" />
 
     <DateStrip v-model="selectedDate" class="mb-4" @update:model-value="onDateChange" />
 

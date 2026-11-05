@@ -9,7 +9,7 @@ vi.mock('@/services/apiClient', () => ({
 
 import { apiFetch } from '@/services/apiClient'
 
-const emptyCell = () => ({ value: null, recorded_at: null })
+const emptyCell = () => ({ value: null, recorded_at: null, collection: null })
 
 const GAME = {
   id: 1,
@@ -28,9 +28,23 @@ const GAME = {
 const STARTED_GAME = { ...GAME, id: 2, started: true, away_team_abbreviation: 'LAL', home_team_abbreviation: 'DET' }
 
 let postCalls
+let fetchStatus
+
+const baseStatus = () => ({
+  scheduler_enabled: true,
+  api_key_configured: true,
+  credits_threshold: 20,
+  last_known_credits: 480,
+  last_known_credits_at: '2026-11-04T21:00:00Z',
+  scheduled_suspended: false,
+  latest_run: null,
+  recent_runs: [],
+  alerts: [],
+})
 
 function stubApi(games = [GAME]) {
   postCalls = []
+  fetchStatus = baseStatus()
   apiFetch.mockImplementation((path, options = {}) => {
     if (options.method === 'POST' && path === '/api/odds') {
       postCalls.push(options.body)
@@ -40,6 +54,7 @@ function stubApi(games = [GAME]) {
         entries,
       })
     }
+    if (path === '/api/odds/fetch-status') return Promise.resolve(fetchStatus)
     if (path.startsWith('/api/odds')) return Promise.resolve({ date: '2026-10-24', games })
     throw new Error(`chemin inattendu : ${path}`)
   })
@@ -76,6 +91,50 @@ describe('AdminOddsView', () => {
     expect(placeholder('unibet_away')).toBe('MIA')
   })
 
+  it("chaque case dit l'origine et l'heure de son dernier relevé : « auto » ou « manuel »", async () => {
+    const auto = { value: 1.9, recorded_at: '2026-11-04T21:00:00Z', collection: 'api' }
+    const manual = { value: 2.1, recorded_at: '2026-11-04T20:00:00Z', collection: 'manuel' }
+    stubApi([{ ...GAME, winamax_home: auto, winamax_away: manual }])
+    const wrapper = await mountView()
+    const hhmm = (iso) => new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+    expect(wrapper.find('[data-testid="origin-1-winamax_home"]').text()).toBe(`auto ${hhmm(auto.recorded_at)}`)
+    expect(wrapper.find('[data-testid="origin-1-winamax_away"]').text()).toBe(`manuel ${hhmm(manual.recorded_at)}`)
+    expect(wrapper.find('[data-testid="origin-1-unibet_home"]').exists()).toBe(false) // case vide : rien à dire
+  })
+
+  it("une saisie à la main s'enregistre sous l'identifiant exact du bookmaker, pour les deux bookmakers", async () => {
+    const wrapper = await mountView()
+    await wrapper.find('[data-testid="cell-1-unibet_away"]').setValue('2,20')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(postCalls[0].entries).toEqual([{ game_id: 1, side: 'away', source: 'unibet_fr', value: '2,20' }])
+  })
+
+  it("une alerte d'heure de coup d'envoi s'affiche en tête de l'écran, sans rien corriger", async () => {
+    stubApi()
+    fetchStatus.alerts = [{
+      game_id: 1, label: 'MIA@BOS', api_start: '2026-11-04T23:30:00Z', our_start: '2026-11-05T00:00:00Z',
+      minutes_earlier: 30, fetched_at: '2026-11-04T21:00:00Z',
+    }]
+    const wrapper = await mountView()
+    const alert = wrapper.find('[data-testid="kickoff-alert"]')
+    expect(alert.text()).toContain('MIA@BOS')
+    expect(alert.text()).toContain('30 min plus tôt')
+    expect(alert.text()).toContain("Rien n'est corrigé")
+    expect(postCalls.length).toBe(0)
+  })
+
+  it("sans alerte, aucune bannière ; si l'état du relevé est indisponible, la saisie reste utilisable", async () => {
+    apiFetch.mockImplementation((path, options = {}) => {
+      if (path === '/api/odds/fetch-status') return Promise.reject(new Error('panne'))
+      if (options.method === 'POST') return Promise.resolve({ entries: [] })
+      return Promise.resolve({ date: '2026-10-24', games: [GAME] })
+    })
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-testid="kickoff-alerts"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="cell-1-winamax_home"]').exists()).toBe(true)
+  })
+
   it("l'ordre de tabulation suit la colonne, pas la ligne (deux matchs)", async () => {
     const game2 = { ...GAME, id: 3, away_team_abbreviation: 'ORL', home_team_abbreviation: 'NYK' }
     stubApi([GAME, game2])
@@ -102,7 +161,7 @@ describe('AdminOddsView', () => {
     await wrapper.find('[data-testid="cell-1-winamax_home"]').setValue('1,85')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
-    expect(postCalls[0].entries).toEqual([{ game_id: 1, side: 'home', source: 'winamax', value: '1,85' }])
+    expect(postCalls[0].entries).toEqual([{ game_id: 1, side: 'home', source: 'winamax_fr', value: '1,85' }])
   })
 
   it('accepte la virgule ET le point sans erreur', async () => {
@@ -138,11 +197,12 @@ describe('AdminOddsView', () => {
         return Promise.resolve({
           created_count: 1, updated_count: 0, unchanged_count: 0, skipped_count: 0, rejected_count: 1,
           entries: [
-            { game_id: 1, side: 'home', source: 'winamax', outcome: 'created', detail: null },
-            { game_id: 1, side: 'away', source: 'winamax', outcome: 'rejected', detail: 'Cote invalide (0.5).' },
+            { game_id: 1, side: 'home', source: 'winamax_fr', outcome: 'created', detail: null },
+            { game_id: 1, side: 'away', source: 'winamax_fr', outcome: 'rejected', detail: 'Cote invalide (0.5).' },
           ],
         })
       }
+      if (path === '/api/odds/fetch-status') return Promise.resolve(baseStatus())
       return Promise.resolve({ date: '2026-10-24', games: [GAME] })
     })
     const wrapper = await mountView()

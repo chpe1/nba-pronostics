@@ -9,14 +9,19 @@ import {
   parseOddsInput,
   formatOddsFr,
 } from '@/utils/oddsMarket'
+import { COLLECTION_LABELS, formatLocalTime } from '@/utils/oddsFetchFormat'
+import OddsFetchCard from '@/components/OddsFetchCard.vue'
+import KickoffAlertsBanner from '@/components/KickoffAlertsBanner.vue'
 
+// `source` = l'identifiant EXACT du bookmaker chez the-odds-api.com (winamax_fr, unibet_fr) : c'est lui qui rend
+// comparables une saisie à la main et un relevé automatique du même bookmaker (renommage du 2026-11-03).
 // Les 4 colonnes de saisie, dans l'ordre visuel ET dans l'ordre de tabulation (voir assignTabIndex) --
 // un seul tableau, jamais deux listes à tenir synchronisées.
 const COLUMNS = [
-  { key: 'winamax_home', source: 'winamax', side: 'home', label: 'Winamax — domicile' },
-  { key: 'winamax_away', source: 'winamax', side: 'away', label: 'Winamax — extérieur' },
-  { key: 'unibet_home', source: 'unibet', side: 'home', label: 'Unibet — domicile' },
-  { key: 'unibet_away', source: 'unibet', side: 'away', label: 'Unibet — extérieur' },
+  { key: 'winamax_home', source: 'winamax_fr', side: 'home', label: 'Winamax — domicile' },
+  { key: 'winamax_away', source: 'winamax_fr', side: 'away', label: 'Winamax — extérieur' },
+  { key: 'unibet_home', source: 'unibet_fr', side: 'home', label: 'Unibet — domicile' },
+  { key: 'unibet_away', source: 'unibet_fr', side: 'away', label: 'Unibet — extérieur' },
 ]
 
 function nowAsLocalInputValue() {
@@ -41,6 +46,9 @@ const isSaving = ref(false)
 const errorMessage = ref('')
 const loadFailed = ref(false)
 const saveSummary = ref('')
+// État du relevé automatique (GET /api/odds/fetch-status) : crédits, journal, alertes d'heure de coup d'envoi.
+// Son échec ne bloque jamais la saisie à la main : l'écran reste utilisable sans lui.
+const fetchStatus = ref(null)
 
 function emptyForm() {
   return { winamax_home: '', winamax_away: '', unibet_home: '', unibet_away: '' }
@@ -137,6 +145,25 @@ function gameTimeLabel(isoGameDate) {
   return timePart
 }
 
+async function loadFetchStatus() {
+  try {
+    fetchStatus.value = await apiFetch('/api/odds/fetch-status')
+  } catch {
+    fetchStatus.value = null
+  }
+}
+
+async function onFetched() {
+  await Promise.all([loadOdds({ keepIssuedCells: true }), loadFetchStatus()])
+}
+
+function cellOrigin(game, col) {
+  // « auto 14:05 » / « manuel 14:05 » : l'origine et l'heure du DERNIER relevé de la case, quel qu'il soit.
+  const cell = game[col.key]
+  if (!cell?.recorded_at || !cell.collection) return ''
+  return `${COLLECTION_LABELS[cell.collection]} ${formatLocalTime(cell.recorded_at)}`
+}
+
 async function save() {
   errorMessage.value = ''
   saveSummary.value = ''
@@ -184,17 +211,23 @@ function issueFor(gameId, col) {
   return cellIssues[`${gameId}_${col.source}_${col.side}`]
 }
 
-onMounted(loadOdds)
+onMounted(() => {
+  loadOdds()
+  loadFetchStatus()
+})
 </script>
 
 <template>
   <section class="mx-auto max-w-5xl space-y-4 px-4 py-6">
     <h1 class="text-xl font-semibold text-text">Saisie des cotes</h1>
     <p class="text-sm text-text-secondary">
-      Le moteur ne produit pas encore de probabilité (prévu mi-novembre) : cet écran sert uniquement à
-      relever les cotes avant qu'elles ne soient perdues. L'historique complet est conservé — un nouveau
+      Cet écran sert à relever les cotes (à la main ou automatiquement) pour les comparer plus tard au moteur ;
+      il ne calcule aucune value. Une cote non relevée avant le coup d'envoi est perdue définitivement. L'historique complet est conservé — un nouveau
       relevé s'ajoute, il n'efface jamais le précédent.
     </p>
+
+    <KickoffAlertsBanner :alerts="fetchStatus?.alerts ?? []" />
+    <OddsFetchCard :status="fetchStatus" @fetched="onFetched" />
 
     <div class="flex flex-wrap items-end gap-4">
       <div>
@@ -282,6 +315,13 @@ onMounted(loadOdds)
                     class="min-h-11 w-24 rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50"
                     :data-testid="`cell-${game.id}-${col.key}`"
                   />
+                  <p
+                    v-if="cellOrigin(game, col)"
+                    class="mt-1 text-xs text-text-secondary"
+                    :data-testid="`origin-${game.id}-${col.key}`"
+                  >
+                    {{ cellOrigin(game, col) }}
+                  </p>
                   <p v-if="issueFor(game.id, col)" class="mt-1 max-w-[9rem] text-xs text-danger-text">
                     {{ issueFor(game.id, col) }}
                   </p>
